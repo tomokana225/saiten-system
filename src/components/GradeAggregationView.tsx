@@ -92,7 +92,11 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         const emptyResult: AggregatedData = { aggregatedResults: [], points: [], answerPoints: [], allScores: {}, questionStats: [] };
         if (selectedProjectIds.size < 1) return emptyResult;
 
-        const selectedProjects = Array.from(selectedProjectIds).map(id => projects[id]).filter(Boolean);
+        // FIX: Explicitly type 'id' as string to avoid "unknown" index error.
+        const selectedProjects = (Array.from(selectedProjectIds) as string[])
+            .map((id: string) => projects[id])
+            .filter((p): p is GradingProject => !!p);
+
         if (selectedProjects.length === 0) return emptyResult;
 
         const combinedScores: AllScores = {};
@@ -151,7 +155,6 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
 
         const calculatedQuestionStats: QuestionStats[] = answerPoints.map(point => {
             let correctCount = 0, partialCount = 0, incorrectCount = 0, unscoredCount = 0, totalScore = 0;
-            // FIX: Explicitly type 'result' to resolve property access errors.
             resultsWithOverallRank.forEach((result: StudentResult) => {
                 const scoreData = combinedScores[result.id]?.[point.id];
                 if (scoreData) {
@@ -215,7 +218,6 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
                 <aside className="w-80 flex-shrink-0 flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
                     <h3 className="text-lg font-semibold border-b pb-2 dark:border-slate-700">集計するテストを選択</h3>
                     <div className="flex-1 overflow-y-auto space-y-2">
-                        {/* FIX: Explicitly type the map function parameter to 'GradingProject' to resolve property access errors. */}
                         {Object.values(projects).map((p: GradingProject) => (
                             <label key={p.id} className="flex items-center gap-3 p-2 rounded-md cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 has-[:checked]:bg-sky-50 dark:has-[:checked]:bg-sky-900/50">
                                 <input

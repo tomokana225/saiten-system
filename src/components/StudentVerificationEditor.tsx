@@ -160,11 +160,11 @@ export const StudentVerificationEditor = () => {
     const handleDeleteSelected = () => {
         if (selectedRows.size === 0) return;
         if (window.confirm(`${selectedRows.size}件の行を削除しますか？\n（解答用紙と生徒情報の両方が削除されます）`)) {
-            // FIX: Explicitly type the sort function parameters to resolve type inference issues.
-            const sortedIndices = Array.from(selectedRows).sort((a: number, b: number) => b - a);
+            // FIX: Explicitly type the sort function parameters and the Array.from result to resolve type inference issues.
+            const sortedIndices = (Array.from(selectedRows) as number[]).sort((a: number, b: number) => b - a);
             const newSheets = [...syncedSheets];
             const newInfo = [...studentInfoList];
-            sortedIndices.forEach(index => {
+            sortedIndices.forEach((index: number) => {
                 if (index < newSheets.length) newSheets.splice(index, 1);
                 if (index < newInfo.length) newInfo.splice(index, 1);
             });
