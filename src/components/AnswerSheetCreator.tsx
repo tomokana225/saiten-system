@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import type { SheetLayout } from '../../types';
+import type { SheetLayout } from '../types';
 import { XIcon, PrintIcon } from './icons';
 import { LayoutSidebar } from './answer_sheet_creator/LayoutSidebar';
 import { LayoutEditor } from './answer_sheet_creator/LayoutEditor';
