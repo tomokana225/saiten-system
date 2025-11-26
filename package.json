@@ -1,0 +1,50 @@
+{
+  "name": "batch-test-grader",
+  "productName": "一括テスト採点ソフト",
+  "version": "1.0.0",
+  "description": "An application to assist in grading paper-based tests.",
+  "main": ".webpack/main",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "lint": "eslint --ext .ts,.tsx ."
+  },
+  "keywords": [],
+  "author": "user",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^0.14.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-to-print": "^2.15.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.4.0",
+    "@electron-forge/maker-deb": "^7.4.0",
+    "@electron-forge/maker-rpm": "^7.4.0",
+    "@electron-forge/maker-squirrel": "^7.4.0",
+    "@electron-forge/maker-zip": "^7.4.0",
+    "@electron-forge/plugin-webpack": "^7.4.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.1",
+    "@typescript-eslint/parser": "^7.13.1",
+    "@vercel/webpack-asset-relocator-loader": "^1.7.3",
+    "autoprefixer": "^10.4.19",
+    "css-loader": "^7.1.2",
+    "electron": "31.0.2",
+    "eslint": "^8.57.0",
+    "eslint-plugin-import": "^2.29.1",
+    "fork-ts-checker-webpack-plugin": "^9.0.2",
+    "node-loader": "^2.0.0",
+    "postcss": "^8.4.38",
+    "postcss-loader": "^8.1.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^3.4.4",
+    "ts-loader": "^9.5.1",
+    "typescript": "~4.5.4"
+  }
+}

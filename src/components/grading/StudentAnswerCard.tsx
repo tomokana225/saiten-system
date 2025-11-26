@@ -1,0 +1,137 @@
+import React from 'react';
+import type { Student, Area, Point, ScoreData, Template } from '../../types';
+import { ScoringStatus } from '../../types';
+import { AnswerSnippet } from '../AnswerSnippet';
+import { AnnotationOverlay } from '../AnnotationOverlay';
+import { CircleCheckIcon, XIcon as XCircleIcon, TriangleIcon, SpinnerIcon, PencilIcon } from '../icons';
+
+interface MarkSheetOverlayProps {
+    point: Point;
+    detectedMarkIndex: number | undefined;
+}
+
+const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ point, detectedMarkIndex }) => {
+    if (!point.markSheetOptions || point.correctAnswerIndex === undefined) return null;
+    
+    const options = Array.from({ length: point.markSheetOptions });
+    const isHorizontal = point.markSheetLayout === 'horizontal';
+
+    return (
+        <div className={`absolute inset-0 flex ${isHorizontal ? 'flex-row' : 'flex-col'} pointer-events-none`}>
+            {options.map((_, i) => {
+                const isCorrectAnswer = i === point.correctAnswerIndex;
+                const isDetectedAnswer = i === detectedMarkIndex;
+                
+                let borderColor = 'transparent';
+                // If student's detected answer is wrong, show their red choice and the green correct answer.
+                if (isDetectedAnswer && !isCorrectAnswer) {
+                    borderColor = 'rgba(239, 68, 68, 0.7)'; // red
+                } else if (isCorrectAnswer) {
+                    // Show green border on the correct answer, which will also cover the case where the student was correct.
+                    borderColor = 'rgba(34, 197, 94, 0.7)'; // green
+                }
+
+                return (
+                    <div key={i} className="flex-1 border-2" style={{ borderColor, borderWidth: '3px' }}>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+
+interface StudentAnswerCardProps {
+    student: Student & { class: string; number: string; name: string };
+    template: Template;
+    area: Area;
+    point: Point;
+    scoreData?: ScoreData;
+    onScoreChange: (studentId: string, areaId: number, newScoreData: Partial<ScoreData>) => void;
+    onStartAnnotation: (studentId: string, areaId: number) => void;
+    onPanCommit: (studentId: string, areaId: number, offset: { x: number, y: number }) => void;
+    status?: 'pending' | 'grading' | 'done' | 'error';
+    isFocused: boolean;
+    onFocus: (studentId: string) => void;
+    partialScoreInput: string;
+    correctedImages: Record<string, string>;
+}
+
+export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
+    student, template, area, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
+    isFocused, onFocus, partialScoreInput, correctedImages
+}) => {
+    const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
+
+    const handleStatusChange = (newStatus: ScoringStatus) => {
+        let newScore: number | null = null;
+        switch (newStatus) {
+            case ScoringStatus.CORRECT:
+                newScore = point.points;
+                break;
+            case ScoringStatus.INCORRECT:
+                newScore = 0;
+                break;
+            case ScoringStatus.PARTIAL:
+                newScore = scoreData?.score ?? Math.round(point.points / 2);
+                break;
+            case ScoringStatus.UNSCORED:
+                newScore = null;
+                break;
+        }
+        onScoreChange(student.id, area.id, { status: newStatus, score: newScore, annotations: scoreData?.annotations });
+    };
+    
+    const handleAnswerClick = () => {
+        if (currentStatus === ScoringStatus.CORRECT) {
+            handleStatusChange(ScoringStatus.INCORRECT);
+        } else {
+            handleStatusChange(ScoringStatus.CORRECT);
+        }
+    };
+
+    const displayScore = partialScoreInput ? `${partialScoreInput}_` : (scoreData?.score ?? '-');
+
+    return (
+         <div id={`student-card-${student.id}`} onClick={() => onFocus(student.id)} className={`bg-white dark:bg-slate-800 rounded-lg shadow-sm border ${isFocused ? 'border-sky-500 ring-2 ring-sky-500' : 'border-slate-200 dark:border-slate-700'} p-2 space-y-2 relative transition-all`}>
+            {status === 'grading' && <div className="absolute inset-0 bg-sky-500/10 flex items-center justify-center rounded-lg"><SpinnerIcon className="w-6 h-6 text-sky-500" /></div>}
+            
+            <div className="flex justify-between items-center">
+                <h5 className="font-semibold text-xs truncate">{student.class}-{student.number} {student.name}</h5>
+                <p className={`font-bold text-sm ${isFocused && partialScoreInput ? 'text-sky-500' : ''}`}>
+                    {displayScore} / {point.points}
+                </p>
+            </div>
+            
+            <div className="relative aspect-video">
+                <AnswerSnippet 
+                    imageSrc={student.filePath}
+                    area={area}
+                    template={template}
+                    pannable={true}
+                    onClick={handleAnswerClick}
+                    manualPanOffset={scoreData?.manualPanOffset}
+                    onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)}
+                />
+                <AnnotationOverlay annotations={scoreData?.annotations || []} />
+                <MarkSheetOverlay point={point} detectedMarkIndex={scoreData?.detectedMarkIndex} />
+            </div>
+
+            <div className="flex items-center justify-around gap-1">
+                <button onClick={() => handleStatusChange(ScoringStatus.CORRECT)} title="正解 (J)" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}>
+                    <CircleCheckIcon className="w-5 h-5" />
+                </button>
+                <button onClick={() => handleStatusChange(ScoringStatus.INCORRECT)} title="不正解 (F)" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'}`}>
+                    <XCircleIcon className="w-5 h-5" />
+                </button>
+                <button onClick={() => handleStatusChange(ScoringStatus.PARTIAL)} title="部分点" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.PARTIAL ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' : 'text-slate-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'}`}>
+                    <TriangleIcon className="w-5 h-5" />
+                </button>
+                <div className="border-l h-5 border-slate-200 dark:border-slate-600 mx-1"></div>
+                <button onClick={() => onStartAnnotation(student.id, area.id)} title="添削" className="p-1 rounded-full text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-900/50">
+                    <PencilIcon className="w-5 h-5"/>
+                </button>
+            </div>
+        </div>
+    );
+};

@@ -1,0 +1,5 @@
+{
+  "name": "一括採点 ver2.47",
+  "description": "An application to assist in grading paper-based tests by uploading a template, selecting answer areas, and then viewing corresponding sections from multiple student answer sheets for efficient manual grading.",
+  "requestFramePermissions": []
+}
