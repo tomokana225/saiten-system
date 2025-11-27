@@ -243,6 +243,26 @@ export interface SheetCell {
     borderWidth?: number; // in pixels (approx)
 }
 
+// Configuration for auto-generation logic
+export interface LayoutConfig {
+    name: string;
+    paperSize: 'A4' | 'B5' | 'A3';
+    borderWidth: number;
+    borderColor: string;
+    sections: {
+        id: string;
+        title: string;
+        questions: {
+            id: string;
+            type: 'text' | 'marksheet' | 'long_text';
+            widthRatio: number;
+            chars?: number;
+            choices?: number;
+            labelOverride?: string;
+        }[];
+    }[];
+}
+
 export interface SheetLayout {
     id: string;
     name: string;
@@ -251,6 +271,7 @@ export interface SheetLayout {
     rowHeights: number[];
     colWidths: number[];
     cells: (SheetCell | null)[][];
+    config?: LayoutConfig; // Store the config to allow re-editing
 }
 
 // Print settings types

@@ -46,20 +46,46 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
         if (!activeLayout) return;
 
         const wb = xlsx.utils.book_new();
-        const wsData: (string | number | null)[][] = [];
+        const wsData: any[][] = [];
         const merges: xlsx.Range[] = [];
 
         // Map cells to Excel data and merges
         activeLayout.cells.forEach((row, r) => {
-            const rowData: (string | number | null)[] = [];
+            const rowData: any[] = [];
             row.forEach((cell, c) => {
                 if (!cell) {
                     rowData.push(null);
                     return;
                 }
                 
-                // Add value
-                rowData.push(cell.text);
+                // Construct cell object with style
+                const cellObj = {
+                    v: cell.text,
+                    t: 's',
+                    s: {
+                        alignment: {
+                            horizontal: cell.hAlign,
+                            vertical: cell.vAlign,
+                            wrapText: true
+                        },
+                        font: {
+                            name: 'Meiryo',
+                            sz: cell.fontSize,
+                            bold: cell.fontWeight === 'bold',
+                            italic: cell.fontStyle === 'italic',
+                            underline: cell.textDecoration === 'underline'
+                        },
+                        border: {
+                            top: cell.borders.top ? { style: cell.borderStyle || 'thin', color: { rgb: (cell.borderColor || '#000').replace('#', '') } } : undefined,
+                            bottom: cell.borders.bottom ? { style: cell.borderStyle || 'thin', color: { rgb: (cell.borderColor || '#000').replace('#', '') } } : undefined,
+                            left: cell.borders.left ? { style: cell.borderStyle || 'thin', color: { rgb: (cell.borderColor || '#000').replace('#', '') } } : undefined,
+                            right: cell.borders.right ? { style: cell.borderStyle || 'thin', color: { rgb: (cell.borderColor || '#000').replace('#', '') } } : undefined,
+                        },
+                        fill: cell.backgroundColor ? { fgColor: { rgb: cell.backgroundColor.replace('#', '') } } : undefined
+                    }
+                };
+
+                rowData.push(cellObj);
 
                 // Add merge info if span > 1
                 if (cell.rowSpan > 1 || cell.colSpan > 1) {
@@ -69,16 +95,34 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                     });
                 }
                 
-                // Fill placeholders for merged cells so dimensions match
+                // Fill placeholders for merged cells
                 for(let i = 1; i < cell.colSpan; i++) rowData.push(null);
             });
             wsData.push(rowData);
         });
 
-        const ws = xlsx.utils.aoa_to_sheet(wsData);
+        const ws = xlsx.utils.aoa_to_sheet([]);
+        
+        // Populate sheet manually to ensure style objects are preserved (aoa_to_sheet might strip them in basic version, but we try)
+        // Note: Standard SheetJS logic doesn't support 's' key. This requires a pro build or style-aware fork.
+        // For standard build, we can only set values.
+        
+        // Re-populating using dense mode
+        ws['!ref'] = xlsx.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: activeLayout.cols - 1, r: activeLayout.rows - 1 } });
+        
+        for (let r = 0; r < wsData.length; r++) {
+            for (let c = 0; c < wsData[r].length; c++) {
+                const cell = wsData[r][c];
+                if (cell) {
+                    const cellRef = xlsx.utils.encode_cell({ r, c });
+                    ws[cellRef] = cell;
+                }
+            }
+        }
+
         ws['!merges'] = merges;
 
-        // Approximate column widths (pixels to char width roughly)
+        // Approximate column widths
         if (activeLayout.colWidths) {
             ws['!cols'] = activeLayout.colWidths.map(w => ({ wpx: w }));
         }
