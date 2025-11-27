@@ -51,10 +51,15 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const interactionThrottle = useRef<number | null>(null);
     const targetScrollRef = useRef<{left: number, top: number} | null>(null);
+    const zoomRef = useRef(zoom);
 
     useEffect(() => {
         setAreas(migrateAreas(initialAreas));
     }, [initialAreas]);
+    
+    useEffect(() => {
+        zoomRef.current = zoom;
+    }, [zoom]);
     
     const getResizeHandle = useCallback((area: Area, x: number, y: number) => {
         const handleSize = RESIZE_HANDLE_SIZE / zoom;
@@ -172,13 +177,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 e.preventDefault(); // Crucial: Stop the browser from zooming the entire page
                 e.stopPropagation();
 
+                const currentZoom = zoomRef.current;
                 const rect = container.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                const pointX = (container.scrollLeft + mouseX) / zoom;
-                const pointY = (container.scrollTop + mouseY) / zoom;
+                const pointX = (container.scrollLeft + mouseX) / currentZoom;
+                const pointY = (container.scrollTop + mouseY) / currentZoom;
                 
-                const newZoom = Math.max(0.2, Math.min(5, zoom - e.deltaY * 0.005));
+                const newZoom = Math.max(0.2, Math.min(5, currentZoom - e.deltaY * 0.005));
                 
                 targetScrollRef.current = { left: pointX * newZoom - mouseX, top: pointY * newZoom - mouseY };
                 setZoom(newZoom);
@@ -191,7 +197,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         return () => {
             container.removeEventListener('wheel', onWheel);
         };
-    }, [zoom]);
+    }, []); // Empty dependency array to bind once, use refs for current values
 
     useLayoutEffect(() => {
         if (targetScrollRef.current && containerRef.current) {

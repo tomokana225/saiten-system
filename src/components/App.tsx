@@ -129,7 +129,8 @@ const AppContent: React.FC = () => {
     const ModeIcon = modeIcons[appMode];
 
     return (
-        <div className="h-screen w-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+        // Changed w-screen h-screen to w-full h-full to respect parent container size and avoid overflow issues
+        <div className="h-full w-full bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
             {isLoading && (
                  <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-sky-400"></div>

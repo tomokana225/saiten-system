@@ -139,20 +139,10 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         return studentsWithInfo.filter(s => (scores[s.id]?.[selectedAreaId!]?.status || ScoringStatus.UNSCORED) === filter);
     }, [studentsWithInfo, filter, scores, selectedAreaId]);
 
+    // Removed auto-focus logic to prevent scroll interference. 
+    // Users must click to focus and enable image panning.
     useEffect(() => {
-        // When the selected question or the filter changes, reset the focus
-        // to the first student in the list to facilitate keyboard grading.
-        if (filteredStudents.length > 0) {
-            const firstStudentId = filteredStudents[0].id;
-            setFocusedStudentId(firstStudentId);
-            // Use a timeout to ensure the DOM has updated before scrolling.
-            setTimeout(() => {
-                document.getElementById(`student-card-${firstStudentId}`)?.scrollIntoView({ block: 'nearest' });
-            }, 0);
-        } else {
-            setFocusedStudentId(null);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        setFocusedStudentId(null);
     }, [selectedAreaId, filter]);
 
     const handleStartGrading = async (areaIds: number[]) => {
