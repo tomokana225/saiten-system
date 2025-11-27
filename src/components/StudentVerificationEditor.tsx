@@ -121,14 +121,14 @@ export const StudentVerificationEditor = () => {
                 <div className="flex gap-4 min-w-[800px]">
                     {/* Left Column: Answer Sheets */}
                     <div className="flex-1 flex flex-col gap-2">
-                        <div className="font-semibold text-center p-2 bg-slate-200 dark:bg-slate-700 rounded-md sticky top-0 z-10">解答用紙 ({uploadedSheets.length})</div>
+                        <div className="h-10 flex items-center justify-center font-semibold text-center bg-slate-200 dark:bg-slate-700 rounded-md sticky top-0 z-10">解答用紙 ({uploadedSheets.length})</div>
                         {Array.from({ length: Math.max(uploadedSheets.length, numRows) }).map((_, index) => {
                             const sheet = uploadedSheets[index];
                             const isDraggable = !!sheet;
                             return (
                                 <div 
                                     key={sheet?.id || `empty-sheet-${index}`}
-                                    className={`relative flex items-center gap-2 p-2 rounded-md border transition-all min-h-[80px] ${
+                                    className={`relative flex items-center gap-2 p-2 rounded-md border transition-all h-28 flex-shrink-0 ${
                                         sheet ? 'bg-white dark:bg-slate-800 border-transparent cursor-grab active:cursor-grabbing hover:shadow-md' : 'bg-transparent border-dashed border-slate-300'
                                     } ${dragOverSheetIndex === index ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30' : ''}`}
                                     draggable={isDraggable}
@@ -141,7 +141,7 @@ export const StudentVerificationEditor = () => {
                                     {sheet ? (
                                         <>
                                             <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0"><GripVerticalIcon className="w-6 h-6" /></div>
-                                            <div className="flex-1 h-20 relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
+                                            <div className="flex-1 h-full relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
                                                 {sheet.filePath ? (
                                                     <AnswerSnippet imageSrc={sheet.filePath} area={nameArea} template={template} />
                                                 ) : (
@@ -164,9 +164,10 @@ export const StudentVerificationEditor = () => {
                     </div>
 
                     {/* Middle Connector */}
-                    <div className="w-8 pt-12 flex flex-col gap-2 items-center">
+                    <div className="w-8 flex flex-col gap-2 items-center">
+                        <div className="h-10 flex-shrink-0"></div> {/* Spacer for header alignment */}
                         {Array.from({ length: numRows }).map((_, i) => (
-                            <div key={i} className="h-[80px] flex items-center justify-center mt-2 first:mt-0">
+                            <div key={i} className="h-28 flex items-center justify-center flex-shrink-0">
                                 <ArrowRightIcon className={`w-4 h-4 ${uploadedSheets[i] && studentInfoList[i] ? 'text-sky-500' : 'text-slate-300 dark:text-slate-700'}`} />
                             </div>
                         ))}
@@ -174,14 +175,14 @@ export const StudentVerificationEditor = () => {
 
                     {/* Right Column: Student Info */}
                     <div className="flex-1 flex flex-col gap-2">
-                        <div className="font-semibold text-center p-2 bg-slate-200 dark:bg-slate-700 rounded-md sticky top-0 z-10">生徒情報 ({studentInfoList.length})</div>
+                        <div className="h-10 flex items-center justify-center font-semibold text-center bg-slate-200 dark:bg-slate-700 rounded-md sticky top-0 z-10">生徒情報 ({studentInfoList.length})</div>
                         {Array.from({ length: Math.max(studentInfoList.length, numRows) }).map((_, index) => {
                             const info = studentInfoList[index];
                             const isDraggable = !!info;
                             return (
                                 <div 
                                     key={info?.id || `empty-info-${index}`}
-                                    className={`relative flex items-center gap-2 p-2 rounded-md border transition-all min-h-[80px] ${
+                                    className={`relative flex items-center gap-2 p-2 rounded-md border transition-all h-28 flex-shrink-0 ${
                                         info ? 'bg-white dark:bg-slate-800 border-transparent cursor-grab active:cursor-grabbing hover:shadow-md' : 'bg-transparent border-dashed border-slate-300'
                                     } ${dragOverInfoIndex === index ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30' : ''}`}
                                     draggable={isDraggable}
@@ -195,9 +196,9 @@ export const StudentVerificationEditor = () => {
                                         <>
                                             <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0"><GripVerticalIcon className="w-6 h-6" /></div>
                                             <div className="flex-1 grid grid-cols-3 gap-2">
-                                                <input type="text" value={info.class} onChange={(e) => handleInfoInputChange(index, 'class', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm" placeholder="組"/>
-                                                <input type="text" value={info.number} onChange={(e) => handleInfoInputChange(index, 'number', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm" placeholder="番号"/>
-                                                <input type="text" value={info.name} onChange={(e) => handleInfoInputChange(index, 'name', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm" placeholder="氏名"/>
+                                                <input type="text" value={info.class} onChange={(e) => handleInfoInputChange(index, 'class', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm self-center" placeholder="組"/>
+                                                <input type="text" value={info.number} onChange={(e) => handleInfoInputChange(index, 'number', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm self-center" placeholder="番号"/>
+                                                <input type="text" value={info.name} onChange={(e) => handleInfoInputChange(index, 'name', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1 text-sm self-center" placeholder="氏名"/>
                                             </div>
                                             <div className="flex flex-col gap-1">
                                                 <button onClick={() => handleInsertBlankInfo(index)} className="p-1 text-slate-400 hover:text-sky-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded" title="ここに空行を挿入"><ArrowDownFromLineIcon className="w-4 h-4"/></button>
