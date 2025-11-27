@@ -207,10 +207,12 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
                                                     
                                                     const markStyle: React.CSSProperties = {
                                                         ...getBaseStyleForArea(targetArea),
-                                                        // Apply special alignment for Question Number mode: Left-aligned, vertically centered, slightly indented
+                                                        padding: 0, // FIX: Reset padding to ensure perfect centering
+                                                        // Force left alignment for Question Number Mode, otherwise follow settings
                                                         justifyContent: isQuestionNumberMode ? 'flex-start' : hAlignMap[settings.mark.hAlign],
                                                         alignItems: isQuestionNumberMode ? 'center' : vAlignMap[settings.mark.vAlign],
-                                                        paddingLeft: isQuestionNumberMode ? '5%' : undefined,
+                                                        // Apply small padding for Q-Num mode to not touch the border
+                                                        paddingLeft: isQuestionNumberMode ? '2%' : 0,
                                                         fontSize: `${settings.mark.fontSize}px`,
                                                         color: markColor,
                                                         opacity: settings.mark.opacity,

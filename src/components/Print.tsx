@@ -111,8 +111,8 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
                     {layoutSettings.mark.positioningMode !== 'question_number_area' && (
                         <AlignmentPicker hAlign={layoutSettings.mark.hAlign} vAlign={layoutSettings.mark.vAlign} onAlignChange={(prop, val) => handleSettingChange('mark', prop, val)} />
                     )}
-                    <div className="flex items-center gap-2 mt-1"><span className="text-xs">横位置:</span><input type="range" min="-100" max="100" value={layoutSettings.mark.hOffset} onChange={e => handleSettingChange('mark', 'hOffset', parseFloat(e.target.value))} className="w-full" /><span className="text-xs w-10 text-right">{layoutSettings.mark.hOffset}%</span></div>
-                    <div className="flex items-center gap-2 mt-1"><span className="text-xs">縦位置:</span><input type="range" min="-100" max="100" value={layoutSettings.mark.vOffset} onChange={e => handleSettingChange('mark', 'vOffset', parseFloat(e.target.value))} className="w-full" /><span className="text-xs w-10 text-right">{layoutSettings.mark.vOffset}%</span></div>
+                    <div className="flex items-center gap-2 mt-1"><span className="text-xs">横位置:</span><input type="range" min="-50" max="50" step="0.5" value={layoutSettings.mark.hOffset} onChange={e => handleSettingChange('mark', 'hOffset', parseFloat(e.target.value))} className="w-full" /><span className="text-xs w-10 text-right">{layoutSettings.mark.hOffset}%</span></div>
+                    <div className="flex items-center gap-2 mt-1"><span className="text-xs">縦位置:</span><input type="range" min="-50" max="50" step="0.5" value={layoutSettings.mark.vOffset} onChange={e => handleSettingChange('mark', 'vOffset', parseFloat(e.target.value))} className="w-full" /><span className="text-xs w-10 text-right">{layoutSettings.mark.vOffset}%</span></div>
                 </div>
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50">
                     <label className="font-medium text-sm text-slate-700 dark:text-slate-300">各問題の点数</label>
@@ -123,12 +123,12 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
                     <CornerPicker corner={layoutSettings.point.corner} onCornerChange={(corner) => handleSettingChange('point', 'corner', corner)} />
                     <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs">横位置:</span>
-                        <input type="range" min="-100" max="100" value={layoutSettings.point.hOffset} onChange={e => handleSettingChange('point', 'hOffset', parseFloat(e.target.value))} className="w-full" />
+                        <input type="range" min="-50" max="50" step="0.5" value={layoutSettings.point.hOffset} onChange={e => handleSettingChange('point', 'hOffset', parseFloat(e.target.value))} className="w-full" />
                         <span className="text-xs w-10 text-right">{layoutSettings.point.hOffset}%</span>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs">縦位置:</span>
-                        <input type="range" min="-100" max="100" value={layoutSettings.point.vOffset} onChange={e => handleSettingChange('point', 'vOffset', parseFloat(e.target.value))} className="w-full" />
+                        <input type="range" min="-50" max="50" step="0.5" value={layoutSettings.point.vOffset} onChange={e => handleSettingChange('point', 'vOffset', parseFloat(e.target.value))} className="w-full" />
                         <span className="text-xs w-10 text-right">{layoutSettings.point.vOffset}%</span>
                     </div>
                 </div>
