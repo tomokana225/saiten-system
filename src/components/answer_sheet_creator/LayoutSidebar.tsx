@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { SheetLayout, SheetCell, LayoutConfig } from '../../types';
-import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon } from '../icons';
+import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon } from '../icons';
 
 interface LayoutSidebarProps {
     layouts: Record<string, SheetLayout>;
@@ -42,7 +42,6 @@ const c = (overrides: Partial<SheetCell> = {}): SheetCell => ({
 
 // Auto-layout engine
 const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
-    // High-resolution grid for flexible placement
     const totalCols = 60; 
     const mmToPx = 3.78; 
     const baseRowHeightMm = config.defaultRowHeight || 10; 
@@ -65,7 +64,6 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
         const safeSpan = Math.min(span, totalCols - cIdx);
         if (safeSpan <= 0) return;
 
-        // Apply global style settings if not overridden
         const cellContent = {
             ...content,
             borderWidth: content.borderWidth ?? config.borderWidth,
@@ -123,7 +121,7 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
 
     // --- Body ---
     const sectionLabelWidth = 4;
-    const contentAreaWidth = totalCols - sectionLabelWidth - 1; // -1 right margin
+    const contentAreaWidth = totalCols - sectionLabelWidth - 1;
     const contentStartCol = sectionLabelWidth;
 
     let globalQNum = 1;
@@ -133,7 +131,9 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
         
         let currentRow = addRow();
         let currentContentCol = 0; 
-        let maxRowHeightInLine = baseRowHeightMm;
+        
+        // Track row heights for the current line to adjust later if items have different heights
+        let currentRowMaxHeightRatio = 1.0; 
 
         section.questions.forEach((q, idx) => {
             const qNumText = q.labelOverride || `${globalQNum}`;
@@ -156,22 +156,16 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
 
             // Check wrapping
             if (currentContentCol + totalItemWidth > contentAreaWidth) {
-                // Apply max height to previous row if needed (not easily possible with this structure without lookahead or post-processing)
-                // Instead, we just set the height of the row when creating it.
-                // For simplified logic: The row height is determined by the max heightRatio of items in that row.
-                // We'll update the rowHeight later.
-                
-                // Finalize previous row height
-                rowHeights[currentRow] = maxRowHeightInLine * mmToPx;
+                // Apply max height to previous row
+                rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
 
                 currentRow = addRow();
                 currentContentCol = 0;
-                maxRowHeightInLine = baseRowHeightMm;
+                currentRowMaxHeightRatio = 1.0;
             }
 
-            // Update max height for current line
-            const itemHeight = baseRowHeightMm * (q.heightRatio || 1.0);
-            maxRowHeightInLine = Math.max(maxRowHeightInLine, itemHeight);
+            const heightRatio = q.heightRatio || 1.0;
+            currentRowMaxHeightRatio = Math.max(currentRowMaxHeightRatio, heightRatio);
 
             // Place Question Number
             const absCol = contentStartCol + currentContentCol;
@@ -195,11 +189,11 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                 placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({ text: '' }));
             }
 
-            currentContentCol += totalItemWidth + 1; // +1 gap
+            currentContentCol += totalItemWidth + 1; 
         });
         
-        // Finalize last row height
-        rowHeights[currentRow] = maxRowHeightInLine * mmToPx;
+        // Finalize last row height of section
+        rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
 
         // Place Section Label
         const sectionEndRow = cells.length;
@@ -240,6 +234,9 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
         headerSettings: { showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true }
     });
+
+    // Expansion states for questions
+    const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
 
     // --- Init Modal State ---
     const [initName, setInitName] = useState('');
@@ -283,7 +280,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         setIsInitModalOpen(false);
     };
 
-    // Helper to add a section
     const addSection = () => {
         const newSection: SectionDef = {
             id: `sec_${Date.now()}`,
@@ -291,26 +287,25 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             questions: []
         };
         setConfig(prev => ({ ...prev, sections: [...prev.sections, newSection] }));
+        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
     };
 
-    // Helper to add a question
-    const addQuestion = (type: QuestionType, widthRatio: number = 5) => {
+    const addQuestion = (type: QuestionType) => {
         let sections = [...config.sections];
         if (sections.length === 0) {
             sections.push({ id: `sec_${Date.now()}`, title: 'I', questions: [] });
         }
         const lastSection = sections[sections.length - 1];
-        
-        lastSection.questions.push({
+        const newQ = {
             id: `q_${Date.now()}`,
             type,
-            widthRatio,
+            widthRatio: 5,
             heightRatio: 1.0,
             choices: type === 'marksheet' ? 4 : undefined,
-        });
-        
+        };
+        lastSection.questions.push(newQ);
         setConfig(prev => ({ ...prev, sections }));
-        // Auto update layout for instant feedback
+        setExpandedQuestionIds(prev => new Set([...prev, newQ.id])); // Auto expand new question
         setTimeout(() => handleCreateOrUpdateLayout(false), 0);
     };
 
@@ -349,6 +344,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         setTimeout(() => handleCreateOrUpdateLayout(false), 0);
     };
 
+    const toggleExpand = (qId: string) => {
+        setExpandedQuestionIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(qId)) newSet.delete(qId);
+            else newSet.add(qId);
+            return newSet;
+        });
+    };
+
     const handleCreateOrUpdateLayout = (showAlert = true) => {
         if (!config.name) {
             if(showAlert) alert('テスト名を入力してください');
@@ -373,7 +377,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         }
     };
 
-    // ... Import/Export Handlers ...
     const handleImportLayout = async () => {
         const result = await window.electronAPI.invoke('import-sheet-layout');
         if (result.success && result.data) {
@@ -461,33 +464,24 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                         <div className="flex-1 overflow-y-auto p-4 space-y-6">
                             {/* Basic Settings */}
                             <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
-                                <input type="text" value={config.name} onChange={e => setConfig({...config, name: e.target.value})} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名を入力"/>
+                                <input type="text" value={config.name} onChange={e => { setConfig({...config, name: e.target.value}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名を入力"/>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <select value={config.paperSize} onChange={e => setConfig({...config, paperSize: e.target.value as PaperSize})} className="p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
+                                    <select value={config.paperSize} onChange={e => { setConfig({...config, paperSize: e.target.value as PaperSize}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
                                     <div className="flex items-center gap-1 bg-white dark:bg-slate-700 border rounded px-2">
                                         <label className="text-[10px] text-slate-400 whitespace-nowrap">行高:</label>
                                         <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => { setConfig({...config, defaultRowHeight: parseInt(e.target.value) || 10}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-1 text-sm bg-transparent text-right"/>
                                         <span className="text-xs text-slate-400">mm</span>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="flex items-center gap-1 bg-white dark:bg-slate-700 border rounded px-2">
-                                        <input type="color" value={config.borderColor} onChange={e => setConfig({...config, borderColor: e.target.value})} className="w-6 h-6 cursor-pointer border-none bg-transparent"/>
-                                        <input type="number" min="1" max="5" value={config.borderWidth} onChange={e => setConfig({...config, borderWidth: parseInt(e.target.value)})} className="w-full p-1 text-sm bg-transparent text-right"/>
-                                        <span className="text-xs text-slate-400">px</span>
-                                    </div>
-                                </div>
                             </div>
 
                             {/* Add Buttons */}
                             <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => addQuestion('text', 2)} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ListIcon className="w-6 h-6 text-blue-500 mb-1"/><span className="text-xs font-bold">短答</span></button>
-                                <button onClick={() => addQuestion('text', 5)} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ListIcon className="w-6 h-6 text-indigo-500 mb-1"/><span className="text-xs font-bold">記述</span></button>
-                                <button onClick={() => addQuestion('long_text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><FileUpIcon className="w-6 h-6 text-purple-500 mb-1"/><span className="text-xs font-bold">長文</span></button>
+                                <button onClick={() => addQuestion('text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ListIcon className="w-6 h-6 text-blue-500 mb-1"/><span className="text-xs font-bold">記述</span></button>
                                 <button onClick={() => addQuestion('marksheet')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><CalculatorIcon className="w-6 h-6 text-teal-500 mb-1"/><span className="text-xs font-bold">記号</span></button>
+                                <button onClick={() => addQuestion('long_text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><FileUpIcon className="w-6 h-6 text-purple-500 mb-1"/><span className="text-xs font-bold">長文</span></button>
+                                <button onClick={addSection} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ArrowDownFromLineIcon className="w-6 h-6 text-slate-500 mb-1"/><span className="text-xs font-bold">大問</span></button>
                             </div>
-                            
-                            <button onClick={addSection} className="w-full py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-sm font-bold text-slate-500 dark:text-slate-400 transition-colors">＋ 新しい大問を追加</button>
 
                             {/* Tree View */}
                             <div className="space-y-4">
@@ -503,43 +497,49 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                         </div>
                                         
                                         <div className="space-y-2">
-                                            {section.questions.map((q, qIdx) => (
-                                                <div key={q.id} className="group flex flex-col gap-2 p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-sm relative">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="text-xs font-bold text-slate-400 w-4 text-center">{qIdx+1}</div>
-                                                        <div className="flex-1 flex justify-between items-center text-xs">
-                                                            <span className="font-bold">{q.type === 'marksheet' ? '記号' : q.type === 'long_text' ? '長文' : '記述'}</span>
-                                                            {/* Inline Add/Delete Controls */}
-                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button onClick={() => insertQuestionAfter(sIdx, qIdx, q)} className="p-1 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900 rounded" title="下に追加"><PlusIcon className="w-3 h-3"/></button>
-                                                                <button onClick={() => deleteQuestion(section.id, q.id)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900 rounded" title="削除"><MinusIcon className="w-3 h-3"/></button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Inline Settings */}
-                                                    <div className="pl-7 grid grid-cols-2 gap-2 text-xs">
-                                                        {q.type !== 'long_text' && (
-                                                            <div className="flex items-center gap-1">
-                                                                <span className="text-[10px] text-slate-400">幅:</span>
-                                                                <input type="range" min="1" max="10" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center gap-1">
-                                                            <span className="text-[10px] text-slate-400">高:</span>
-                                                            <input type="number" step="0.5" min="0.5" max="5" value={q.heightRatio || 1.0} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-10 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                        </div>
-                                                        {q.type === 'marksheet' && (
-                                                            <div className="flex items-center gap-1 col-span-2">
-                                                                <span className="text-[10px] text-slate-400">択:</span>
-                                                                <div className="flex gap-1">
-                                                                    {[3, 4, 5].map(n => <button key={n} onClick={() => updateQuestion(section.id, q.id, { choices: n })} className={`px-1.5 py-0.5 text-[10px] rounded border ${q.choices === n ? 'bg-sky-500 text-white border-sky-500' : 'bg-slate-50 dark:bg-slate-700 border-slate-300'}`}>{n}</button>)}
+                                            {section.questions.map((q, qIdx) => {
+                                                const isExpanded = expandedQuestionIds.has(q.id);
+                                                return (
+                                                    <div key={q.id} className="group flex flex-col gap-1 p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-sm relative">
+                                                        <div className="flex items-center gap-3">
+                                                            <button onClick={() => toggleExpand(q.id)} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                                                                {isExpanded ? <ChevronUpIcon className="w-3 h-3 text-slate-400"/> : <ChevronDownIcon className="w-3 h-3 text-slate-400"/>}
+                                                            </button>
+                                                            <div className="flex-1 flex justify-between items-center text-xs">
+                                                                <span className="font-bold">{q.type === 'marksheet' ? '記号' : q.type === 'long_text' ? '長文' : '記述'}</span>
+                                                                {/* Inline Add/Delete Controls */}
+                                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <button onClick={() => insertQuestionAfter(sIdx, qIdx, q)} className="p-1 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900 rounded" title="下に追加"><PlusIcon className="w-3 h-3"/></button>
+                                                                    <button onClick={() => deleteQuestion(section.id, q.id)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900 rounded" title="削除"><MinusIcon className="w-3 h-3"/></button>
                                                                 </div>
                                                             </div>
+                                                        </div>
+                                                        
+                                                        {isExpanded && (
+                                                            <div className="pl-8 pr-2 pb-2 grid grid-cols-2 gap-2 text-xs border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
+                                                                {q.type !== 'long_text' && (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="text-[10px] text-slate-400">幅:</span>
+                                                                        <input type="range" min="1" max="10" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-[10px] text-slate-400">高:</span>
+                                                                    <input type="number" step="0.5" min="0.5" max="5" value={q.heightRatio || 1.0} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                </div>
+                                                                {q.type === 'marksheet' && (
+                                                                    <div className="flex items-center gap-1 col-span-2">
+                                                                        <span className="text-[10px] text-slate-400">択:</span>
+                                                                        <div className="flex gap-1">
+                                                                            {[3, 4, 5].map(n => <button key={n} onClick={() => updateQuestion(section.id, q.id, { choices: n })} className={`px-1.5 py-0.5 text-[10px] rounded border ${q.choices === n ? 'bg-sky-500 text-white border-sky-500' : 'bg-slate-50 dark:bg-slate-700 border-slate-300'}`}>{n}</button>)}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                             {section.questions.length === 0 && <div className="text-xs text-slate-400 py-2">問題を追加してください</div>}
                                         </div>
                                     </div>

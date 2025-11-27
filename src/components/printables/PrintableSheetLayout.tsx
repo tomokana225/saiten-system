@@ -2,7 +2,7 @@ import React from 'react';
 import type { SheetLayout } from '../../types';
 
 export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: SheetLayout }>(({ layout }, ref) => {
-    // Enhanced print styles for better fidelity
+    // Enhanced print styles for high fidelity
     const printStyles = `
         @media print {
             @page {
@@ -12,41 +12,68 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
             body {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                margin: 0;
+                padding: 0;
             }
             .printable-area {
-                width: 100%;
-                height: 100%;
+                width: 100vw;
+                height: 100vh;
                 background-color: white;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .sheet-container {
+                /* Ensure it fits on paper */
+                width: 100%;
+                height: 100%; 
+                padding: 10mm; /* Default print margin */
+                box-sizing: border-box;
+            }
+            .print-table {
+                border-collapse: collapse;
+                width: 100%;
+                table-layout: fixed; /* Crucial for exact column widths */
+                font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+            }
+            .print-table td {
+                border-style: solid;
+                border-color: black;
+                /* Ensure borders print */
+                box-sizing: border-box;
+                overflow: hidden;
+            }
+            .print-table td:empty::after {
+                content: "\\00a0"; /* Non-breaking space to preserve height */
+            }
+        }
+        /* Styles for screen preview */
+        @media screen {
+            .printable-area {
+                background: white;
+                color: black;
+            }
+            .sheet-container {
+                padding: 10mm;
+                box-sizing: border-box;
+                width: 210mm; /* A4 width */
+                min-height: 297mm; /* A4 height */
+                margin: 0 auto;
+                background: white;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
             }
             .print-table {
                 border-collapse: collapse;
                 width: 100%;
                 table-layout: fixed;
-                font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
-            }
-            .print-table td {
-                /* Force borders and backgrounds */
-                border-style: solid;
-                border-color: black;
-                background-clip: padding-box; 
-            }
-            /* Ensure empty cells have height */
-            .print-table td:empty::after {
-                content: "\\00a0";
             }
         }
     `;
 
-    // Calculate dimensions in mm for the wrapper to match paper size
-    // Using standard sizes as base, assuming printer will scale or fit to page
-    // 96 DPI to mm conversion: val * 25.4 / 96
-    const pxToMm = (px: number) => px * 25.4 / 96;
-
     return (
-        <div ref={ref} className="bg-white text-black printable-area">
+        <div ref={ref} className="printable-area">
             <style>{printStyles}</style>
-            {/* Wrapper with padding corresponding to page margins (approx 10mm-20mm is standard) */}
-            <div className="p-[10mm] box-border w-full h-full">
+            <div className="sheet-container">
                 <table className="print-table">
                     <colgroup>
                         {layout.colWidths.map((w, i) => (
@@ -70,7 +97,6 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         textDecoration: cell.textDecoration,
                                         fontSize: `${cell.fontSize}pt`,
                                         
-                                        // Use inline styles for borders to ensure they are applied
                                         borderTop: cell.borders?.top ? borderStyleBase(cell.borderWidth, cell.borderStyle, cell.borderColor) : 'none',
                                         borderBottom: cell.borders?.bottom ? borderStyleBase(cell.borderWidth, cell.borderStyle, cell.borderColor) : 'none',
                                         borderLeft: cell.borders?.left ? borderStyleBase(cell.borderWidth, cell.borderStyle, cell.borderColor) : 'none',
@@ -78,9 +104,7 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         
                                         backgroundColor: cell.backgroundColor || 'transparent',
                                         padding: '2px 4px',
-                                        overflow: 'hidden',
-                                        wordWrap: 'break-word',
-                                        whiteSpace: 'pre-wrap', // Handle multiline text
+                                        whiteSpace: 'pre-wrap',
                                     };
                                     return (
                                         <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}>
