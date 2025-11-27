@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ProjectProvider, useProject } from '../context/ProjectContext';
 import { AppMode, AppStep } from '../types';
 import type { QuestionStats, AISettings } from '../types';
@@ -128,6 +128,24 @@ const AppContent: React.FC = () => {
     };
     const ModeIcon = modeIcons[appMode];
 
+    // Determine if the current view should have page-level scrolling or fixed layout
+    const isScrollableStep = useMemo(() => {
+        if (currentStep === AppStep.SETTINGS) return true;
+        if (appMode === AppMode.HOME) return true;
+        // In grading mode, these steps are document-like and need scrolling
+        if (appMode === AppMode.GRADING) {
+            return [
+                AppStep.CLASS_SELECTION,
+                AppStep.TEMPLATE_UPLOAD,
+                AppStep.STUDENT_INFO_INPUT,
+                AppStep.STUDENT_UPLOAD
+            ].includes(currentStep);
+        }
+        // All other modes/steps (TemplateEditor, GradingView, Roster, etc.) have their own internal scrolling
+        // and should fill the screen without page-level scrolling.
+        return false; 
+    }, [appMode, currentStep]);
+
     return (
         // Changed w-screen h-screen to w-full h-full to respect parent container size and avoid overflow issues
         <div className="h-full w-full bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
@@ -179,7 +197,7 @@ const AppContent: React.FC = () => {
                         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">設定</h2>
                     </div>
                 )}
-                <div className="flex-1 flex flex-col overflow-auto">
+                <div className={`flex-1 flex flex-col ${isScrollableStep ? 'overflow-auto' : 'overflow-hidden'}`}>
                     {renderContent()}
                 </div>
             </main>
