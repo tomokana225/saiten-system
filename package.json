@@ -9,6 +9,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "build": "electron-forge make",
+    "build:web": "webpack --config webpack.web.config.js",
     "lint": "eslint --ext .ts,.tsx ."
   },
   "keywords": [],
@@ -40,12 +41,16 @@
     "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.29.1",
     "fork-ts-checker-webpack-plugin": "^9.0.2",
+    "html-webpack-plugin": "^5.6.0",
     "node-loader": "^2.0.0",
     "postcss": "^8.4.38",
     "postcss-loader": "^8.1.1",
     "style-loader": "^4.0.0",
     "tailwindcss": "^3.4.4",
     "ts-loader": "^9.5.1",
-    "typescript": "~4.5.4"
+    "typescript": "~4.5.4",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.4"
   }
 }

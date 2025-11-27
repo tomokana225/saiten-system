@@ -9,17 +9,13 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       config: {},
     },
-    {
-      name: '@electron-forge/maker-zip',
-      platforms: ['darwin', 'win32'],
-    },
   ],
   plugins: [
     {
       name: '@electron-forge/plugin-webpack',
       config: {
-        contentSecurityPolicy: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; connect-src 'self' https://generativelanguage.googleapis.com;`,
-        devContentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; connect-src 'self' https://generativelanguage.googleapis.com;`,
+        contentSecurityPolicy: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob:; connect-src 'self' https://generativelanguage.googleapis.com;`,
+        devContentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob:; connect-src 'self' https://generativelanguage.googleapis.com;`,
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',
