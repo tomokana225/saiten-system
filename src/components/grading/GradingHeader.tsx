@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { GradingFilter, Area } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
-import { SparklesIcon, SpinnerIcon } from '../icons';
+import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon } from '../icons';
 
 interface GradingHeaderProps {
     selectedArea: Area | undefined;
@@ -25,7 +25,6 @@ interface GradingHeaderProps {
 
 const filterOptions: { value: GradingFilter; label: string }[] = [
     { value: 'ALL', label: 'すべて' },
-    // FIX: Use ScoringStatus enum member instead of string literal to match the type definition.
     { value: ScoringStatus.UNSCORED, label: '未採点' },
     { value: 'SCORED', label: '採点済み' },
     { value: ScoringStatus.CORRECT, label: '正解' },
@@ -44,6 +43,7 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;
+    const [isExpanded, setIsExpanded] = useState(false);
 
     return (
         <div className="flex-shrink-0 flex flex-col gap-3 p-3 bg-white dark:bg-slate-800 rounded-lg shadow">
@@ -92,68 +92,76 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                 <div className="flex items-center gap-4">
                     <button onClick={() => onBulkScore(ScoringStatus.CORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>
                     <button onClick={() => onBulkScore(ScoringStatus.INCORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">すべてを☓に</button>
+                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title={isExpanded ? "設定を閉じる" : "設定を開く"}>
+                        {isExpanded ? <ChevronUpIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
+                    </button>
                 </div>
             </div>
-            {!isMarkSheet && (
-                 <div className="border-t pt-3 dark:border-slate-700">
-                    <h4 className="text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">AI採点設定（この問題）</h4>
-                    <div className="flex items-start gap-4">
-                        <div className="w-40">
-                            <label className="text-xs text-slate-600 dark:text-slate-400">採点モード</label>
-                            <select 
-                                value={aiGradingMode}
-                                onChange={(e) => onAiGradingModeChange(e.target.value as 'auto' | 'strict')}
-                                className="w-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded p-1.5 text-sm mt-1"
-                                disabled={!selectedArea || isAnyGrading}
-                            >
-                                <option value="auto">自動認識</option>
-                                <option value="strict">厳格モード (記号/単語)</option>
+            
+            {isExpanded && (
+                <div className="space-y-3 border-t pt-3 dark:border-slate-700">
+                    {!isMarkSheet && (
+                        <div>
+                            <h4 className="text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">AI採点設定（この問題）</h4>
+                            <div className="flex items-start gap-4">
+                                <div className="w-40">
+                                    <label className="text-xs text-slate-600 dark:text-slate-400">採点モード</label>
+                                    <select 
+                                        value={aiGradingMode}
+                                        onChange={(e) => onAiGradingModeChange(e.target.value as 'auto' | 'strict')}
+                                        className="w-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded p-1.5 text-sm mt-1"
+                                        disabled={!selectedArea || isAnyGrading}
+                                    >
+                                        <option value="auto">自動認識</option>
+                                        <option value="strict">厳格モード (記号/単語)</option>
+                                    </select>
+                                </div>
+                                {aiGradingMode === 'strict' && (
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-xs text-slate-600 dark:text-slate-400">解答の形式</label>
+                                        <input
+                                            type="text"
+                                            value={answerFormat}
+                                            onChange={(e) => onAnswerFormatChange(e.target.value)}
+                                            placeholder="例: アイウエオ"
+                                            className="w-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded p-1.5 text-xs"
+                                            disabled={!selectedArea || isAnyGrading}
+                                        />
+                                        <div className="flex flex-wrap gap-1">
+                                            {presetAnswerFormats.map(preset => (
+                                                <button key={preset.label} onClick={() => onAnswerFormatChange(preset.value)} disabled={isAnyGrading} className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 rounded disabled:opacity-50">
+                                                    {preset.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="filter-select" className="text-sm">絞り込み表示:</label>
+                            <select id="filter-select" value={filter} onChange={e => onFilterChange(e.target.value as GradingFilter)} disabled={isAnyGrading} className="p-1.5 text-sm bg-slate-100 dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600 disabled:opacity-50">
+                            {filterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                             </select>
                         </div>
-                        {aiGradingMode === 'strict' && (
-                            <div className="flex-1 space-y-1">
-                                <label className="text-xs text-slate-600 dark:text-slate-400">解答の形式</label>
-                                <input
-                                    type="text"
-                                    value={answerFormat}
-                                    onChange={(e) => onAnswerFormatChange(e.target.value)}
-                                    placeholder="例: アイウエオ"
-                                    className="w-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded p-1.5 text-xs"
-                                    disabled={!selectedArea || isAnyGrading}
-                                />
-                                <div className="flex flex-wrap gap-1">
-                                    {presetAnswerFormats.map(preset => (
-                                        <button key={preset.label} onClick={() => onAnswerFormatChange(preset.value)} disabled={isAnyGrading} className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 rounded disabled:opacity-50">
-                                            {preset.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-2 w-64">
+                            <label htmlFor="column-slider" className="text-sm whitespace-nowrap">表示列数: {columnCount}</label>
+                            <input
+                                id="column-slider"
+                                type="range"
+                                min="1"
+                                max="10"
+                                value={columnCount}
+                                onChange={e => onColumnCountChange(parseInt(e.target.value, 10))}
+                                disabled={isAnyGrading}
+                                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-500 disabled:opacity-50"
+                            />
+                        </div>
                     </div>
                 </div>
             )}
-             <div className="flex justify-between items-center border-t pt-3 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                    <label htmlFor="filter-select" className="text-sm">絞り込み表示:</label>
-                    <select id="filter-select" value={filter} onChange={e => onFilterChange(e.target.value as GradingFilter)} disabled={isAnyGrading} className="p-1.5 text-sm bg-slate-100 dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600 disabled:opacity-50">
-                       {filterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                    </select>
-                </div>
-                <div className="flex items-center gap-2 w-64">
-                    <label htmlFor="column-slider" className="text-sm whitespace-nowrap">表示列数: {columnCount}</label>
-                    <input
-                        id="column-slider"
-                        type="range"
-                        min="1"
-                        max="10"
-                        value={columnCount}
-                        onChange={e => onColumnCountChange(parseInt(e.target.value, 10))}
-                        disabled={isAnyGrading}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-500 disabled:opacity-50"
-                    />
-                </div>
-            </div>
         </div>
     );
 };

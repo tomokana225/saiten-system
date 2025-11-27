@@ -77,3 +77,5 @@ export const WavesIcon = createIcon(<><path d="M2 6c.6.5 1.2 1 2.5 1 2.5 0 2.5-2
 export const PaletteIcon = createIcon(<><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 1 0 10 10"/><path d="M12 2A10 10 0 1 0 2 12"/></>);
 export const PencilIcon = createIcon(<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>);
 export const RotateCcwIcon = createIcon(<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>);
+export const ChevronDownIcon = createIcon(<path d="m6 9 6 6 6-6"/>);
+export const ChevronUpIcon = createIcon(<path d="m18 15-6-6-6 6"/>);
