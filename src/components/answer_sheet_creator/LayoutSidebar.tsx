@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { SheetLayout, SheetCell, LayoutConfig, HeaderElement } from '../../types';
 import { generateAutoLayout, PAPER_DIMENSIONS } from './LayoutGenerator';
 import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, ArrowLeftIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon, AlignVerticalJustifyStartIcon, AlignVerticalJustifyEndIcon, PrintIcon } from '../icons';
@@ -38,7 +38,10 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
 
-    // Load config when switching to edit tab or changing active layout
+    // Generate layout on the fly for preview
+    // We use useMemo to avoid re-generating on every render unless config changes
+    const previewLayout = useMemo(() => generateAutoLayout(config), [config]);
+
     useEffect(() => {
         if (activeLayoutId && layouts[activeLayoutId]?.config) {
             const loadedConfig = layouts[activeLayoutId].config as LayoutConfig;
@@ -52,7 +55,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 headerElements = [
                     { id: 'title', label: 'タイトル', height: 2, visible: mergedHeader.showTitle },
                     { id: 'score', label: '点数欄', height: 2, visible: mergedHeader.showScore },
-                    { id: 'name', label: '氏名欄', height: mergedHeader.nameHeight || 1, visible: mergedHeader.nameHeight ? true : false } // Fallback
+                    { id: 'name', label: '氏名欄', height: mergedHeader.nameHeight || 1, visible: mergedHeader.nameHeight ? true : false }
                 ];
             }
 
@@ -64,8 +67,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 headerPosition: loadedConfig.headerPosition || 'top'
             };
             setConfig(mergedConfig);
-        } else if (!activeLayoutId) {
-           // Do nothing or reset
         }
     }, [activeLayoutId, layouts]);
 
@@ -272,8 +273,12 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
-    // Helper to calculate visual representation for preview
-    let previewGlobalQNum = 1;
+    // Helper to convert mm to px for preview scaling
+    // Assuming 96 DPI for screen display is roughly correct for logic, but for CSS width we use mm directly if possible or px.
+    // PrintableSheetLayout uses fixed layout with px derived from mm. Here we need to scale it down to fit.
+    // Let's use a scale transform.
+
+    const previewScale = 0.6; // Scale down for preview
 
     return (
         <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
@@ -455,92 +460,59 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                         </div>
                     </aside>
 
-                    {/* Preview Area */}
-                    <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 p-8 overflow-auto flex justify-center">
-                        <div 
-                            className="bg-white shadow-lg relative"
-                            style={{ 
-                                width: `${PAPER_DIMENSIONS[config.paperSize].width}mm`, 
-                                height: `${PAPER_DIMENSIONS[config.paperSize].height}mm`,
-                                padding: '10mm',
-                                boxSizing: 'border-box'
-                            }}
-                        >
-                            {/* Print Button in Header */}
-                             <div className="absolute top-2 right-2 flex gap-2 print:hidden z-20">
+                    {/* Right Panel: Real Preview using generated Layout */}
+                    <div className="flex-1 bg-slate-200 dark:bg-slate-900/50 p-8 overflow-auto flex justify-center">
+                        <div className="relative shadow-2xl">
+                            <div className="absolute top-2 right-2 flex gap-2 print:hidden z-20">
                                 {onPrintPreview && <button onClick={onPrintPreview} className="p-2 bg-sky-600 text-white rounded-full shadow hover:bg-sky-500 transition-colors" title="印刷プレビュー"><PrintIcon className="w-5 h-5"/></button>}
                             </div>
-
-                            {config.headerPosition === 'top' && (
-                                <div className="border-b-2 border-black pb-2 mb-4 text-center">
-                                    {config.headerElements?.filter(e => e.visible).map(el => {
-                                        if (el.id === 'title') return <h1 key={el.id} className="text-2xl font-bold">{config.name}</h1>;
-                                        return null; 
-                                    })}
-                                    <div className="flex justify-between mt-2 text-sm text-slate-400">
-                                         {config.headerElements?.find(e => e.id === 'name')?.visible && <span>[氏名欄]</span>}
-                                         {config.headerElements?.find(e => e.id === 'score')?.visible && <span>[点数欄]</span>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {config.sections.map((section, sIdx) => (
-                                <div key={section.id} className="flex mb-6 relative group/section">
-                                    <div className="w-12 flex-shrink-0 border border-black flex items-center justify-center text-xl font-bold bg-gray-200 mr-2 relative">
-                                        {section.title}
-                                        <div className="absolute top-0 -left-8 hidden group-hover/section:flex flex-col gap-1 z-20">
-                                            <button onClick={() => addQuestion('text')} className="p-1 bg-white shadow rounded-full hover:text-green-600"><PlusIcon className="w-4 h-4"/></button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="flex-1 flex flex-wrap content-start gap-y-2">
-                                        {section.questions.map((q, qIdx) => {
-                                            // Re-calculate visual width for preview
-                                            let widthStyle = '50%';
-                                            if (q.type === 'long_text') widthStyle = '100%';
-                                            else if (q.type === 'english_word') widthStyle = `${Math.min(100, (q.wordCount || 5) * 10)}%`;
-                                            else widthStyle = `${(q.widthRatio / 20) * 100}%`;
-                                            
-                                            const qLabel = q.labelOverride || `${previewGlobalQNum++}`;
-
-                                            return (
-                                                <div 
-                                                    key={q.id} 
-                                                    className="relative group/question box-border flex pr-2 cursor-pointer"
-                                                    style={{ width: widthStyle, height: `${(config.defaultRowHeight || 10) * (q.heightRatio || 1)}mm` }}
-                                                    onClick={() => handleQuestionClick(q.id)}
-                                                >
-                                                    <div className="w-8 border border-black border-r-0 bg-gray-100 flex items-center justify-center text-sm font-bold">{qLabel}</div>
-                                                    
-                                                    <div className="flex-1 border border-black relative bg-white flex items-center overflow-hidden">
-                                                        {q.type === 'marksheet' && (
-                                                            <div className="flex w-full justify-around text-xs">
-                                                                {Array.from({length: q.choices || 4}).map((_, i) => <span key={i} className="border rounded-full w-4 h-4 flex items-center justify-center border-slate-400">{i+1}</span>)}
-                                                            </div>
-                                                        )}
-                                                        {q.type === 'english_word' && (
-                                                            <div className="flex w-full h-full flex-wrap items-end pb-1 px-1 gap-1">
-                                                                {Array.from({length: q.wordCount || 5}).map((_, i) => <div key={i} className="flex-1 h-4 border-b border-dashed border-black min-w-[20px]"></div>)}
-                                                            </div>
-                                                        )}
-                                                        
-                                                        {/* Hover Controls Overlay - Fixed z-index and visibility */}
-                                                        <div className="absolute right-0 top-0 bottom-0 w-8 bg-slate-100/90 border-l flex-col items-center justify-center gap-1 z-50 hidden group-hover/question:flex">
-                                                            <button onClick={(e) => { e.stopPropagation(); insertQuestionAfter(sIdx, qIdx, q); }} className="p-1 text-green-600 hover:bg-green-200 rounded" title="追加"><PlusIcon className="w-3 h-3"/></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); deleteQuestion(section.id, q.id); }} className="p-1 text-red-600 hover:bg-red-200 rounded" title="削除"><MinusIcon className="w-3 h-3"/></button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                             {config.headerSettings?.position === 'bottom' && (
-                                <div className="border-t-2 border-black pt-2 mt-auto text-center">
-                                     <span className="text-slate-400">[下部ヘッダーエリア]</span>
-                                </div>
-                            )}
+                            {/* Render the actual SheetLayout as a table, scaled down slightly for viewing */}
+                            <div style={{ 
+                                width: `${PAPER_DIMENSIONS[config.paperSize].width}mm`, 
+                                height: `${PAPER_DIMENSIONS[config.paperSize].height}mm`,
+                                backgroundColor: 'white',
+                                padding: '10mm',
+                                boxSizing: 'border-box',
+                                overflow: 'hidden' // Clip content to page size
+                            }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                                    <colgroup>
+                                        {previewLayout.colWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
+                                    </colgroup>
+                                    <tbody>
+                                        {previewLayout.cells.map((row, r) => (
+                                            <tr key={r} style={{ height: `${previewLayout.rowHeights[r]}px` }}>
+                                                {row.map((cell, c) => {
+                                                    if (!cell) return null;
+                                                    const borderStyleBase = `${cell.borderWidth || 1}px ${cell.borderStyle || 'solid'} ${cell.borderColor || '#000'}`;
+                                                    const style: React.CSSProperties = {
+                                                        textAlign: cell.hAlign,
+                                                        verticalAlign: cell.vAlign,
+                                                        fontWeight: cell.fontWeight,
+                                                        fontStyle: cell.fontStyle,
+                                                        textDecoration: cell.textDecoration,
+                                                        fontSize: `${cell.fontSize}pt`,
+                                                        borderTop: cell.borders?.top ? borderStyleBase : 'none',
+                                                        borderBottom: cell.borders?.bottom ? borderStyleBase : 'none',
+                                                        borderLeft: cell.borders?.left ? borderStyleBase : 'none',
+                                                        borderRight: cell.borders?.right ? borderStyleBase : 'none',
+                                                        backgroundColor: cell.backgroundColor || 'transparent',
+                                                        padding: '2px 4px',
+                                                        overflow: 'hidden',
+                                                        wordWrap: 'break-word',
+                                                        whiteSpace: 'pre-wrap'
+                                                    };
+                                                    return (
+                                                        <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}>
+                                                            {cell.text}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
