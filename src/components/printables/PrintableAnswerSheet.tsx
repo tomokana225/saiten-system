@@ -200,14 +200,17 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
                                                 else if (scoreData.status === ScoringStatus.PARTIAL) { markChar = '△'; markColor = settings.mark.partialColor; }
 
                                                 if (markChar) {
-                                                    const targetArea = settings.mark.positioningMode === 'question_number_area' && point.questionNumberAreaId
+                                                    const isQuestionNumberMode = settings.mark.positioningMode === 'question_number_area';
+                                                    const targetArea = isQuestionNumberMode && point.questionNumberAreaId
                                                         ? areas.find(a => a.id === point.questionNumberAreaId) || area
                                                         : area;
                                                     
                                                     const markStyle: React.CSSProperties = {
                                                         ...getBaseStyleForArea(targetArea),
-                                                        justifyContent: hAlignMap[settings.mark.hAlign],
-                                                        alignItems: vAlignMap[settings.mark.vAlign],
+                                                        // Apply special alignment for Question Number mode: Left-aligned, vertically centered, slightly indented
+                                                        justifyContent: isQuestionNumberMode ? 'flex-start' : hAlignMap[settings.mark.hAlign],
+                                                        alignItems: isQuestionNumberMode ? 'center' : vAlignMap[settings.mark.vAlign],
+                                                        paddingLeft: isQuestionNumberMode ? '15%' : undefined,
                                                         fontSize: `${settings.mark.fontSize}px`,
                                                         color: markColor,
                                                         opacity: settings.mark.opacity,
