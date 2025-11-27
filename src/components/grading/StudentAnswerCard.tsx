@@ -108,7 +108,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                     imageSrc={student.filePath}
                     area={area}
                     template={template}
-                    pannable={true}
+                    pannable={isFocused}
                     onClick={handleAnswerClick}
                     manualPanOffset={scoreData?.manualPanOffset}
                     onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)}

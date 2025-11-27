@@ -162,21 +162,35 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedAreaIds, areas, handleAreasChange, clipboard]);
 
-    const handleWheel = useCallback((e: React.WheelEvent) => {
-        if (e.ctrlKey) {
-            e.preventDefault();
-            e.stopPropagation();
-            const container = containerRef.current;
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            const pointX = (container.scrollLeft + mouseX) / zoom;
-            const pointY = (container.scrollTop + mouseY) / zoom;
-            const newZoom = Math.max(0.2, Math.min(5, zoom - e.deltaY * 0.005));
-            targetScrollRef.current = { left: pointX * newZoom - mouseX, top: pointY * newZoom - mouseY };
-            setZoom(newZoom);
-        }
+    // Use native event listener for 'wheel' to properly prevent default browser zooming
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const onWheel = (e: WheelEvent) => {
+            if (e.ctrlKey) {
+                e.preventDefault(); // Crucial: Stop the browser from zooming the entire page
+                e.stopPropagation();
+
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                const pointX = (container.scrollLeft + mouseX) / zoom;
+                const pointY = (container.scrollTop + mouseY) / zoom;
+                
+                const newZoom = Math.max(0.2, Math.min(5, zoom - e.deltaY * 0.005));
+                
+                targetScrollRef.current = { left: pointX * newZoom - mouseX, top: pointY * newZoom - mouseY };
+                setZoom(newZoom);
+            }
+        };
+
+        // Add listener with passive: false to allow preventDefault()
+        container.addEventListener('wheel', onWheel, { passive: false });
+
+        return () => {
+            container.removeEventListener('wheel', onWheel);
+        };
     }, [zoom]);
 
     useLayoutEffect(() => {
@@ -365,7 +379,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 />
                 <div 
                     ref={containerRef}
-                    onWheel={handleWheel}
                     className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg"
                 >
                     <div
