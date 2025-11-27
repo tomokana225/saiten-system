@@ -24,7 +24,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     
     // --- Builder State ---
     const [config, setConfig] = useState<LayoutConfig>({
-        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
+        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, gapBetweenQuestions: true, sections: [],
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
             { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -38,8 +38,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
 
-    // Generate layout on the fly for preview
-    // We use useMemo to avoid re-generating on every render unless config changes
+    // Dynamic preview layout derived from current config
     const previewLayout = useMemo(() => generateAutoLayout(config), [config]);
 
     useEffect(() => {
@@ -62,6 +61,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             const mergedConfig = { 
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
+                gapBetweenQuestions: loadedConfig.gapBetweenQuestions !== undefined ? loadedConfig.gapBetweenQuestions : true,
                 headerSettings: mergedHeader,
                 headerElements: headerElements,
                 headerPosition: loadedConfig.headerPosition || 'top'
@@ -89,6 +89,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderWidth: 1,
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
+            gapBetweenQuestions: true,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -128,7 +129,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         const newQ = {
             id: `q_${Date.now()}`,
             type,
-            widthRatio: 10, 
+            widthRatio: 20, // Default half width in 40 scale
             heightRatio: 1.0,
             choices: type === 'marksheet' ? 4 : undefined,
             wordCount: type === 'english_word' ? 5 : undefined
@@ -273,13 +274,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
-    // Helper to convert mm to px for preview scaling
-    // Assuming 96 DPI for screen display is roughly correct for logic, but for CSS width we use mm directly if possible or px.
-    // PrintableSheetLayout uses fixed layout with px derived from mm. Here we need to scale it down to fit.
-    // Let's use a scale transform.
-
-    const previewScale = 0.6; // Scale down for preview
-
     return (
         <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
             {isInitModalOpen && (
@@ -310,7 +304,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 </div>
             )}
 
-            {tab === 'list' ? (
+            {tab === 'list' && (
                 <div className="w-full h-full flex">
                     <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
                         <div className="flex border-b dark:border-slate-700">
@@ -336,23 +330,31 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                     </aside>
                     <main className="flex-1 overflow-hidden">{children}</main>
                 </div>
-            ) : (
-                <div className="w-full h-full flex">
-                    <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
-                        <div className="flex border-b dark:border-slate-700">
-                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium ${tab === 'list' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>一覧</button>
-                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium ${tab === 'edit' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>構成編集</button>
+            )}
+
+            {tab === 'edit' && (
+                <div className="flex h-full">
+                    {/* Left Panel: Settings */}
+                    <div className="w-80 flex-shrink-0 border-r dark:border-slate-700 flex flex-col p-4 bg-slate-50 dark:bg-slate-900 overflow-y-auto">
+                        <div className="flex items-center gap-2 mb-4">
+                            <button onClick={() => setTab('list')} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800"><ArrowLeftIcon className="w-5 h-5"/></button>
+                            <h3 className="font-bold">構成編集</h3>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                            <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
-                                <input type="text" value={config.name} onChange={e => { setConfig({...config, name: e.target.value}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名"/>
+                        
+                        <div className="space-y-6">
+                            <div className="space-y-4 p-3 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                                <input type="text" value={config.name} onChange={e => handleConfigChange({name: e.target.value})} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名"/>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <select value={config.paperSize} onChange={e => { setConfig({...config, paperSize: e.target.value as PaperSize}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="p-1.5 border rounded bg-slate-50 dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
+                                    <select value={config.paperSize} onChange={e => handleConfigChange({paperSize: e.target.value as PaperSize})} className="p-1.5 border rounded bg-slate-50 dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
                                     <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-700 border rounded px-2">
                                         <label className="text-[10px] text-slate-400 whitespace-nowrap">行高:</label>
-                                        <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => { setConfig({...config, defaultRowHeight: parseInt(e.target.value) || 10}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-1 text-sm bg-transparent text-right"/>
+                                        <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => handleConfigChange({defaultRowHeight: parseInt(e.target.value) || 10})} className="w-full p-1 text-sm bg-transparent text-right"/>
                                     </div>
                                 </div>
+                                <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
+                                    <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.gapBetweenQuestions ?? true} onChange={e => handleConfigChange({gapBetweenQuestions: e.target.checked})} className="rounded"/> 解答欄の間隔を空ける</label>
+                                </div>
+                                 {/* Header Settings */}
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs">
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="font-bold text-slate-500">ヘッダー設定</span>
@@ -380,15 +382,13 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 </div>
                             </div>
 
-                            <div className="sticky top-0 bg-white dark:bg-slate-800 z-10 py-2 space-y-2 border-b border-slate-100 dark:border-slate-700">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => addQuestion('text')} className="flex items-center justify-center gap-1 p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors shadow-sm"><ListIcon className="w-4 h-4"/><span className="text-xs font-bold">記述</span></button>
-                                    <button onClick={() => addQuestion('marksheet')} className="flex items-center justify-center gap-1 p-2 bg-teal-50 text-teal-700 border border-teal-200 rounded hover:bg-teal-100 transition-colors shadow-sm"><CalculatorIcon className="w-4 h-4"/><span className="text-xs font-bold">記号</span></button>
-                                    <button onClick={() => addQuestion('english_word')} className="flex items-center justify-center gap-1 p-2 bg-orange-50 text-orange-700 border border-orange-200 rounded hover:bg-orange-100 transition-colors shadow-sm"><PenLineIcon className="w-4 h-4"/><span className="text-xs font-bold">英単語</span></button>
-                                    <button onClick={() => addQuestion('long_text')} className="flex items-center justify-center gap-1 p-2 bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100 transition-colors shadow-sm"><FileUpIcon className="w-4 h-4"/><span className="text-xs font-bold">長文</span></button>
-                                </div>
-                                <button onClick={addSection} className="w-full flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold"><ArrowDownFromLineIcon className="w-4 h-4"/> 大問を追加</button>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => addQuestion('text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ListIcon className="w-6 h-6 text-blue-500 mb-1"/><span className="text-xs font-bold">記述</span></button>
+                                <button onClick={() => addQuestion('marksheet')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><CalculatorIcon className="w-6 h-6 text-teal-500 mb-1"/><span className="text-xs font-bold">記号</span></button>
+                                <button onClick={() => addQuestion('english_word')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><PenLineIcon className="w-6 h-6 text-orange-500 mb-1"/><span className="text-xs font-bold">英単語</span></button>
+                                <button onClick={() => addQuestion('long_text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><FileUpIcon className="w-6 h-6 text-purple-500 mb-1"/><span className="text-xs font-bold">長文</span></button>
                             </div>
+                            <button onClick={addSection} className="w-full flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold"><ArrowDownFromLineIcon className="w-4 h-4"/> 大問を追加</button>
                             
                             <div className="space-y-4">
                                 {config.sections.map((section, sIdx) => (
@@ -422,7 +422,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                 {q.type !== 'long_text' && (
                                                                     <div className="flex items-center gap-1">
                                                                         <span className="text-[10px] text-slate-400">幅:</span>
-                                                                        <input type="range" min="1" max="20" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
+                                                                        <input type="range" min="1" max="40" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
                                                                     </div>
                                                                 )}
                                                                 <div className="flex items-center gap-1">
@@ -443,6 +443,12 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                         <input type="number" min="1" max="100" value={q.wordCount || 5} onChange={e => updateQuestion(section.id, q.id, { wordCount: parseInt(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
                                                                     </div>
                                                                 )}
+                                                                {q.type === 'english_word' && (
+                                                                    <div className="flex items-center gap-1 col-span-2">
+                                                                        <span className="text-[10px] text-slate-400">1行の語数:</span>
+                                                                        <input type="number" min="1" max="20" value={q.wordsPerLine || ''} placeholder="自動" onChange={e => updateQuestion(section.id, q.id, { wordsPerLine: parseInt(e.target.value) || undefined })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -451,11 +457,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                         </div>
                                     </div>
                                 ))}
-                            </div>
-                            <div className="p-4 bg-slate-50 dark:bg-slate-900">
-                                <button onClick={() => handleCreateOrUpdateLayout(true)} className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold shadow-lg transform transition-transform active:scale-95 flex items-center justify-center gap-2">
-                                    <RotateCcwIcon className="w-5 h-5"/> 構成を反映して更新
-                                </button>
                             </div>
                         </div>
                     </aside>
@@ -473,7 +474,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 backgroundColor: 'white',
                                 padding: '10mm',
                                 boxSizing: 'border-box',
-                                overflow: 'hidden' // Clip content to page size
+                                overflow: 'hidden' 
                             }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                                     <colgroup>

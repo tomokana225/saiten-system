@@ -243,6 +243,13 @@ export interface SheetCell {
     borderWidth?: number; // in pixels (approx)
 }
 
+export interface HeaderElement {
+    id: 'title' | 'name' | 'score';
+    label: string;
+    height: number;
+    visible: boolean;
+}
+
 // Configuration for auto-generation logic
 export interface LayoutConfig {
     name: string;
@@ -250,26 +257,26 @@ export interface LayoutConfig {
     borderWidth: number;
     borderColor: string;
     defaultRowHeight: number; // in mm
+    gapBetweenQuestions?: boolean; // Option to toggle gap
     sections: {
         id: string;
         title: string;
         questions: {
             id: string;
-            type: 'text' | 'marksheet' | 'long_text';
+            type: 'text' | 'marksheet' | 'long_text' | 'english_word';
             widthRatio: number;
             heightRatio: number; // 1.0 = standard row height
             chars?: number;
             choices?: number;
+            wordCount?: number;
+            wordsPerLine?: number; // New option for english_word
             labelOverride?: string;
         }[];
     }[];
-    headerSettings?: {
-        showTitle: boolean;
-        titleHeight: number;
-        showName: boolean;
-        nameHeight: number;
-        showScore: boolean;
-    };
+    headerElements?: HeaderElement[]; // Ordered list of header elements
+    headerPosition?: 'top' | 'bottom';
+    // Legacy support
+    headerSettings?: any;
 }
 
 export interface SheetLayout {
