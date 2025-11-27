@@ -24,7 +24,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     
     // --- Builder State ---
     const [config, setConfig] = useState<LayoutConfig>({
-        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, gapBetweenQuestions: 2, sections: [],
+        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
             { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -61,7 +61,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             const mergedConfig = { 
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
-                gapBetweenQuestions: loadedConfig.gapBetweenQuestions !== undefined ? loadedConfig.gapBetweenQuestions : 2,
                 headerSettings: mergedHeader,
                 headerElements: headerElements,
                 headerPosition: loadedConfig.headerPosition || 'top'
@@ -89,7 +88,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderWidth: 1,
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
-            gapBetweenQuestions: 2,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -118,6 +116,16 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         const layout = generateAutoLayout(newConfig);
         if (activeLayoutId) layout.id = activeLayoutId;
         setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+    };
+
+    const removeSection = (sectionId: string) => {
+        if (window.confirm('この大問を削除しますか？')) {
+            const newConfig = { ...config, sections: config.sections.filter(s => s.id !== sectionId) };
+            setConfig(newConfig);
+            const layout = generateAutoLayout(newConfig);
+            if (activeLayoutId) layout.id = activeLayoutId;
+            setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+        }
     };
 
     const addQuestion = (type: QuestionType) => {
@@ -398,6 +406,10 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                 handleConfigChange({sections: ns});
                                             }} className="w-full h-full bg-transparent text-center outline-none rounded-full" />
                                         </div>
+                                        <div className="absolute -right-8 top-0 p-1 hidden group-hover/section:block">
+                                             <button onClick={() => removeSection(section.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2Icon className="w-4 h-4"/></button>
+                                        </div>
+                                        
                                         <div className="space-y-2">
                                             {section.questions.map((q, qIdx) => {
                                                 const isExpanded = expandedQuestionIds.has(q.id);

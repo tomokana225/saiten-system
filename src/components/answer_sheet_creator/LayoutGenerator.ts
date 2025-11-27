@@ -80,12 +80,10 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                     borders: { top: true, bottom: true, left: true, right: true } 
                 }));
                 
-                // FIX: Score box as a single block, not split
                 placeCell(startRow, titleWidth, scoreWidth, createCell({ 
                     text: '点数', fontSize: 10, vAlign: 'top', rowSpan: rowSpan,
                     borders: { top: true, bottom: true, left: true, right: true } 
                 }));
-                // No need to place empty cell below if rowSpan covers it
                 
                 i += 2; 
             } else {
@@ -217,11 +215,30 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 if (q.type === 'marksheet') {
                     const choices = q.choices || 4;
                     const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-                    const text = labels.slice(0, choices).join('   '); 
-                    placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, createCell({
-                        text: text, hAlign: 'center',
-                        borders: { top: true, bottom: true, left: true, right: true }
-                    }));
+                    // Distribute choices evenly by splitting cells
+                    const choiceSpan = Math.floor(answerBoxWidth / choices);
+                    
+                    for(let i=0; i<choices; i++) {
+                        // Adjust span for last item to fill remaining space
+                        const isLast = i === choices - 1;
+                        const span = isLast ? answerBoxWidth - (choiceSpan * (choices-1)) : choiceSpan;
+                        
+                        // Determine border visibility to look like one big box
+                        const borderLeft = i === 0;
+                        const borderRight = isLast;
+                        
+                        placeCell(currentRow, absCol + qNumBoxWidth + (i * choiceSpan), span, createCell({
+                            text: labels[i], 
+                            hAlign: 'center',
+                            // Internal vertical borders removed
+                            borders: { 
+                                top: true, 
+                                bottom: true, 
+                                left: borderLeft, 
+                                right: borderRight 
+                            }
+                        }));
+                    }
                 } else if (q.type === 'english_word') {
                     const wordCount = q.wordCount || 5;
                     const wordUnit = 7;
@@ -239,41 +256,9 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         
                         const pos = indexInLine * (wordUnit + gapUnit);
                         
-                        // Borders logic for "Big box with dotted lines inside"
-                        // External borders (solid):
-                        //   Top: if first row (lineIndex === 0)
-                        //   Bottom: if last row for this item? Or just bottom of cell?
-                        //     Ideally, the whole block should have a solid border.
-                        //     But we are building it from cells.
-                        //     Let's give EVERY cell a solid top/left/right/bottom if it's on the edge of the block?
-                        //     Actually, user wants "dotted underline".
-                        //     Standard look: [  _  _  _  ]
-                        //     The question box itself usually has a solid border.
-                        
-                        // Inner cells (word slots):
-                        // Bottom border: Dashed (the writing line).
-                        // Side borders: None (gap handles separation) or Dotted if contiguous?
-                        
-                        // Let's stick to the previous visual but fix the containment.
-                        // The QNum box already spans the height.
-                        // We need to ensure the cells line up.
-                        
-                        // Calculate borders for the "Word Box"
-                        // Top: Solid if lineIndex == 0
-                        // Bottom: Solid if lineIndex == englishRows - 1 ? No, writing line is usually dashed/solid.
-                        // Let's make the bottom of the writing area dashed, but maybe wrap the whole thing?
-                        // Grid layout doesn't support "wrapping container" easily without merging.
-                        // Merging all into one big box is an option, but then we lose the specific word slots structure easily.
-                        
-                        // Compromise: 
-                        // Each word slot has:
-                        //   Bottom: Dashed (Writing line)
-                        //   Left/Right/Top: None (Clean look)
-                        //   AND we place a "Container" border around the whole group? No, hard.
-                        //   Let's just give each slot a bottom border.
-                        
                         placeCell(targetRow, absCol + qNumBoxWidth + pos, wordUnit, createCell({
                             text: '', 
+                            vAlign: 'bottom', // Align underline to bottom
                             borders: { 
                                 top: false, 
                                 left: false, 
@@ -284,20 +269,13 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                             borderColor: '#000'
                         }));
                     }
-                    
                     // Sync row heights for the block
                     for(let r=0; r<englishRows; r++) {
                          const rIdx = currentRow + r;
                          if (rIdx < rowHeights.length) {
-                             // Ensure minimum height for these rows
                              rowHeights[rIdx] = Math.max(rowHeights[rIdx] || 0, baseRowHeightMm * mmToPx);
                          }
                     }
-                    
-                    // OPTIONAL: To make it look like it's inside a big box, we can color the background or add an outline?
-                    // Or place an empty "background" cell behind? (Not supported by simple grid)
-                    // The QNum box provides the left anchor.
-                    
                 } else {
                     placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, createCell({ text: '' }));
                 }
