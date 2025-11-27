@@ -189,7 +189,6 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                 const qNumBoxWidth = 3;
                 let answerBoxWidth = 0;
                 
-                // Determine basic width
                 if (q.type === 'marksheet') {
                     const choices = q.choices || 4;
                     answerBoxWidth = (choices * 4) - 1; 
@@ -197,10 +196,7 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                     answerBoxWidth = contentAreaWidth - qNumBoxWidth; 
                 } else if (q.type === 'english_word') {
                      const wordCount = q.wordCount || 5;
-                     // Calculate width needed. If too wide, wrap inside the box later.
-                     // But for layout flow, we need a width.
-                     // If wordCount is large, we use full width and wrap internally.
-                     const singleLineLimit = 8; // max words per line estimate
+                     const singleLineLimit = 8; 
                      if (wordCount > singleLineLimit) {
                          answerBoxWidth = contentAreaWidth - qNumBoxWidth;
                      } else {
@@ -214,7 +210,6 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                 const totalItemWidth = qNumBoxWidth + answerBoxWidth;
                 const gap = currentContentCol > 0 ? 2 : 0; 
     
-                // Wrap entire item if needed
                 if (currentContentCol + gap + totalItemWidth > contentAreaWidth) {
                     rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
                     currentRow = addRow();
@@ -226,13 +221,9 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
     
                 const heightRatio = q.heightRatio || 1.0;
                 
-                // For English words, if multiline, we need to calculate height
                 let englishRows = 1;
                 if (q.type === 'english_word') {
                     const wordCount = q.wordCount || 5;
-                    // Estimate words per row based on allocated width
-                    // Grid width available: answerBoxWidth
-                    // Word unit: 6 (5 box + 1 gap)
                     const wordsPerLine = Math.floor((answerBoxWidth + 1) / 6);
                     englishRows = Math.ceil(wordCount / Math.max(1, wordsPerLine));
                 }
@@ -257,19 +248,15 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                     const wordCount = q.wordCount || 5;
                     const wordUnit = 5;
                     const gapUnit = 1;
-                    
-                    // Calculate layout within the answer box area
                     const wordsPerLine = Math.floor((answerBoxWidth + 1) / (wordUnit + gapUnit));
                     
                     for(let i=0; i<wordCount; i++) {
                         const lineIndex = Math.floor(i / wordsPerLine);
                         const indexInLine = i % wordsPerLine;
-                        
                         const targetRow = currentRow + lineIndex;
-                        // Ensure subsequent rows exist if needed (though placeCell handles addRow, we need height)
                         if (targetRow >= rowHeights.length) {
                             addRow();
-                            rowHeights[targetRow] = baseRowHeightMm * mmToPx; // default height for extra lines
+                            rowHeights[targetRow] = baseRowHeightMm * mmToPx; 
                         }
                         
                         const pos = indexInLine * (wordUnit + gapUnit);
@@ -308,7 +295,6 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
 
     if (config.headerPosition === 'bottom') {
         generateBody();
-        // Add spacer before footer
         addRow(10);
         generateHeader();
     } else {
@@ -347,7 +333,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const [initName, setInitName] = useState('');
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
-    const configSectionRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (activeLayoutId && layouts[activeLayoutId]?.config) {
@@ -368,8 +353,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 headerSettings: mergedHeader 
             };
             setConfig(mergedConfig);
-        } else if (!activeLayoutId) {
-            // Don't reset sections here if we just created one via handleInitCreate
         }
     }, [activeLayoutId, layouts]);
 
@@ -433,7 +416,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         const newQ = {
             id: `q_${Date.now()}`,
             type,
-            widthRatio: 10, // Default roughly half width (20 scale)
+            widthRatio: 10, 
             heightRatio: 1.0,
             choices: type === 'marksheet' ? 4 : undefined,
             wordCount: type === 'english_word' ? 5 : undefined
@@ -501,12 +484,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     const handleQuestionClick = (qId: string) => {
-        // Expand the clicked question in the sidebar
         setExpandedQuestionIds(prev => new Set([...prev, qId]));
-        
-        // Scroll sidebar to the question setting
-        // Simple approach: find element by id logic (assuming we added ids to DOM)
-        // For now, just expand is helpful.
     };
 
     const handleConfigChange = (newConfigPart: Partial<ExtendedLayoutConfig>) => {
