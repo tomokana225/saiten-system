@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Area, Template } from '../types';
-import { RotateCcwIcon, SpinnerIcon } from './icons';
+import { RotateCcwIcon, SpinnerIcon, XIcon } from './icons';
 
 // Props for the inner component that contains hooks
 interface PannableImageProps {
@@ -284,14 +284,29 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = (props) => {
         };
     }, [area, imageData, template]);
 
-    if (!area) {
-        return <div className="w-full h-full bg-slate-200 dark:bg-slate-700 rounded-md flex items-center justify-center text-xs text-slate-500 p-2 text-center">表示領域が設定されていません</div>;
+    if (!imageSrc) {
+         // Handle explicitly null/empty image source (e.g. empty slot)
+         return <div className="w-full h-full bg-slate-100 dark:bg-slate-800 rounded-md flex items-center justify-center text-xs text-slate-300 border-2 border-dashed border-slate-300">画像なし</div>;
     }
+
+    if (!area) {
+        // Handle missing area definition but present image. 
+        // We can try to show the image even without specific area cropping, but zoomed out.
+        // Or show a specific warning.
+        return (
+            <div className="w-full h-full bg-red-50 dark:bg-red-900/20 rounded-md flex flex-col items-center justify-center text-xs text-red-500 p-2 text-center border border-red-200">
+                <XIcon className="w-6 h-6 mb-1 opacity-50"/>
+                <span>領域未設定</span>
+            </div>
+        );
+    }
+
     if (status === 'loading') {
         return <div className="w-full h-full bg-slate-200 dark:bg-slate-700 rounded-md flex items-center justify-center"><SpinnerIcon className="w-6 h-6 text-slate-500" /></div>;
     }
+    
     if (status === 'error' || !imageData) {
-        return <div className="w-full h-full bg-slate-200 dark:bg-slate-700 rounded-md flex items-center justify-center text-xs text-red-500 p-2 text-center">画像ファイルの読み込みに失敗しました</div>;
+        return <div className="w-full h-full bg-slate-200 dark:bg-slate-700 rounded-md flex items-center justify-center text-xs text-red-500 p-2 text-center">読込エラー</div>;
     }
 
     return (
