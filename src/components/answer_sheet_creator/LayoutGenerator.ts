@@ -160,7 +160,8 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                      }
                 } else {
                     answerBoxWidth = Math.floor((contentAreaWidth * q.widthRatio) / 10) - qNumBoxWidth;
-                    answerBoxWidth = Math.max(4, answerBoxWidth);
+                    // Reduced minimum width to 2 units (from 4) to allow smaller boxes
+                    answerBoxWidth = Math.max(2, answerBoxWidth);
                 }
     
                 const totalItemWidth = qNumBoxWidth + answerBoxWidth;

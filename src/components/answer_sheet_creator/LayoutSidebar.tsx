@@ -38,6 +38,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
 
+    // Load config when switching to edit tab or changing active layout
     useEffect(() => {
         if (activeLayoutId && layouts[activeLayoutId]?.config) {
             const loadedConfig = layouts[activeLayoutId].config as LayoutConfig;
@@ -271,6 +272,9 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
+    // Helper to calculate visual representation for preview
+    let previewGlobalQNum = 1;
+
     return (
         <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
             {isInitModalOpen && (
@@ -497,7 +501,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                             else if (q.type === 'english_word') widthStyle = `${Math.min(100, (q.wordCount || 5) * 10)}%`;
                                             else widthStyle = `${(q.widthRatio / 20) * 100}%`;
                                             
-                                            const qLabel = q.labelOverride || "Q";
+                                            const qLabel = q.labelOverride || `${previewGlobalQNum++}`;
 
                                             return (
                                                 <div 
@@ -541,6 +545,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                     </div>
                 </div>
             )}
-        </>
+        </aside>
     );
 };
