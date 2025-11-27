@@ -235,10 +235,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         headerSettings: { showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true }
     });
 
-    // Expansion states for questions
     const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
-
-    // --- Init Modal State ---
     const [initName, setInitName] = useState('');
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
@@ -250,9 +247,10 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             if (!loadedConfig.defaultRowHeight) loadedConfig.defaultRowHeight = 10;
             setConfig(loadedConfig);
         } else if (!activeLayoutId) {
-            setConfig({ name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [], headerSettings: { showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true } });
+            // Don't reset sections here if we just created one via handleInitCreate
+            // The issue was likely resetting config when activeLayoutId changes briefly or is null
         }
-    }, [activeLayoutId, layouts, tab]);
+    }, [activeLayoutId, layouts]);
 
     const openInitModal = () => {
         setInitName('');
@@ -266,7 +264,8 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             alert('テスト名を入力してください');
             return;
         }
-        setConfig({
+        
+        const newConfig: ExtendedLayoutConfig = {
             name: initName,
             paperSize: initSize,
             borderWidth: 1,
@@ -274,8 +273,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             defaultRowHeight: initRowHeight,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
             headerSettings: { showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true }
-        });
-        setActiveLayoutId(null);
+        };
+        
+        setConfig(newConfig);
+        
+        // Immediately generate and set active
+        const layout = generateAutoLayout(newConfig);
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+        setActiveLayoutId(layout.id);
+        
         setTab('edit');
         setIsInitModalOpen(false);
     };
@@ -286,8 +292,12 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             title: ['I', 'II', 'III', 'IV', 'V'][config.sections.length] || `${config.sections.length + 1}`,
             questions: []
         };
-        setConfig(prev => ({ ...prev, sections: [...prev.sections, newSection] }));
-        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+        const newConfig = { ...config, sections: [...config.sections, newSection] };
+        setConfig(newConfig);
+        // Auto-update layout
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
     const addQuestion = (type: QuestionType) => {
@@ -304,44 +314,57 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             choices: type === 'marksheet' ? 4 : undefined,
         };
         lastSection.questions.push(newQ);
-        setConfig(prev => ({ ...prev, sections }));
-        setExpandedQuestionIds(prev => new Set([...prev, newQ.id])); // Auto expand new question
-        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+        
+        const newConfig = { ...config, sections };
+        setConfig(newConfig);
+        setExpandedQuestionIds(prev => new Set([...prev, newQ.id]));
+        
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
     const insertQuestionAfter = (sectionIdx: number, questionIdx: number, templateQuestion: QuestionDef) => {
         const newQuestion = { ...templateQuestion, id: `q_${Date.now()}` };
-        setConfig(prev => {
-            const newSections = [...prev.sections];
-            newSections[sectionIdx].questions.splice(questionIdx + 1, 0, newQuestion);
-            return { ...prev, sections: newSections };
-        });
-        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+        const newSections = [...config.sections];
+        newSections[sectionIdx].questions.splice(questionIdx + 1, 0, newQuestion);
+        
+        const newConfig = { ...config, sections: newSections };
+        setConfig(newConfig);
+        
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
     const updateQuestion = (sectionId: string, qId: string, updates: Partial<QuestionDef>) => {
-        setConfig(prev => ({
-            ...prev,
-            sections: prev.sections.map(s => {
-                if (s.id !== sectionId) return s;
-                return {
-                    ...s,
-                    questions: s.questions.map(q => q.id === qId ? { ...q, ...updates } : q)
-                };
-            })
-        }));
-        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+        const newSections = config.sections.map(s => {
+            if (s.id !== sectionId) return s;
+            return {
+                ...s,
+                questions: s.questions.map(q => q.id === qId ? { ...q, ...updates } : q)
+            };
+        });
+        const newConfig = { ...config, sections: newSections };
+        setConfig(newConfig);
+        
+        // Debounce this if needed, but for direct feedback:
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
     const deleteQuestion = (sectionId: string, qId: string) => {
-        setConfig(prev => ({
-            ...prev,
-            sections: prev.sections.map(s => {
-                if (s.id !== sectionId) return s;
-                return { ...s, questions: s.questions.filter(q => q.id !== qId) };
-            })
-        }));
-        setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+        const newSections = config.sections.map(s => {
+            if (s.id !== sectionId) return s;
+            return { ...s, questions: s.questions.filter(q => q.id !== qId) };
+        });
+        const newConfig = { ...config, sections: newSections };
+        setConfig(newConfig);
+        
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
     const toggleExpand = (qId: string) => {
@@ -352,6 +375,14 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             return newSet;
         });
     };
+
+    const handleConfigChange = (newConfigPart: Partial<ExtendedLayoutConfig>) => {
+        const newConfig = { ...config, ...newConfigPart };
+        setConfig(newConfig);
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+    }
 
     const handleCreateOrUpdateLayout = (showAlert = true) => {
         if (!config.name) {
@@ -443,7 +474,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                         <div className="flex-1 overflow-y-auto space-y-2">
                             {Object.values(layouts).map((layout: SheetLayout) => (
                                 <div key={layout.id} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${activeLayoutId === layout.id ? 'bg-sky-50 dark:bg-sky-900/50 border border-sky-200' : 'bg-slate-50 dark:bg-slate-700/50 border border-transparent hover:border-slate-300'}`}>
-                                    <span onClick={() => setActiveLayoutId(layout.id)} className="flex-1 truncate font-medium">{layout.name}</span>
+                                    <span onClick={() => { setActiveLayoutId(layout.id); setTab('edit'); }} className="flex-1 truncate font-medium">{layout.name}</span>
                                     <button onClick={() => handleDeleteLayout(layout.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-slate-600 rounded-full transition-colors"><Trash2Icon className="w-4 h-4" /></button>
                                 </div>
                             ))}
@@ -464,12 +495,12 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                         <div className="flex-1 overflow-y-auto p-4 space-y-6">
                             {/* Basic Settings */}
                             <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
-                                <input type="text" value={config.name} onChange={e => { setConfig({...config, name: e.target.value}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名を入力"/>
+                                <input type="text" value={config.name} onChange={e => handleConfigChange({name: e.target.value})} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名を入力"/>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <select value={config.paperSize} onChange={e => { setConfig({...config, paperSize: e.target.value as PaperSize}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
+                                    <select value={config.paperSize} onChange={e => handleConfigChange({paperSize: e.target.value as PaperSize})} className="p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
                                     <div className="flex items-center gap-1 bg-white dark:bg-slate-700 border rounded px-2">
                                         <label className="text-[10px] text-slate-400 whitespace-nowrap">行高:</label>
-                                        <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => { setConfig({...config, defaultRowHeight: parseInt(e.target.value) || 10}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-1 text-sm bg-transparent text-right"/>
+                                        <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => handleConfigChange({defaultRowHeight: parseInt(e.target.value) || 10})} className="w-full p-1 text-sm bg-transparent text-right"/>
                                         <span className="text-xs text-slate-400">mm</span>
                                     </div>
                                 </div>
@@ -491,8 +522,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                             <input value={section.title} onChange={e => {
                                                 const ns = [...config.sections];
                                                 ns[sIdx].title = e.target.value;
-                                                setConfig({...config, sections: ns});
-                                                setTimeout(() => handleCreateOrUpdateLayout(false), 0);
+                                                handleConfigChange({sections: ns});
                                             }} className="w-full h-full bg-transparent text-center outline-none rounded-full" />
                                         </div>
                                         
