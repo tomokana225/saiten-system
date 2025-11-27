@@ -39,6 +39,7 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         borderBottom: cell.borders?.bottom ? '1px solid black' : 'none',
                                         borderLeft: cell.borders?.left ? '1px solid black' : 'none',
                                         borderRight: cell.borders?.right ? '1px solid black' : 'none',
+                                        backgroundColor: cell.backgroundColor || 'transparent',
                                         padding: '4px',
                                         overflow: 'hidden',
                                         wordWrap: 'break-word',

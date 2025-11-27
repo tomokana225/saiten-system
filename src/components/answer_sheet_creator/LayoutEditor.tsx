@@ -193,7 +193,7 @@ export const LayoutEditor = ({ layout, onLayoutChange }: { layout: SheetLayout, 
                                             borderLeft: cell.borders?.left ? '1px solid #ccc' : 'none',
                                             borderRight: cell.borders?.right ? '1px solid #ccc' : 'none',
                                             padding: '4px', overflow: 'hidden', wordWrap: 'break-word',
-                                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'white'
+                                            backgroundColor: isEditing ? 'white' : (isSelected ? 'rgba(59, 130, 246, 0.2)' : (cell.backgroundColor || 'white'))
                                         };
                                         return (
                                             <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}
