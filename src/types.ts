@@ -249,6 +249,7 @@ export interface LayoutConfig {
     paperSize: 'A4' | 'B5' | 'A3';
     borderWidth: number;
     borderColor: string;
+    defaultRowHeight: number; // in mm
     sections: {
         id: string;
         title: string;
@@ -256,11 +257,19 @@ export interface LayoutConfig {
             id: string;
             type: 'text' | 'marksheet' | 'long_text';
             widthRatio: number;
+            heightRatio: number; // 1.0 = standard row height
             chars?: number;
             choices?: number;
             labelOverride?: string;
         }[];
     }[];
+    headerSettings?: {
+        showTitle: boolean;
+        titleHeight: number;
+        showName: boolean;
+        nameHeight: number;
+        showScore: boolean;
+    };
 }
 
 export interface SheetLayout {

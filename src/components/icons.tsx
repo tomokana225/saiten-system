@@ -29,6 +29,7 @@ export const Trash2Icon = createIcon(<><path d="M3 6h18"/><path d="M19 6v14a2 2 
 export const InfoIcon = createIcon(<><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></>);
 export const CopyIcon = createIcon(<><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>);
 export const PlusIcon = createIcon(<><path d="M5 12h14"/><path d="M12 5v14"/></>);
+export const MinusIcon = createIcon(<><path d="M5 12h14"/></>);
 export const GripVerticalIcon = createIcon(<><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></>);
 export const XIcon = createIcon(<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>);
 export const ArrowDownFromLineIcon = createIcon(<><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></>);
