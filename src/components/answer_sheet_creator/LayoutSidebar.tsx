@@ -141,10 +141,10 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
             let answerBoxWidth = 0;
             
             if (q.type === 'marksheet') {
+                // Fixed width for marksheet box based on choices
+                // e.g. 3 units per choice approx + some padding
                 const choices = q.choices || 4;
-                // Calculate width: (choice width + gap) * choices
-                // e.g. 3 units per choice + 1 unit gap
-                answerBoxWidth = (choices * 4) - 1; 
+                answerBoxWidth = Math.max(8, choices * 3);
             } else if (q.type === 'long_text') {
                 answerBoxWidth = contentAreaWidth - qNumBoxWidth; 
             } else if (q.type === 'english_word') {
@@ -159,17 +159,21 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
             const totalItemWidth = qNumBoxWidth + answerBoxWidth;
 
             // Check wrapping
-            if (currentContentCol + totalItemWidth > contentAreaWidth) {
+            // Ensure we leave at least 1 col gap if not the first item
+            const gap = currentContentCol > 0 ? 2 : 0; 
+
+            if (currentContentCol + gap + totalItemWidth > contentAreaWidth) {
                 rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
                 currentRow = addRow();
                 currentContentCol = 0;
                 currentRowMaxHeightRatio = 1.0;
+            } else {
+                currentContentCol += gap;
             }
 
             const heightRatio = q.heightRatio || 1.0;
             currentRowMaxHeightRatio = Math.max(currentRowMaxHeightRatio, heightRatio);
 
-            // Place Question Number
             const absCol = contentStartCol + currentContentCol;
             placeCell(currentRow, absCol, qNumBoxWidth, c({ 
                 text: qNumText, hAlign: 'center', backgroundColor: '#f3f4f6'
@@ -179,21 +183,13 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
             if (q.type === 'marksheet') {
                 const choices = q.choices || 4;
                 const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+                // Combine all choices into one string with spacing
+                const text = labels.slice(0, choices).join('   '); // Spaced out
                 
-                // Distribute choices with gaps
-                // Total width available: answerBoxWidth
-                // Each choice width: approx 3 units. Gaps: 1 unit.
-                // But we use specific grid cells for better spacing.
-                
-                const choiceUnit = 3;
-                const gapUnit = 1;
-                
-                for(let i=0; i<choices; i++) {
-                    const pos = i * (choiceUnit + gapUnit);
-                    placeCell(currentRow, absCol + qNumBoxWidth + pos, choiceUnit, c({
-                        text: labels[i], hAlign: 'center'
-                    }));
-                }
+                placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({
+                    text: text, hAlign: 'center',
+                    borders: { top: true, bottom: true, left: true, right: true }
+                }));
             } else if (q.type === 'english_word') {
                 const wordCount = q.wordCount || 5;
                 const wordUnit = 5;
@@ -201,17 +197,18 @@ const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
                 
                 for(let i=0; i<wordCount; i++) {
                     const pos = i * (wordUnit + gapUnit);
+                    // Ensure it fits within answerBoxWidth (clamping logic already in placeCell via col check)
                     placeCell(currentRow, absCol + qNumBoxWidth + pos, wordUnit, c({
                         text: '', 
                         borders: { top: false, left: false, right: false, bottom: true },
-                        borderStyle: 'solid' // Underline only
+                        borderStyle: 'dashed' // Dotted underline
                     }));
                 }
             } else {
                 placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({ text: '' }));
             }
 
-            currentContentCol += totalItemWidth + 1; 
+            currentContentCol += totalItemWidth; 
         });
         
         rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
@@ -326,7 +323,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         const newQ = {
             id: `q_${Date.now()}`,
             type,
-            widthRatio: 5,
+            widthRatio: 10, // Default roughly half width (20 scale)
             heightRatio: 1.0,
             choices: type === 'marksheet' ? 4 : undefined,
             wordCount: type === 'english_word' ? 5 : undefined
@@ -571,7 +568,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                             {q.type !== 'long_text' && (
                                                                 <div className="flex items-center gap-1">
                                                                     <span className="text-[10px] text-slate-400">幅:</span>
-                                                                    <input type="range" min="1" max="10" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
+                                                                    <input type="range" min="1" max="20" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
                                                                 </div>
                                                             )}
                                                             <div className="flex items-center gap-1">
