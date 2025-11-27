@@ -257,7 +257,7 @@ export interface LayoutConfig {
     borderWidth: number;
     borderColor: string;
     defaultRowHeight: number; // in mm
-    gapBetweenQuestions?: boolean; // Option to toggle gap
+    gapBetweenQuestions?: number; // Number of grid units (0 for no gap)
     sections: {
         id: string;
         title: string;

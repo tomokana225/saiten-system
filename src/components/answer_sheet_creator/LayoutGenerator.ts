@@ -80,16 +80,13 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                     borders: { top: true, bottom: true, left: true, right: true } 
                 }));
                 
+                // FIX: Score box as a single block, not split
                 placeCell(startRow, titleWidth, scoreWidth, createCell({ 
-                    text: '点数', fontSize: 10, vAlign: 'top', 
+                    text: '点数', fontSize: 10, vAlign: 'top', rowSpan: rowSpan,
                     borders: { top: true, bottom: true, left: true, right: true } 
                 }));
-                if (rowSpan > 1) {
-                    placeCell(startRow + 1, titleWidth, scoreWidth, createCell({ 
-                        text: '', rowSpan: rowSpan - 1,
-                        borders: { top: true, bottom: true, left: true, right: true } 
-                    }));
-                }
+                // No need to place empty cell below if rowSpan covers it
+                
                 i += 2; 
             } else {
                 const rowSpan = el.height;
@@ -109,15 +106,9 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 } else if (el.id === 'score') {
                      const scoreWidth = 16;
                      placeCell(startRow, totalCols - scoreWidth, scoreWidth, createCell({ 
-                        text: '点数', fontSize: 10, vAlign: 'top', 
+                        text: '点数', fontSize: 10, vAlign: 'top', rowSpan: rowSpan,
                         borders: { top: true, bottom: true, left: true, right: true } 
                     }));
-                    if (rowSpan > 1) {
-                        placeCell(startRow + 1, totalCols - scoreWidth, scoreWidth, createCell({ 
-                            text: '', rowSpan: rowSpan - 1,
-                            borders: { top: true, bottom: true, left: true, right: true } 
-                        }));
-                    }
                 }
                 i++;
             }
@@ -131,7 +122,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
         const contentStartCol = sectionLabelWidth;
         
         const useGap = config.gapBetweenQuestions !== false; // default true
-        const gapSize = useGap ? 2 : 0;
+        const gapSize = config.gapBetweenQuestions !== undefined ? config.gapBetweenQuestions : 2;
 
         let globalQNum = 1;
     
@@ -184,6 +175,10 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 if (currentContentCol + effectiveGap + totalItemWidth > contentAreaWidth) {
                     // Finalize previous row height
                     rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
+                    // Add spacer row if gapSize > 0
+                    if (gapSize > 0) {
+                        addRow(gapSize * 2); // Scaled mm gap
+                    }
                     currentRow = addRow();
                     currentContentCol = 0;
                     currentRowMaxHeightRatio = 1.0;
@@ -210,11 +205,11 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
     
                 const absCol = contentStartCol + currentContentCol;
                 
-                // Q Num Box - spans English rows if needed
+                // Q Num Box - spans English rows if needed, centered vertically
                 placeCell(currentRow, absCol, qNumBoxWidth, createCell({ 
                     text: qNumText, 
                     hAlign: 'center', 
-                    vAlign: 'middle', // Vertically centered
+                    vAlign: 'middle', 
                     rowSpan: englishRows,
                     backgroundColor: '#f3f4f6'
                 }));
@@ -238,39 +233,71 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         const indexInLine = i % wordsPerLine;
                         
                         const targetRow = currentRow + lineIndex;
-                        // Ensure subsequent rows exist
                         if (targetRow >= rowHeights.length) {
                             addRow();
-                            // Default height for new rows if not set by previous loop iteration
                         }
-                        // Ensure row height is at least base * heightRatio (or default 1.0)
-                        // Since we calculate max height at end of row processing, just setting 0 here is fine, 
-                        // placeCell handles existence. We update rowHeights later.
                         
                         const pos = indexInLine * (wordUnit + gapUnit);
+                        
+                        // Borders logic for "Big box with dotted lines inside"
+                        // External borders (solid):
+                        //   Top: if first row (lineIndex === 0)
+                        //   Bottom: if last row for this item? Or just bottom of cell?
+                        //     Ideally, the whole block should have a solid border.
+                        //     But we are building it from cells.
+                        //     Let's give EVERY cell a solid top/left/right/bottom if it's on the edge of the block?
+                        //     Actually, user wants "dotted underline".
+                        //     Standard look: [  _  _  _  ]
+                        //     The question box itself usually has a solid border.
+                        
+                        // Inner cells (word slots):
+                        // Bottom border: Dashed (the writing line).
+                        // Side borders: None (gap handles separation) or Dotted if contiguous?
+                        
+                        // Let's stick to the previous visual but fix the containment.
+                        // The QNum box already spans the height.
+                        // We need to ensure the cells line up.
+                        
+                        // Calculate borders for the "Word Box"
+                        // Top: Solid if lineIndex == 0
+                        // Bottom: Solid if lineIndex == englishRows - 1 ? No, writing line is usually dashed/solid.
+                        // Let's make the bottom of the writing area dashed, but maybe wrap the whole thing?
+                        // Grid layout doesn't support "wrapping container" easily without merging.
+                        // Merging all into one big box is an option, but then we lose the specific word slots structure easily.
+                        
+                        // Compromise: 
+                        // Each word slot has:
+                        //   Bottom: Dashed (Writing line)
+                        //   Left/Right/Top: None (Clean look)
+                        //   AND we place a "Container" border around the whole group? No, hard.
+                        //   Let's just give each slot a bottom border.
+                        
                         placeCell(targetRow, absCol + qNumBoxWidth + pos, wordUnit, createCell({
                             text: '', 
-                            borders: { top: false, left: false, right: false, bottom: true },
-                            borderStyle: 'dashed' 
+                            borders: { 
+                                top: false, 
+                                left: false, 
+                                right: false, 
+                                bottom: true 
+                            },
+                            borderStyle: 'dashed',
+                            borderColor: '#000'
                         }));
                     }
-                    // Ensure rows created by english words get height setting
+                    
+                    // Sync row heights for the block
                     for(let r=0; r<englishRows; r++) {
-                         // We don't set specific height here, we let the end-of-row logic handle it 
-                         // by using `currentRowMaxHeightRatio`.
-                         // But wait, if multiple rows are used, `currentRowMaxHeightRatio` only applies to `currentRow`.
-                         // Subsequent rows need height too.
-                         // Simplified: All rows in English block get standard height * heightRatio?
-                         // Let's assume standard height for English lines.
-                         if (r > 0) {
-                             // For lines after the first, set height if not already set larger
-                             const rIdx = currentRow + r;
-                             if (rIdx < rowHeights.length) {
-                                 // Default to 1.0 height for inner lines
-                                 rowHeights[rIdx] = Math.max(rowHeights[rIdx] || 0, baseRowHeightMm * mmToPx);
-                             }
+                         const rIdx = currentRow + r;
+                         if (rIdx < rowHeights.length) {
+                             // Ensure minimum height for these rows
+                             rowHeights[rIdx] = Math.max(rowHeights[rIdx] || 0, baseRowHeightMm * mmToPx);
                          }
                     }
+                    
+                    // OPTIONAL: To make it look like it's inside a big box, we can color the background or add an outline?
+                    // Or place an empty "background" cell behind? (Not supported by simple grid)
+                    // The QNum box provides the left anchor.
+                    
                 } else {
                     placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, createCell({ text: '' }));
                 }
@@ -278,7 +305,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 currentContentCol += totalItemWidth; 
             });
             
-            // Finalize first row height
+            // Finalize first row height (max of single-line items or first line of multi-line)
             rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
     
             const sectionEndRow = cells.length;
@@ -296,7 +323,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 }
             }
             
-            addRow(4);
+            if (gapSize > 0) addRow(gapSize * 2); // Section gap
         });
     };
 

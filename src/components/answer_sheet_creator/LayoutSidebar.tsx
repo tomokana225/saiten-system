@@ -24,7 +24,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     
     // --- Builder State ---
     const [config, setConfig] = useState<LayoutConfig>({
-        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
+        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, gapBetweenQuestions: 2, sections: [],
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
             { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -61,6 +61,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             const mergedConfig = { 
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
+                gapBetweenQuestions: loadedConfig.gapBetweenQuestions !== undefined ? loadedConfig.gapBetweenQuestions : 2,
                 headerSettings: mergedHeader,
                 headerElements: headerElements,
                 headerPosition: loadedConfig.headerPosition || 'top'
@@ -88,6 +89,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderWidth: 1,
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
+            gapBetweenQuestions: 2,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -346,7 +348,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     </div>
                                 </div>
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
-                                    <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.gapBetweenQuestions ?? true} onChange={e => handleConfigChange({gapBetweenQuestions: e.target.checked})} className="rounded"/> 解答欄の間隔を空ける</label>
+                                    <label className="flex items-center gap-2 cursor-pointer"><span className="text-[10px] font-bold text-slate-400">解答欄間隔:</span><input type="number" min="0" max="5" value={config.gapBetweenQuestions} onChange={e => handleConfigChange({gapBetweenQuestions: parseInt(e.target.value)})} className="w-10 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/></label>
                                 </div>
                                  {/* Header Settings */}
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs">
