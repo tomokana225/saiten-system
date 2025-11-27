@@ -205,18 +205,26 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
                                                         ? areas.find(a => a.id === point.questionNumberAreaId) || area
                                                         : area;
                                                     
+                                                    // Determine horizontal offset:
+                                                    // If Question Number mode, default to -45% (shift left).
+                                                    // Otherwise use 0 as base.
+                                                    // Add user's manual offset.
+                                                    const baseHOffset = isQuestionNumberMode ? -45 : 0;
+                                                    const finalHOffset = baseHOffset + settings.mark.hOffset;
+
                                                     const markStyle: React.CSSProperties = {
                                                         ...getBaseStyleForArea(targetArea),
-                                                        padding: 0, // FIX: Reset padding to ensure perfect centering
-                                                        // Force left alignment for Question Number Mode, otherwise follow settings
-                                                        justifyContent: isQuestionNumberMode ? 'flex-start' : hAlignMap[settings.mark.hAlign],
-                                                        alignItems: isQuestionNumberMode ? 'center' : vAlignMap[settings.mark.vAlign],
-                                                        // Apply small padding for Q-Num mode to not touch the border
-                                                        paddingLeft: isQuestionNumberMode ? '2%' : 0,
+                                                        padding: 0, // Ensure no padding for accurate centering
+                                                        // Always center align content within the box so transform is relative to center
+                                                        justifyContent: 'center', 
+                                                        alignItems: 'center',
                                                         fontSize: `${settings.mark.fontSize}px`,
                                                         color: markColor,
                                                         opacity: settings.mark.opacity,
-                                                        transform: `translate(${settings.mark.hOffset}%, ${settings.mark.vOffset}%)`,
+                                                        // Apply transform
+                                                        transform: `translate(${finalHOffset}%, ${settings.mark.vOffset}%)`,
+                                                        whiteSpace: 'nowrap', // Prevent wrapping
+                                                        pointerEvents: 'none', // Ensure it doesn't block clicks if interactive (though this is print view)
                                                     };
                                                     mark = <div style={markStyle}>{markChar}</div>;
                                                 }
