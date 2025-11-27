@@ -27,6 +27,7 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                             <tr key={r} style={{ height: `${layout.rowHeights[r] / 96 * 25.4}mm` }}>
                                 {row.map((cell, c) => {
                                     if (!cell) return null;
+                                    const borderStyleBase = `${cell.borderWidth || 1}px ${cell.borderStyle || 'solid'} ${cell.borderColor || '#000'}`;
                                     const style: React.CSSProperties = {
                                         width: `${layout.colWidths[c] / 96 * 25.4}mm`,
                                         textAlign: cell.hAlign,
@@ -35,10 +36,10 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         fontStyle: cell.fontStyle,
                                         textDecoration: cell.textDecoration,
                                         fontSize: `${cell.fontSize}pt`,
-                                        borderTop: cell.borders?.top ? '1px solid black' : 'none',
-                                        borderBottom: cell.borders?.bottom ? '1px solid black' : 'none',
-                                        borderLeft: cell.borders?.left ? '1px solid black' : 'none',
-                                        borderRight: cell.borders?.right ? '1px solid black' : 'none',
+                                        borderTop: cell.borders?.top ? borderStyleBase : 'none',
+                                        borderBottom: cell.borders?.bottom ? borderStyleBase : 'none',
+                                        borderLeft: cell.borders?.left ? borderStyleBase : 'none',
+                                        borderRight: cell.borders?.right ? borderStyleBase : 'none',
                                         backgroundColor: cell.backgroundColor || 'transparent',
                                         padding: '4px',
                                         overflow: 'hidden',

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { SheetLayout, SheetCell } from '../../types';
-import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon } from '../icons';
+import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, PaletteIcon, GripVerticalIcon } from '../icons';
 
 interface LayoutSidebarProps {
     layouts: Record<string, SheetLayout>;
@@ -10,26 +10,34 @@ interface LayoutSidebarProps {
 }
 
 type PaperSize = 'A4' | 'B5' | 'A3';
-type QuestionType = 'text' | 'marksheet';
+type QuestionType = 'text' | 'marksheet' | 'long_text';
 
-interface QuestionGroup {
+// Logical structure of the exam
+interface QuestionDef {
     id: string;
     type: QuestionType;
-    count: number; // Number of questions in this group
-    columns: number; // How many questions per row (1, 2, 3...)
-    chars?: number; // Approximate character count for text width (e.g. 5, 10, 20...)
+    widthRatio: number; // 1 to 10 (relative width)
+    chars?: number; // Hint for text width
     choices?: number; // For marksheet
-    labelStart: number; // Starting question number
+    labelOverride?: string;
 }
 
-interface SectionBlock {
+interface SectionDef {
     id: string;
-    label: string; // I, II, 1, 2...
-    questions: QuestionGroup[];
+    title: string; // e.g., "I", "II", "1", "2"
+    questions: QuestionDef[];
+}
+
+interface LayoutConfig {
+    name: string;
+    paperSize: PaperSize;
+    borderWidth: number;
+    borderColor: string;
+    sections: SectionDef[];
 }
 
 const PAPER_DIMENSIONS: Record<PaperSize, { width: number, height: number }> = {
-    'A4': { width: 210, height: 297 }, // mm
+    'A4': { width: 210, height: 297 },
     'B5': { width: 182, height: 257 },
     'A3': { width: 297, height: 420 },
 };
@@ -38,25 +46,20 @@ const c = (overrides: Partial<SheetCell> = {}): SheetCell => ({
     text: '', rowSpan: 1, colSpan: 1, hAlign: 'left', vAlign: 'middle',
     fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none',
     fontSize: 11, borders: { top: true, bottom: true, left: true, right: true },
+    borderStyle: 'solid', borderColor: '#000000', borderWidth: 1,
     ...overrides
 });
 
-// Helper to convert number to Roman numerals or standard
-const getSectionLabel = (index: number) => {
-    const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-    return romans[index] || String(index + 1);
-};
-
-const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlock[]): SheetLayout => {
-    // Layout Constants
-    const totalCols = 48; // High resolution grid for flexibility
+// Auto-layout engine
+const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
+    // High-resolution grid for flexible placement
+    const totalCols = 60; 
     const mmToPx = 3.78; 
-    const rowHeightMm = 9; 
+    const rowHeightMm = 10; 
     
-    // Grid Initialization
     const cells: (SheetCell | null)[][] = [];
     const rowHeights: number[] = [];
-    const colWidths: number[] = Array(totalCols).fill(((PAPER_DIMENSIONS[size].width - 20) / totalCols) * mmToPx);
+    const colWidths: number[] = Array(totalCols).fill(((PAPER_DIMENSIONS[config.paperSize].width - 20) / totalCols) * mmToPx);
 
     const addRow = (heightMm: number = rowHeightMm) => {
         const row = Array(totalCols).fill(null).map(() => c({ borders: { top: false, bottom: false, left: false, right: false } }));
@@ -66,114 +69,141 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
     };
 
     const placeCell = (r: number, cIdx: number, span: number, content: SheetCell) => {
-        while (r >= cells.length) {
-            addRow();
-        }
+        while (r >= cells.length) addRow();
         if (cIdx >= totalCols) return;
         
-        // Ensure span doesn't exceed row
         const safeSpan = Math.min(span, totalCols - cIdx);
         if (safeSpan <= 0) return;
 
-        cells[r][cIdx] = { ...content, colSpan: safeSpan };
+        // Apply global style settings if not overridden
+        const cellContent = {
+            ...content,
+            borderWidth: content.borderWidth ?? config.borderWidth,
+            borderColor: content.borderColor ?? config.borderColor,
+        };
+
+        cells[r][cIdx] = { ...cellContent, colSpan: safeSpan };
         for (let k = 1; k < safeSpan; k++) {
             if (cIdx + k < totalCols) cells[r][cIdx + k] = null;
         }
     };
 
     // --- Header ---
-    let r = addRow(14); // Title row
-    placeCell(r, 0, 32, c({ text: name, fontSize: 18, fontWeight: 'bold', hAlign: 'center', borders: { top: true, bottom: true, left: true, right: true } }));
-    placeCell(r, 32, 16, c({ text: '点数', fontSize: 10, vAlign: 'top', borders: { top: true, bottom: true, left: true, right: true } }));
+    let r = addRow(16);
+    placeCell(r, 0, 40, c({ text: config.name, fontSize: 18, fontWeight: 'bold', hAlign: 'center', borders: { top: true, bottom: true, left: true, right: true } }));
+    placeCell(r, 40, 20, c({ text: '点数', fontSize: 10, vAlign: 'top', borders: { top: true, bottom: true, left: true, right: true } }));
     
-    r = addRow(10); // Name row
-    placeCell(r, 0, 16, c({ text: '  年     組     番', borders: { top: true, bottom: true, left: true, right: true } }));
-    placeCell(r, 16, 16, c({ text: '氏名', borders: { top: true, bottom: true, left: true, right: true } }));
-    placeCell(r, 32, 16, c({ text: '', borders: { top: true, bottom: true, left: true, right: true } })); // Score space
+    r = addRow(12);
+    placeCell(r, 0, 20, c({ text: '  年     組     番', borders: { top: true, bottom: true, left: true, right: true } }));
+    placeCell(r, 20, 20, c({ text: '氏名', borders: { top: true, bottom: true, left: true, right: true } }));
+    placeCell(r, 40, 20, c({ text: '', borders: { top: true, bottom: true, left: true, right: true } })); // Score space
 
-    addRow(4); // Spacer
+    addRow(6); // Spacer
 
     // --- Body ---
-    // Section column width (for 'I', 'II' etc)
-    const sectionColSpan = 3; 
-    const contentColSpan = totalCols - sectionColSpan - 1; // -1 for right margin
-    const contentStartCol = sectionColSpan;
+    // Layout Logic:
+    // Iterate through sections.
+    // Inside section, iterate through questions.
+    // Pack questions into rows like flexbox.
+    
+    // Width allocation:
+    // Left margin for Section Labels (e.g. 4 cols)
+    const sectionLabelWidth = 4;
+    const contentAreaWidth = totalCols - sectionLabelWidth - 1; // -1 right margin
+    const contentStartCol = sectionLabelWidth;
 
-    sections.forEach(section => {
-        const startRow = cells.length;
+    let globalQNum = 1;
+
+    config.sections.forEach(section => {
+        const sectionStartRow = cells.length;
         
-        // Render each question group in this section
-        section.questions.forEach(group => {
-            const itemsPerRow = Math.max(1, group.columns);
-            // Width per item block (Question Number + Answer Box)
-            const itemBlockSpan = Math.floor(contentColSpan / itemsPerRow);
-            const itemGap = 1;
-            const actualItemSpan = Math.max(1, itemBlockSpan - itemGap);
+        let currentRow = addRow();
+        let currentContentCol = 0; // Relative to contentStartCol
 
-            // Inside item block:
-            // Q Num width: fixed small width (e.g. 3 units)
-            const qNumSpan = 3;
-            // Answer box width
-            const answerBoxSpan = Math.max(1, actualItemSpan - qNumSpan);
+        section.questions.forEach((q, idx) => {
+            const qNumText = q.labelOverride || `${globalQNum}`;
+            if (!q.labelOverride) globalQNum++;
 
-            let currentQ = 0;
-            while (currentQ < group.count) {
-                const rowIdx = addRow(group.type === 'marksheet' ? 8 : 10);
-                
-                for (let col = 0; col < itemsPerRow && currentQ < group.count; col++) {
-                    const itemStartCol = contentStartCol + (col * itemBlockSpan);
-                    const qNumber = group.labelStart + currentQ;
-
-                    // Question Number
-                    placeCell(rowIdx, itemStartCol, qNumSpan, c({ 
-                        text: `${qNumber}`, 
-                        hAlign: 'center', 
-                        backgroundColor: '#f3f4f6',
-                        borders: { top: true, bottom: true, left: true, right: true } 
-                    }));
-
-                    // Answer Area
-                    if (group.type === 'marksheet') {
-                        const choices = group.choices || 4;
-                        const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-                        const choiceSpan = Math.max(1, Math.floor(answerBoxSpan / choices));
-                        
-                        for(let i=0; i<choices; i++) {
-                            const isLast = i === choices - 1;
-                            const span = isLast ? Math.max(1, answerBoxSpan - (choiceSpan * (choices-1))) : choiceSpan;
-                            placeCell(rowIdx, itemStartCol + qNumSpan + (i * choiceSpan), span, c({
-                                text: labels[i], hAlign: 'center',
-                                borders: { top: true, bottom: true, left: true, right: true }
-                            }));
-                        }
-                    } else {
-                        // Text Answer
-                        let effectiveAnswerSpan = answerBoxSpan;
-                        // Rough approx: 1 unit ~ 4mm. 1 char ~ 5-8mm? 
-                        // If chars provided, limit width.
-                        if (group.chars && group.chars > 0) {
-                            // very rough calculation
-                            const needed = Math.ceil(group.chars * 1.5); 
-                            if (needed < answerBoxSpan) effectiveAnswerSpan = Math.max(1, needed);
-                        }
-
-                        placeCell(rowIdx, itemStartCol + qNumSpan, effectiveAnswerSpan, c({
-                            text: '', 
-                            borders: { top: true, bottom: true, left: true, right: true }
-                        }));
-                    }
-                    currentQ++;
-                }
+            // Calculate width needed
+            // Q Num box: fixed ~3 units
+            // Answer box: depends on user setting (widthRatio or chars)
+            // Let's map 'chars'/widthRatio to grid units.
+            // total content width is ~55 units.
+            // 10 chars ~ 10-15 units?
+            // widthRatio 1-10 -> 10% to 100% of row
+            
+            const qNumBoxWidth = 3;
+            let answerBoxWidth = 0;
+            
+            if (q.type === 'marksheet') {
+                const choices = q.choices || 4;
+                answerBoxWidth = Math.max(8, choices * 3);
+            } else if (q.type === 'long_text') {
+                answerBoxWidth = contentAreaWidth - qNumBoxWidth; // Full width
+            } else {
+                // Text
+                // Use widthRatio if set, else approximate from chars
+                // Map ratio 1..10 to 10%..100%
+                answerBoxWidth = Math.floor((contentAreaWidth * q.widthRatio) / 10) - qNumBoxWidth;
+                answerBoxWidth = Math.max(4, answerBoxWidth);
             }
+
+            const totalItemWidth = qNumBoxWidth + answerBoxWidth;
+
+            // Check if fits in current row
+            if (currentContentCol + totalItemWidth > contentAreaWidth) {
+                // Wrap to next row
+                currentRow = addRow();
+                currentContentCol = 0;
+            }
+
+            // Place Question Number
+            const absCol = contentStartCol + currentContentCol;
+            placeCell(currentRow, absCol, qNumBoxWidth, c({ 
+                text: qNumText, 
+                hAlign: 'center', 
+                backgroundColor: '#f3f4f6',
+                borders: { top: true, bottom: true, left: true, right: true }
+            }));
+
+            // Place Answer Box
+            if (q.type === 'marksheet') {
+                const choices = q.choices || 4;
+                const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+                const choiceSpan = Math.floor(answerBoxWidth / choices);
+                for(let i=0; i<choices; i++) {
+                    const isLast = i === choices - 1;
+                    const span = isLast ? answerBoxWidth - (choiceSpan * (choices-1)) : choiceSpan;
+                    placeCell(currentRow, absCol + qNumBoxWidth + (i * choiceSpan), span, c({
+                        text: labels[i], hAlign: 'center',
+                        borders: { top: true, bottom: true, left: true, right: true }
+                    }));
+                }
+            } else if (q.type === 'long_text') {
+                // Long text might span multiple rows?
+                // For simplicity here, just one tall row or handle rowSpan?
+                // Let's make the row taller for this one.
+                rowHeights[currentRow] = 30 * mmToPx; // Tall row
+                placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({
+                    text: '', borders: { top: true, bottom: true, left: true, right: true }
+                }));
+            } else {
+                // Normal text
+                placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({
+                    text: '', borders: { top: true, bottom: true, left: true, right: true }
+                }));
+            }
+
+            currentContentCol += totalItemWidth + 1; // +1 gap
         });
 
-        // Add Section Label (spanning all rows of this section)
-        const endRow = cells.length;
-        const sectionHeightRows = endRow - startRow;
-        if (sectionHeightRows > 0) {
-            placeCell(startRow, 0, sectionColSpan, c({
-                text: section.label,
-                rowSpan: sectionHeightRows,
+        // Place Section Label
+        const sectionEndRow = cells.length;
+        const rowSpan = sectionEndRow - sectionStartRow;
+        if (rowSpan > 0) {
+            placeCell(sectionStartRow, 0, sectionLabelWidth, c({
+                text: section.title,
+                rowSpan: rowSpan,
                 hAlign: 'center',
                 vAlign: 'middle',
                 fontSize: 14,
@@ -181,23 +211,18 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
                 backgroundColor: '#e5e7eb',
                 borders: { top: true, bottom: true, left: true, right: true }
             }));
-            // Fill nulls for rowSpan
-            for(let r=startRow+1; r<endRow; r++) {
-                if (r < cells.length) { // bounds check
-                    for(let c=0; c<sectionColSpan; c++) {
-                        if (c < totalCols) cells[r][c] = null;
-                    }
-                }
+            // Cleanup underlying
+            for(let rr=sectionStartRow+1; rr<sectionEndRow; rr++) {
+                for(let cc=0; cc<sectionLabelWidth; cc++) cells[rr][cc] = null;
             }
         }
-        
-        // Gap between sections
-        addRow(4);
+
+        addRow(4); // Gap between sections
     });
 
     return {
         id: `layout_${Date.now()}`,
-        name: name,
+        name: config.name,
         rows: cells.length,
         cols: totalCols,
         rowHeights,
@@ -209,89 +234,76 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
 export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayouts, activeLayoutId, setActiveLayoutId }) => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     
-    // Wizard State
-    const [name, setName] = useState('');
-    const [paperSize, setPaperSize] = useState<PaperSize>('A4');
-    const [sections, setSections] = useState<SectionBlock[]>([]);
+    // --- Builder State ---
+    const [config, setConfig] = useState<LayoutConfig>({
+        name: '',
+        paperSize: 'A4',
+        borderWidth: 1,
+        borderColor: '#000000',
+        sections: []
+    });
 
+    // Helper to add a section
     const addSection = () => {
-        const newSection: SectionBlock = {
+        const newSection: SectionDef = {
             id: `sec_${Date.now()}`,
-            label: getSectionLabel(sections.length),
+            title: ['I', 'II', 'III', 'IV', 'V'][config.sections.length] || `${config.sections.length + 1}`,
             questions: []
         };
-        setSections([...sections, newSection]);
+        setConfig(prev => ({ ...prev, sections: [...prev.sections, newSection] }));
     };
 
-    const addQuestionGroup = (sectionId: string, type: QuestionType) => {
-        setSections(prev => prev.map(sec => {
-            if (sec.id !== sectionId) return sec;
-            
-            const newGroup: QuestionGroup = {
-                id: `grp_${Date.now()}`,
-                type,
-                count: 5,
-                columns: 1,
-                labelStart: 1, // Will be recalculated
-                chars: type === 'text' ? 10 : undefined,
-                choices: type === 'marksheet' ? 4 : undefined
-            };
-            return { ...sec, questions: [...sec.questions, newGroup] };
-        }));
+    // Helper to add a question to the last section (or create one)
+    const addQuestion = (type: QuestionType, widthRatio: number = 5) => {
+        let sections = [...config.sections];
+        if (sections.length === 0) {
+            sections.push({ id: `sec_${Date.now()}`, title: 'I', questions: [] });
+        }
+        const lastSection = sections[sections.length - 1];
+        
+        lastSection.questions.push({
+            id: `q_${Date.now()}`,
+            type,
+            widthRatio,
+            choices: type === 'marksheet' ? 4 : undefined,
+        });
+        
+        setConfig(prev => ({ ...prev, sections }));
     };
 
-    const updateGroup = (sectionId: string, groupId: string, field: keyof QuestionGroup, value: any) => {
-        setSections(prev => prev.map(sec => {
-            if (sec.id !== sectionId) return sec;
-            return {
-                ...sec,
-                questions: sec.questions.map(q => q.id === groupId ? { ...q, [field]: value } : q)
-            };
-        }));
-    };
-
-    const removeGroup = (sectionId: string, groupId: string) => {
-        setSections(prev => prev.map(sec => {
-            if (sec.id !== sectionId) return sec;
-            return { ...sec, questions: sec.questions.filter(q => q.id !== groupId) };
-        }));
-    };
-
-    const removeSection = (sectionId: string) => {
-        setSections(prev => prev.filter(s => s.id !== sectionId));
-    };
-
-    // Calculate dynamic start numbers for display
-    useEffect(() => {
-        let counter = 1;
-        setSections(prev => prev.map(sec => ({
-            ...sec,
-            questions: sec.questions.map(q => {
-                const start = counter;
-                counter += q.count;
-                return { ...q, labelStart: start };
+    const updateQuestion = (sectionId: string, qId: string, updates: Partial<QuestionDef>) => {
+        setConfig(prev => ({
+            ...prev,
+            sections: prev.sections.map(s => {
+                if (s.id !== sectionId) return s;
+                return {
+                    ...s,
+                    questions: s.questions.map(q => q.id === qId ? { ...q, ...updates } : q)
+                };
             })
-        })));
-    }, [sections.map(s => s.questions.map(q => q.count).join(',')).join('|')]); // Recalc when counts change
+        }));
+    };
+
+    const deleteQuestion = (sectionId: string, qId: string) => {
+        setConfig(prev => ({
+            ...prev,
+            sections: prev.sections.map(s => {
+                if (s.id !== sectionId) return s;
+                return { ...s, questions: s.questions.filter(q => q.id !== qId) };
+            })
+        }));
+    };
 
     const handleCreateLayout = () => {
-        if (!name.trim()) {
+        if (!config.name) {
             alert('テスト名を入力してください');
             return;
         }
-        if (sections.length === 0) {
-            alert('大問を追加してください');
-            return;
-        }
-        
-        const newLayout = generateSmartLayout(name.trim(), paperSize, sections);
-        setLayouts(prev => ({ ...prev, [newLayout.id]: newLayout }));
-        setActiveLayoutId(newLayout.id);
+        const layout = generateAutoLayout(config);
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+        setActiveLayoutId(layout.id);
         setIsCreateModalOpen(false);
-        
-        // Reset
-        setName('');
-        setSections([]);
+        setConfig({ name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', sections: [] });
     };
 
     const handleDeleteLayout = (id: string) => {
@@ -314,159 +326,179 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             importedLayout.name = `${importedLayout.name} (インポート)`;
             setLayouts(prev => ({...prev, [newId]: importedLayout}));
             setActiveLayoutId(newId);
-        } else if (result.error) {
-            alert(`インポートに失敗しました: ${result.error}`);
         }
     };
 
     const handleExportLayout = async () => {
         if (!activeLayoutId || !layouts[activeLayoutId]) return;
-        const result = await window.electronAPI.invoke('export-sheet-layout', {
+        await window.electronAPI.invoke('export-sheet-layout', {
             layoutName: layouts[activeLayoutId].name,
             layoutData: layouts[activeLayoutId],
         });
-        if (result.success) {
-            alert(`エクスポートしました: ${result.path}`);
-        } else if (result.error) {
-            alert(`エクスポートに失敗しました: ${result.error}`);
-        }
     };
 
     return (
         <>
             {isCreateModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden">
-                        <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">解答用紙を作成</h3>
-                            <button onClick={() => setIsCreateModalOpen(false)}><XIcon className="w-6 h-6 text-slate-400"/></button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-auto p-6 space-y-6">
-                            {/* Global Settings */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-600 dark:text-slate-400 mb-1">テスト名</label>
-                                    <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border rounded-md bg-white dark:bg-slate-700" placeholder="例: 1学期中間考査" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-600 dark:text-slate-400 mb-1">用紙サイズ</label>
+                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex overflow-hidden">
+                        {/* Left: Configuration Sidebar */}
+                        <div className="w-1/3 border-r dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex flex-col">
+                            <div className="p-4 border-b dark:border-slate-700">
+                                <h3 className="font-bold text-lg mb-4">設定</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">テスト名</label>
+                                        <input type="text" value={config.name} onChange={e => setConfig({...config, name: e.target.value})} className="w-full p-2 border rounded-md text-sm" placeholder="1学期中間テスト"/>
+                                    </div>
                                     <div className="flex gap-2">
-                                        {(['A4', 'B5', 'A3'] as PaperSize[]).map(s => (
-                                            <button key={s} onClick={() => setPaperSize(s)} className={`px-4 py-2 rounded-md border ${paperSize === s ? 'bg-sky-600 text-white border-sky-600' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600'}`}>{s}</button>
-                                        ))}
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">サイズ</label>
+                                            <select value={config.paperSize} onChange={e => setConfig({...config, paperSize: e.target.value as PaperSize})} className="w-full p-2 border rounded-md text-sm">
+                                                <option value="A4">A4</option>
+                                                <option value="B5">B5</option>
+                                                <option value="A3">A3</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">枠線の色</label>
+                                            <input type="color" value={config.borderColor} onChange={e => setConfig({...config, borderColor: e.target.value})} className="w-full h-8 cursor-pointer"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">太さ</label>
+                                            <input type="number" min="1" max="5" value={config.borderWidth} onChange={e => setConfig({...config, borderWidth: parseInt(e.target.value)})} className="w-full p-1 border rounded-md text-sm"/>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Builder Area */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-md font-bold text-slate-700 dark:text-slate-300">構成エディタ</h4>
-                                    <button onClick={addSection} className="flex items-center gap-2 px-3 py-2 bg-slate-200 dark:bg-slate-700 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 text-sm font-medium">
-                                        <PlusIcon className="w-4 h-4"/> 大問を追加
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                <div className="space-y-2">
+                                    <button onClick={() => addQuestion('text', 2)} className="w-full flex items-center gap-2 p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg shadow-sm transition-all text-left group">
+                                        <div className="bg-blue-100 p-2 rounded text-blue-600"><ListIcon className="w-5 h-5"/></div>
+                                        <div>
+                                            <div className="font-bold text-sm">短答 (小)</div>
+                                            <div className="text-xs text-slate-400">数文字程度の記述</div>
+                                        </div>
+                                        <PlusIcon className="ml-auto w-4 h-4 text-slate-300 group-hover:text-sky-500"/>
+                                    </button>
+                                    <button onClick={() => addQuestion('text', 5)} className="w-full flex items-center gap-2 p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg shadow-sm transition-all text-left group">
+                                        <div className="bg-indigo-100 p-2 rounded text-indigo-600"><ListIcon className="w-5 h-5"/></div>
+                                        <div>
+                                            <div className="font-bold text-sm">記述 (中)</div>
+                                            <div className="text-xs text-slate-400">1行程度の記述</div>
+                                        </div>
+                                        <PlusIcon className="ml-auto w-4 h-4 text-slate-300 group-hover:text-sky-500"/>
+                                    </button>
+                                    <button onClick={() => addQuestion('long_text')} className="w-full flex items-center gap-2 p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg shadow-sm transition-all text-left group">
+                                        <div className="bg-purple-100 p-2 rounded text-purple-600"><FileUpIcon className="w-5 h-5"/></div>
+                                        <div>
+                                            <div className="font-bold text-sm">長文記述</div>
+                                            <div className="text-xs text-slate-400">複数行の大きな枠</div>
+                                        </div>
+                                        <PlusIcon className="ml-auto w-4 h-4 text-slate-300 group-hover:text-sky-500"/>
+                                    </button>
+                                    <button onClick={() => addQuestion('marksheet')} className="w-full flex items-center gap-2 p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg shadow-sm transition-all text-left group">
+                                        <div className="bg-teal-100 p-2 rounded text-teal-600"><CalculatorIcon className="w-5 h-5"/></div>
+                                        <div>
+                                            <div className="font-bold text-sm">記号選択</div>
+                                            <div className="text-xs text-slate-400">①〜④などの選択肢</div>
+                                        </div>
+                                        <PlusIcon className="ml-auto w-4 h-4 text-slate-300 group-hover:text-sky-500"/>
                                     </button>
                                 </div>
+                                <div className="border-t pt-4 dark:border-slate-700">
+                                    <button onClick={addSection} className="w-full flex items-center justify-center gap-2 p-2 bg-slate-200 dark:bg-slate-700 rounded-md hover:bg-slate-300 text-sm font-bold text-slate-600 dark:text-slate-300">
+                                        <ArrowDownFromLineIcon className="w-4 h-4"/> 新しい大問を追加
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="p-4 border-t dark:border-slate-700 bg-white dark:bg-slate-800">
+                                <button onClick={handleCreateLayout} className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold shadow-lg transform transition-transform active:scale-95">
+                                    解答用紙を生成する
+                                </button>
+                            </div>
+                        </div>
 
-                                <div className="space-y-6">
-                                    {sections.map((section, sIdx) => (
-                                        <div key={section.id} className="border-l-4 border-sky-500 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-r-lg">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xl font-bold font-serif text-slate-700 dark:text-slate-200">{section.label}</span>
-                                                    <input 
-                                                        type="text" 
-                                                        value={section.label} 
-                                                        onChange={e => setSections(prev => prev.map(s => s.id === section.id ? {...s, label: e.target.value} : s))}
-                                                        className="w-16 p-1 text-sm bg-white dark:bg-slate-700 border rounded"
-                                                        placeholder="番号"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button onClick={() => addQuestionGroup(section.id, 'text')} className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs hover:bg-slate-50 dark:hover:bg-slate-600"><PenLineIcon className="w-3 h-3"/> 記述を追加</button>
-                                                    <button onClick={() => addQuestionGroup(section.id, 'marksheet')} className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs hover:bg-slate-50 dark:hover:bg-slate-600"><CalculatorIcon className="w-3 h-3"/> 記号を追加</button>
-                                                    <button onClick={() => removeSection(section.id)} className="p-2 text-slate-400 hover:text-red-500"><Trash2Icon className="w-4 h-4"/></button>
-                                                </div>
+                        {/* Right: Interactive Preview / List */}
+                        <div className="w-2/3 bg-slate-100 dark:bg-slate-900/50 flex flex-col relative">
+                            <div className="absolute top-2 right-2 z-10">
+                                <button onClick={() => setIsCreateModalOpen(false)} className="p-2 bg-white rounded-full shadow hover:bg-slate-100"><XIcon className="w-5 h-5"/></button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-8">
+                                <div className="bg-white min-h-full shadow-lg p-8 rounded-sm" style={{ aspectRatio: PAPER_DIMENSIONS[config.paperSize].width / PAPER_DIMENSIONS[config.paperSize].height }}>
+                                    <h1 className="text-center text-2xl font-bold border-b-2 border-black pb-4 mb-4">{config.name || 'テスト名'}</h1>
+                                    
+                                    {config.sections.map((section, sIdx) => (
+                                        <div key={section.id} className="mb-6 border-l-4 border-slate-300 pl-4 relative group/section hover:border-sky-400 transition-colors">
+                                            <div className="absolute -left-10 top-0 p-2">
+                                                <input value={section.title} onChange={e => {
+                                                    const newSections = [...config.sections];
+                                                    newSections[sIdx].title = e.target.value;
+                                                    setConfig({...config, sections: newSections});
+                                                }} className="w-8 text-center font-bold text-xl bg-transparent border-b border-transparent focus:border-sky-500 outline-none" />
                                             </div>
-
-                                            <div className="space-y-3">
-                                                {section.questions.map((group, gIdx) => (
-                                                    <div key={group.id} className="flex items-center gap-4 bg-white dark:bg-slate-800 p-3 rounded shadow-sm border border-slate-200 dark:border-slate-700">
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-500">
-                                                            {gIdx + 1}
-                                                        </div>
+                                            
+                                            <div className="flex flex-wrap gap-2 items-start content-start">
+                                                {section.questions.map((q, qIdx) => (
+                                                    <div key={q.id} className="group/item relative border border-slate-300 bg-white p-2 rounded hover:shadow-md hover:border-sky-500 transition-all cursor-pointer" 
+                                                        style={{ 
+                                                            width: q.type === 'long_text' ? '100%' : `${(q.widthRatio || 5) * 10}%`,
+                                                            minWidth: '100px'
+                                                        }}>
                                                         
-                                                        {/* Type & Count */}
-                                                        <div className="flex flex-col w-24">
-                                                            <span className="text-[10px] text-slate-400 font-bold uppercase">{group.type === 'marksheet' ? '記号(選択)' : '記述(自由)'}</span>
-                                                            <div className="flex items-center gap-1">
-                                                                <input type="number" min="1" value={group.count} onChange={e => updateGroup(section.id, group.id, 'count', parseInt(e.target.value))} className="w-12 p-1 text-sm border rounded bg-slate-50 dark:bg-slate-900" />
-                                                                <span className="text-xs">問</span>
-                                                            </div>
+                                                        {/* Hover Controls */}
+                                                        <div className="absolute -top-2 -right-2 hidden group-hover/item:flex gap-1 bg-white shadow rounded-full p-1 z-20">
+                                                            <button onClick={() => deleteQuestion(section.id, q.id)} className="p-1 text-red-500 hover:bg-red-50 rounded-full"><Trash2Icon className="w-3 h-3"/></button>
                                                         </div>
+                                                        <div className="absolute bottom-0 right-0 w-4 h-4 cursor-ew-resize opacity-0 group-hover/item:opacity-100 bg-slate-200 rounded-tl" 
+                                                            title="幅を変更"
+                                                            onMouseDown={(e) => {
+                                                                // Simple resize logic simulation
+                                                                const startX = e.clientX;
+                                                                const startWidth = q.widthRatio;
+                                                                const onMove = (mv: MouseEvent) => {
+                                                                    const diff = mv.clientX - startX;
+                                                                    const step = 20; // px per ratio unit approx
+                                                                    const change = Math.round(diff / step);
+                                                                    updateQuestion(section.id, q.id, { widthRatio: Math.max(1, Math.min(10, startWidth + change)) });
+                                                                };
+                                                                const onUp = () => {
+                                                                    document.removeEventListener('mousemove', onMove);
+                                                                    document.removeEventListener('mouseup', onUp);
+                                                                };
+                                                                document.addEventListener('mousemove', onMove);
+                                                                document.addEventListener('mouseup', onUp);
+                                                            }}
+                                                        />
 
-                                                        {/* Layout Settings */}
-                                                        <div className="flex-1 grid grid-cols-2 gap-4">
-                                                            <div>
-                                                                <label className="block text-[10px] text-slate-400 font-bold mb-1">横並び数</label>
-                                                                <input type="range" min="1" max="5" value={group.columns} onChange={e => updateGroup(section.id, group.id, 'columns', parseInt(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
-                                                                <div className="text-xs text-right">{group.columns}列</div>
-                                                            </div>
-                                                            <div>
-                                                                {group.type === 'text' ? (
-                                                                    <>
-                                                                        <label className="block text-[10px] text-slate-400 font-bold mb-1">解答枠サイズ (文字数目安)</label>
-                                                                        <select value={group.chars} onChange={e => updateGroup(section.id, group.id, 'chars', parseInt(e.target.value))} className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-900">
-                                                                            <option value="0">自動 (最大)</option>
-                                                                            <option value="5">短め (〜5文字)</option>
-                                                                            <option value="10">普通 (〜10文字)</option>
-                                                                            <option value="20">長め (〜20文字)</option>
-                                                                        </select>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <label className="block text-[10px] text-slate-400 font-bold mb-1">選択肢の数</label>
-                                                                        <select value={group.choices} onChange={e => updateGroup(section.id, group.id, 'choices', parseInt(e.target.value))} className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-900">
-                                                                            <option value="2">2択</option>
-                                                                            <option value="3">3択</option>
-                                                                            <option value="4">4択</option>
-                                                                            <option value="5">5択</option>
-                                                                        </select>
-                                                                    </>
-                                                                )}
-                                                            </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold bg-slate-100 px-1 rounded text-xs">{q.labelOverride || '?'}</span>
+                                                            <span className="text-xs text-slate-400 flex-1 truncate">
+                                                                {q.type === 'marksheet' ? `記号 (${q.choices}択)` : q.type === 'long_text' ? '長文記述' : '記述'}
+                                                            </span>
                                                         </div>
-
-                                                        {/* Number Range Preview */}
-                                                        <div className="text-xs text-slate-400 w-20 text-center">
-                                                            No. {group.labelStart} ～ {group.labelStart + group.count - 1}
+                                                        <div className="mt-2 h-6 bg-slate-50 border border-dashed border-slate-200 rounded flex items-center justify-center text-xs text-slate-300">
+                                                            解答欄
                                                         </div>
-
-                                                        <button onClick={() => removeGroup(section.id, group.id)} className="text-slate-300 hover:text-red-500">
-                                                            <XIcon className="w-5 h-5"/>
-                                                        </button>
                                                     </div>
                                                 ))}
-                                                {section.questions.length === 0 && (
-                                                    <div className="text-center text-xs text-slate-400 py-2 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded">
-                                                        小問グループを追加してください
-                                                    </div>
-                                                )}
+                                                {/* Add button at end of flow */}
+                                                <button onClick={() => addQuestion('text', 2)} className="w-8 h-8 rounded border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-300 hover:text-sky-500 hover:border-sky-500 transition-colors">
+                                                    <PlusIcon className="w-4 h-4"/>
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
-                                    {sections.length === 0 && (
-                                        <div className="text-center py-10 text-slate-400 bg-slate-50 dark:bg-slate-800/30 rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700">
-                                            「大問を追加」ボタンを押して構成を開始してください
+                                    
+                                    {config.sections.length === 0 && (
+                                        <div className="flex items-center justify-center h-40 text-slate-400">
+                                            左のメニューから問題を追加してください
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3">
-                            <button onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">キャンセル</button>
-                            <button onClick={handleCreateLayout} className="px-6 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-500 shadow transition-colors font-bold">作成する</button>
                         </div>
                     </div>
                 </div>
@@ -480,11 +512,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                             <button onClick={() => handleDeleteLayout(layout.id)} className="p-1 rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-colors"><Trash2Icon className="w-4 h-4" /></button>
                         </div>
                     ))}
-                    {Object.keys(layouts).length === 0 && (
-                        <div className="text-center text-xs text-slate-400 py-4">
-                            レイアウトがありません。<br/>新規作成してください。
-                        </div>
-                    )}
                 </div>
                 <div className="flex flex-col gap-2 pt-2 border-t dark:border-slate-700">
                     <button onClick={() => setIsCreateModalOpen(true)} className="w-full flex items-center justify-center gap-2 p-2.5 bg-sky-600 text-white rounded-md hover:bg-sky-500 transition-colors font-medium text-sm shadow-sm"><PlusIcon className="w-5 h-5"/>新規作成</button>

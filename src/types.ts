@@ -231,12 +231,16 @@ export interface SheetCell {
     fontStyle: 'normal' | 'italic';
     textDecoration: 'none' | 'underline';
     fontSize: number;
+    backgroundColor?: string;
     borders: {
         top: boolean;
         bottom: boolean;
         left: boolean;
         right: boolean;
     };
+    borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
+    borderColor?: string;
+    borderWidth?: number; // in pixels (approx)
 }
 
 export interface SheetLayout {

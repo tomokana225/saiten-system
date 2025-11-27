@@ -183,15 +183,16 @@ export const LayoutEditor = ({ layout, onLayoutChange }: { layout: SheetLayout, 
                                         if (!cell) return null;
                                         const isSelected = selectionRange && r >= selectionRange.minR && r <= selectionRange.maxR && c >= selectionRange.minC && c <= selectionRange.maxC;
                                         const isEditing = editingCell?.r === r && editingCell?.c === c;
+                                        const borderStyleBase = `${cell.borderWidth || 1}px ${cell.borderStyle || 'solid'} ${cell.borderColor || '#000'}`;
                                         const style: React.CSSProperties = {
                                             width: `${layout.colWidths[c]}px`,
                                             textAlign: cell.hAlign, verticalAlign: cell.vAlign,
                                             fontWeight: cell.fontWeight, fontStyle: cell.fontStyle, textDecoration: cell.textDecoration,
                                             fontSize: `${cell.fontSize}pt`,
-                                            borderTop: cell.borders?.top ? '1px solid #ccc' : 'none',
-                                            borderBottom: cell.borders?.bottom ? '1px solid #ccc' : 'none',
-                                            borderLeft: cell.borders?.left ? '1px solid #ccc' : 'none',
-                                            borderRight: cell.borders?.right ? '1px solid #ccc' : 'none',
+                                            borderTop: cell.borders?.top ? borderStyleBase : 'none',
+                                            borderBottom: cell.borders?.bottom ? borderStyleBase : 'none',
+                                            borderLeft: cell.borders?.left ? borderStyleBase : 'none',
+                                            borderRight: cell.borders?.right ? borderStyleBase : 'none',
                                             padding: '4px', overflow: 'hidden', wordWrap: 'break-word',
                                             backgroundColor: isEditing ? 'white' : (isSelected ? 'rgba(59, 130, 246, 0.2)' : (cell.backgroundColor || 'white'))
                                         };
