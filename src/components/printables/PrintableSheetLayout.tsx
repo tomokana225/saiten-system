@@ -2,7 +2,6 @@ import React from 'react';
 import type { SheetLayout } from '../../types';
 
 export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: SheetLayout }>(({ layout }, ref) => {
-    // Enhanced print styles for high fidelity
     const printStyles = `
         @media print {
             @page {
@@ -24,30 +23,27 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                 align-items: center;
             }
             .sheet-container {
-                /* Ensure it fits on paper */
                 width: 100%;
                 height: 100%; 
-                padding: 10mm; /* Default print margin */
+                padding: 10mm;
                 box-sizing: border-box;
             }
             .print-table {
                 border-collapse: collapse;
                 width: 100%;
-                table-layout: fixed; /* Crucial for exact column widths */
+                table-layout: fixed; 
                 font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
             }
             .print-table td {
                 border-style: solid;
                 border-color: black;
-                /* Ensure borders print */
                 box-sizing: border-box;
                 overflow: hidden;
             }
             .print-table td:empty::after {
-                content: "\\00a0"; /* Non-breaking space to preserve height */
+                content: "\\00a0";
             }
         }
-        /* Styles for screen preview */
         @media screen {
             .printable-area {
                 background: white;
@@ -56,8 +52,8 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
             .sheet-container {
                 padding: 10mm;
                 box-sizing: border-box;
-                width: 210mm; /* A4 width */
-                min-height: 297mm; /* A4 height */
+                width: 210mm; 
+                min-height: 297mm; 
                 margin: 0 auto;
                 background: white;
                 box-shadow: 0 0 10px rgba(0,0,0,0.1);
@@ -69,6 +65,35 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
             }
         }
     `;
+
+    const renderEnglishGrid = (metadata: any) => {
+        const { wordCount, wordsPerLine } = metadata;
+        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
+        const cols = wordsPerLine || wordCount;
+        
+        // SVG rendering for perfect lines
+        return (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {Array.from({ length: rows }).map((_, r) => (
+                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                        {Array.from({ length: cols }).map((_, c) => {
+                            const idx = r * cols + c;
+                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
+                            return (
+                                <div key={c} style={{ 
+                                    flex: 1, 
+                                    margin: '0 4px', 
+                                    borderBottom: '1px dashed black', 
+                                    height: '100%',
+                                    boxSizing: 'border-box'
+                                }}></div>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
     return (
         <div ref={ref} className="printable-area">
@@ -106,9 +131,10 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         padding: '2px 4px',
                                         whiteSpace: 'pre-wrap',
                                     };
+                                    
                                     return (
                                         <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}>
-                                            {cell.text}
+                                            {cell.type === 'english-grid' ? renderEnglishGrid(cell.metadata) : cell.text}
                                         </td>
                                     );
                                 })}

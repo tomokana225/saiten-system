@@ -241,6 +241,8 @@ export interface SheetCell {
     borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     borderColor?: string;
     borderWidth?: number; // in pixels (approx)
+    type?: 'text' | 'english-grid';
+    metadata?: any;
 }
 
 export interface HeaderElement {

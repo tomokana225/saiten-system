@@ -282,6 +282,35 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
+    // Helper to render English grid in preview
+    const renderEnglishGrid = (metadata: any) => {
+        const { wordCount, wordsPerLine } = metadata;
+        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
+        const cols = wordsPerLine || wordCount;
+        
+        return (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {Array.from({ length: rows }).map((_, r) => (
+                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                        {Array.from({ length: cols }).map((_, c) => {
+                            const idx = r * cols + c;
+                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
+                            return (
+                                <div key={c} style={{ 
+                                    flex: 1, 
+                                    margin: '0 4px', 
+                                    borderBottom: '1px dashed black', 
+                                    height: '100%',
+                                    boxSizing: 'border-box'
+                                }}></div>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
     return (
         <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
             {isInitModalOpen && (
@@ -519,7 +548,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                     };
                                                     return (
                                                         <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}>
-                                                            {cell.text}
+                                                            {cell.type === 'english-grid' ? renderEnglishGrid(cell.metadata) : cell.text}
                                                         </td>
                                                     );
                                                 })}
