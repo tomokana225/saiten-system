@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { SheetLayout, LayoutConfig, HeaderElement } from '../../types';
+import type { SheetLayout, SheetCell, LayoutConfig, HeaderElement } from '../../types';
 import { generateAutoLayout, PAPER_DIMENSIONS } from './LayoutGenerator';
 import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, ArrowLeftIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon, AlignVerticalJustifyStartIcon, AlignVerticalJustifyEndIcon, PrintIcon } from '../icons';
 
@@ -51,7 +51,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 headerElements = [
                     { id: 'title', label: 'タイトル', height: 2, visible: mergedHeader.showTitle },
                     { id: 'score', label: '点数欄', height: 2, visible: mergedHeader.showScore },
-                    { id: 'name', label: '氏名欄', height: mergedHeader.nameHeight || 1, visible: mergedHeader.showName }
+                    { id: 'name', label: '氏名欄', height: mergedHeader.nameHeight || 1, visible: mergedHeader.nameHeight ? true : false } // Fallback
                 ];
             }
 
@@ -272,7 +272,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     return (
-        <>
+        <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
             {isInitModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-[100] flex justify-center items-center p-4">
                     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4">
@@ -431,7 +431,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                 {q.type === 'english_word' && (
                                                                     <div className="flex items-center gap-1 col-span-2">
                                                                         <span className="text-[10px] text-slate-400">単語数:</span>
-                                                                        <input type="number" min="1" max="20" value={q.wordCount || 5} onChange={e => updateQuestion(section.id, q.id, { wordCount: parseInt(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                        <input type="number" min="1" max="100" value={q.wordCount || 5} onChange={e => updateQuestion(section.id, q.id, { wordCount: parseInt(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -491,6 +491,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     
                                     <div className="flex-1 flex flex-wrap content-start gap-y-2">
                                         {section.questions.map((q, qIdx) => {
+                                            // Re-calculate visual width for preview
                                             let widthStyle = '50%';
                                             if (q.type === 'long_text') widthStyle = '100%';
                                             else if (q.type === 'english_word') widthStyle = `${Math.min(100, (q.wordCount || 5) * 10)}%`;
@@ -519,6 +520,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                             </div>
                                                         )}
                                                         
+                                                        {/* Hover Controls Overlay - Fixed z-index and visibility */}
                                                         <div className="absolute right-0 top-0 bottom-0 w-8 bg-slate-100/90 border-l flex-col items-center justify-center gap-1 z-50 hidden group-hover/question:flex">
                                                             <button onClick={(e) => { e.stopPropagation(); insertQuestionAfter(sIdx, qIdx, q); }} className="p-1 text-green-600 hover:bg-green-200 rounded" title="追加"><PlusIcon className="w-3 h-3"/></button>
                                                             <button onClick={(e) => { e.stopPropagation(); deleteQuestion(section.id, q.id); }} className="p-1 text-red-600 hover:bg-red-200 rounded" title="削除"><MinusIcon className="w-3 h-3"/></button>
