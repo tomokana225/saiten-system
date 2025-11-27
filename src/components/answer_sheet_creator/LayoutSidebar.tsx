@@ -66,9 +66,19 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
     };
 
     const placeCell = (r: number, cIdx: number, span: number, content: SheetCell) => {
-        if (r >= cells.length) addRow();
-        cells[r][cIdx] = { ...content, colSpan: span };
-        for (let k = 1; k < span; k++) cells[r][cIdx + k] = null;
+        while (r >= cells.length) {
+            addRow();
+        }
+        if (cIdx >= totalCols) return;
+        
+        // Ensure span doesn't exceed row
+        const safeSpan = Math.min(span, totalCols - cIdx);
+        if (safeSpan <= 0) return;
+
+        cells[r][cIdx] = { ...content, colSpan: safeSpan };
+        for (let k = 1; k < safeSpan; k++) {
+            if (cIdx + k < totalCols) cells[r][cIdx + k] = null;
+        }
     };
 
     // --- Header ---
@@ -94,17 +104,17 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
         
         // Render each question group in this section
         section.questions.forEach(group => {
-            const itemsPerRow = group.columns;
+            const itemsPerRow = Math.max(1, group.columns);
             // Width per item block (Question Number + Answer Box)
             const itemBlockSpan = Math.floor(contentColSpan / itemsPerRow);
             const itemGap = 1;
-            const actualItemSpan = itemBlockSpan - itemGap;
+            const actualItemSpan = Math.max(1, itemBlockSpan - itemGap);
 
             // Inside item block:
             // Q Num width: fixed small width (e.g. 3 units)
             const qNumSpan = 3;
             // Answer box width
-            const answerBoxSpan = actualItemSpan - qNumSpan;
+            const answerBoxSpan = Math.max(1, actualItemSpan - qNumSpan);
 
             let currentQ = 0;
             while (currentQ < group.count) {
@@ -126,11 +136,11 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
                     if (group.type === 'marksheet') {
                         const choices = group.choices || 4;
                         const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-                        const choiceSpan = Math.floor(answerBoxSpan / choices);
+                        const choiceSpan = Math.max(1, Math.floor(answerBoxSpan / choices));
                         
                         for(let i=0; i<choices; i++) {
                             const isLast = i === choices - 1;
-                            const span = isLast ? answerBoxSpan - (choiceSpan * (choices-1)) : choiceSpan;
+                            const span = isLast ? Math.max(1, answerBoxSpan - (choiceSpan * (choices-1))) : choiceSpan;
                             placeCell(rowIdx, itemStartCol + qNumSpan + (i * choiceSpan), span, c({
                                 text: labels[i], hAlign: 'center',
                                 borders: { top: true, bottom: true, left: true, right: true }
@@ -138,17 +148,13 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
                         }
                     } else {
                         // Text Answer
-                        // If 'chars' is set, we could visually hint width, but here we fill the allotted column space.
-                        // Ideally if chars is small and cols=1, the box shouldn't stretch full width.
-                        // Let's adjust width based on 'chars' if it's significantly smaller than available space.
-                        
                         let effectiveAnswerSpan = answerBoxSpan;
                         // Rough approx: 1 unit ~ 4mm. 1 char ~ 5-8mm? 
                         // If chars provided, limit width.
                         if (group.chars && group.chars > 0) {
                             // very rough calculation
                             const needed = Math.ceil(group.chars * 1.5); 
-                            if (needed < answerBoxSpan) effectiveAnswerSpan = needed;
+                            if (needed < answerBoxSpan) effectiveAnswerSpan = Math.max(1, needed);
                         }
 
                         placeCell(rowIdx, itemStartCol + qNumSpan, effectiveAnswerSpan, c({
@@ -177,7 +183,11 @@ const generateSmartLayout = (name: string, size: PaperSize, sections: SectionBlo
             }));
             // Fill nulls for rowSpan
             for(let r=startRow+1; r<endRow; r++) {
-                for(let c=0; c<sectionColSpan; c++) cells[r][c] = null;
+                if (r < cells.length) { // bounds check
+                    for(let c=0; c<sectionColSpan; c++) {
+                        if (c < totalCols) cells[r][c] = null;
+                    }
+                }
             }
         }
         
@@ -216,11 +226,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const addQuestionGroup = (sectionId: string, type: QuestionType) => {
         setSections(prev => prev.map(sec => {
             if (sec.id !== sectionId) return sec;
-            
-            // Calculate start number based on previous groups in ALL sections? 
-            // Usually numbering continues or resets. Let's assume continuous for entire test.
-            // But calculating it dynamically is safer during render or generation.
-            // Here we just set a placeholder, the generator/UI should calc index.
             
             const newGroup: QuestionGroup = {
                 id: `grp_${Date.now()}`,
