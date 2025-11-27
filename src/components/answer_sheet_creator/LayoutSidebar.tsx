@@ -398,7 +398,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                             
                             <div className="space-y-4">
                                 {config.sections.map((section, sIdx) => (
-                                    <div key={section.id} className="relative pl-6 border-l-2 border-slate-300 dark:border-slate-600">
+                                    <div key={section.id} className="relative pl-6 border-l-2 border-slate-300 dark:border-slate-600 group/section">
                                         <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full w-8 h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300">
                                             <input value={section.title} onChange={e => {
                                                 const ns = [...config.sections];
@@ -409,7 +409,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                         <div className="absolute -right-8 top-0 p-1 hidden group-hover/section:block">
                                              <button onClick={() => removeSection(section.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2Icon className="w-4 h-4"/></button>
                                         </div>
-                                        
                                         <div className="space-y-2">
                                             {section.questions.map((q, qIdx) => {
                                                 const isExpanded = expandedQuestionIds.has(q.id);

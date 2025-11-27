@@ -140,17 +140,16 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 
                 if (q.type === 'marksheet') {
                     const choices = q.choices || 4;
-                    answerBoxWidth = (choices * 5) - 1; // 5 units per choice
+                    // Base calc
+                    answerBoxWidth = (choices * 5) - 1; 
                 } else if (q.type === 'long_text') {
                     answerBoxWidth = contentAreaWidth - qNumBoxWidth; 
                 } else if (q.type === 'english_word') {
                      const wordCount = q.wordCount || 5;
-                     // If manual words per line is set, calculate width based on that
                      if (q.wordsPerLine && q.wordsPerLine > 0) {
                          const wordsInLine = Math.min(wordCount, q.wordsPerLine);
-                         answerBoxWidth = (wordsInLine * 8) - 1; // 8 units per word approx
+                         answerBoxWidth = (wordsInLine * 8) - 1; 
                      } else {
-                        // Default auto-width logic
                         const singleLineLimit = 6; 
                         if (wordCount > singleLineLimit) {
                             answerBoxWidth = contentAreaWidth - qNumBoxWidth;
@@ -159,8 +158,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         }
                      }
                 } else {
-                    // Text: map ratio 1..40 to width
-                    // 40 is full width.
                     const ratio = Math.min(40, Math.max(1, q.widthRatio));
                     answerBoxWidth = Math.floor((contentAreaWidth * ratio) / 40) - qNumBoxWidth;
                     answerBoxWidth = Math.max(2, answerBoxWidth);
@@ -171,11 +168,9 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 // Check wrapping
                 const effectiveGap = currentContentCol > 0 ? gapSize : 0;
                 if (currentContentCol + effectiveGap + totalItemWidth > contentAreaWidth) {
-                    // Finalize previous row height
                     rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
-                    // Add spacer row if gapSize > 0
                     if (gapSize > 0) {
-                        addRow(gapSize * 2); // Scaled mm gap
+                        addRow(gapSize * 2); 
                     }
                     currentRow = addRow();
                     currentContentCol = 0;
@@ -189,11 +184,8 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 let englishRows = 1;
                 if (q.type === 'english_word') {
                     const wordCount = q.wordCount || 5;
-                    // 8 units per word (7 box + 1 gap)
                     const wordUnit = 7;
                     const gapUnit = 1;
-                    // If width is constrained, how many fit?
-                    // If wordsPerLine is set, use it. Otherwise calculate from width.
                     const wordsPerLine = q.wordsPerLine || Math.floor((answerBoxWidth + gapUnit) / (wordUnit + gapUnit));
                     englishRows = Math.ceil(wordCount / Math.max(1, wordsPerLine));
                 }
@@ -203,7 +195,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
     
                 const absCol = contentStartCol + currentContentCol;
                 
-                // Q Num Box - spans English rows if needed, centered vertically
+                // Q Num Box
                 placeCell(currentRow, absCol, qNumBoxWidth, createCell({ 
                     text: qNumText, 
                     hAlign: 'center', 
@@ -215,22 +207,29 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 if (q.type === 'marksheet') {
                     const choices = q.choices || 4;
                     const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-                    // Distribute choices evenly by splitting cells
-                    const choiceSpan = Math.floor(answerBoxWidth / choices);
+                    
+                    // Re-calculate widths for perfect distribution
+                    // answerBoxWidth is the max space allocated. 
+                    // We want to split this evenly for `choices` items.
+                    // NOTE: The previous logic added gaps, but to look like "one box", we should use adjacent cells.
+                    
+                    const spanPerChoice = Math.floor(answerBoxWidth / choices);
+                    // To handle remainder, we might have some empty space at the end if not divisible.
+                    // Or we can distribute remainder.
+                    // Let's distribute remainder to first N items.
+                    const remainder = answerBoxWidth % choices;
+                    
+                    let currentX = absCol + qNumBoxWidth;
                     
                     for(let i=0; i<choices; i++) {
-                        // Adjust span for last item to fill remaining space
-                        const isLast = i === choices - 1;
-                        const span = isLast ? answerBoxWidth - (choiceSpan * (choices-1)) : choiceSpan;
+                        const span = spanPerChoice + (i < remainder ? 1 : 0);
                         
-                        // Determine border visibility to look like one big box
                         const borderLeft = i === 0;
-                        const borderRight = isLast;
+                        const borderRight = i === choices - 1;
                         
-                        placeCell(currentRow, absCol + qNumBoxWidth + (i * choiceSpan), span, createCell({
+                        placeCell(currentRow, currentX, span, createCell({
                             text: labels[i], 
                             hAlign: 'center',
-                            // Internal vertical borders removed
                             borders: { 
                                 top: true, 
                                 bottom: true, 
@@ -238,6 +237,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                                 right: borderRight 
                             }
                         }));
+                        currentX += span;
                     }
                 } else if (q.type === 'english_word') {
                     const wordCount = q.wordCount || 5;
@@ -258,7 +258,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         
                         placeCell(targetRow, absCol + qNumBoxWidth + pos, wordUnit, createCell({
                             text: '', 
-                            vAlign: 'bottom', // Align underline to bottom
+                            vAlign: 'bottom', 
                             borders: { 
                                 top: false, 
                                 left: false, 
@@ -269,7 +269,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                             borderColor: '#000'
                         }));
                     }
-                    // Sync row heights for the block
+                    // Sync row heights
                     for(let r=0; r<englishRows; r++) {
                          const rIdx = currentRow + r;
                          if (rIdx < rowHeights.length) {
@@ -283,7 +283,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 currentContentCol += totalItemWidth; 
             });
             
-            // Finalize first row height (max of single-line items or first line of multi-line)
             rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
     
             const sectionEndRow = cells.length;
@@ -293,7 +292,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                     text: section.title, rowSpan: rowSpan, hAlign: 'center', vAlign: 'middle',
                     fontSize: 14, fontWeight: 'bold', backgroundColor: '#e5e7eb'
                 }));
-                // Cleanup underlying cells for section label
                 for(let rr=sectionStartRow+1; rr<sectionEndRow; rr++) {
                     if (rr < cells.length) { 
                         for(let cc=0; cc<sectionLabelWidth; cc++) { if (cc < totalCols) cells[rr][cc] = null; }
