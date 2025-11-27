@@ -24,7 +24,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     
     // --- Builder State ---
     const [config, setConfig] = useState<LayoutConfig>({
-        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
+        name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, gapBetweenQuestions: 2, sections: [],
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
             { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -61,6 +61,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             const mergedConfig = { 
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
+                gapBetweenQuestions: loadedConfig.gapBetweenQuestions !== undefined ? loadedConfig.gapBetweenQuestions : 2,
                 headerSettings: mergedHeader,
                 headerElements: headerElements,
                 headerPosition: loadedConfig.headerPosition || 'top'
@@ -88,6 +89,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderWidth: 1,
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
+            gapBetweenQuestions: 2,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -139,6 +141,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             type,
             widthRatio: 20, 
             heightRatio: 1.0,
+            lineHeightRatio: 1.5,
             choices: type === 'marksheet' ? 4 : undefined,
             wordCount: type === 'english_word' ? 5 : undefined
         };
@@ -280,35 +283,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             layoutName: layouts[activeLayoutId].name,
             layoutData: layouts[activeLayoutId],
         });
-    };
-
-    // Helper to render English grid in preview
-    const renderEnglishGrid = (metadata: any) => {
-        const { wordCount, wordsPerLine } = metadata;
-        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
-        const cols = wordsPerLine || wordCount;
-        
-        return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                {Array.from({ length: rows }).map((_, r) => (
-                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
-                        {Array.from({ length: cols }).map((_, c) => {
-                            const idx = r * cols + c;
-                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
-                            return (
-                                <div key={c} style={{ 
-                                    flex: 1, 
-                                    margin: '0 4px', 
-                                    borderBottom: '1px dashed black', 
-                                    height: '100%',
-                                    boxSizing: 'border-box'
-                                }}></div>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
-        );
     };
 
     return (
@@ -482,9 +456,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                     </div>
                                                                 )}
                                                                 {q.type === 'english_word' && (
-                                                                    <div className="flex items-center gap-1 col-span-2">
-                                                                        <span className="text-[10px] text-slate-400">1行の語数:</span>
-                                                                        <input type="number" min="1" max="20" value={q.wordsPerLine || ''} placeholder="自動" onChange={e => updateQuestion(section.id, q.id, { wordsPerLine: parseInt(e.target.value) || undefined })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                    <div className="flex gap-2 col-span-2">
+                                                                        <div className="flex items-center gap-1 flex-1">
+                                                                            <span className="text-[10px] text-slate-400">行の語数:</span>
+                                                                            <input type="number" min="1" max="20" value={q.wordsPerLine || ''} placeholder="自動" onChange={e => updateQuestion(section.id, q.id, { wordsPerLine: parseInt(e.target.value) || undefined })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 flex-1">
+                                                                            <span className="text-[10px] text-slate-400">行間:</span>
+                                                                            <input type="number" step="0.1" min="1.0" max="3.0" value={q.lineHeightRatio || 1.5} onChange={e => updateQuestion(section.id, q.id, { lineHeightRatio: parseFloat(e.target.value) })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                        </div>
                                                                     </div>
                                                                 )}
                                                             </div>

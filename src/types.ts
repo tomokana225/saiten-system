@@ -268,10 +268,11 @@ export interface LayoutConfig {
             type: 'text' | 'marksheet' | 'long_text' | 'english_word';
             widthRatio: number;
             heightRatio: number; // 1.0 = standard row height
+            lineHeightRatio?: number; // New option for line height
             chars?: number;
             choices?: number;
             wordCount?: number;
-            wordsPerLine?: number; // New option for english_word
+            wordsPerLine?: number; 
             labelOverride?: string;
         }[];
     }[];
