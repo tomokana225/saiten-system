@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { SheetLayout, SheetCell, LayoutConfig } from '../../types';
-import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, ArrowLeftIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon, AlignVerticalJustifyStartIcon, AlignVerticalJustifyEndIcon } from '../icons';
+import type { SheetLayout, LayoutConfig, HeaderElement } from '../../types';
+import { generateAutoLayout, PAPER_DIMENSIONS } from './LayoutGenerator';
+import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, ArrowLeftIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon, AlignVerticalJustifyStartIcon, AlignVerticalJustifyEndIcon, PrintIcon } from '../icons';
 
 interface LayoutSidebarProps {
     layouts: Record<string, SheetLayout>;
     setLayouts: React.Dispatch<React.SetStateAction<Record<string, SheetLayout>>>;
     activeLayoutId: string | null;
     setActiveLayoutId: React.Dispatch<React.SetStateAction<string | null>>;
+    onPrintPreview?: () => void;
+    children?: React.ReactNode;
 }
 
 type PaperSize = 'A4' | 'B5' | 'A3';
@@ -15,311 +18,12 @@ type QuestionType = 'text' | 'marksheet' | 'long_text' | 'english_word';
 type QuestionDef = LayoutConfig['sections'][0]['questions'][0];
 type SectionDef = LayoutConfig['sections'][0];
 
-interface HeaderElement {
-    id: 'title' | 'name' | 'score';
-    label: string;
-    height: number;
-    visible: boolean;
-}
-
-interface ExtendedLayoutConfig extends LayoutConfig {
-    headerElements?: HeaderElement[]; // Ordered list of header elements
-    headerPosition?: 'top' | 'bottom';
-    // Legacy support
-    headerSettings?: any;
-}
-
-const PAPER_DIMENSIONS: Record<PaperSize, { width: number, height: number }> = {
-    'A4': { width: 210, height: 297 },
-    'B5': { width: 182, height: 257 },
-    'A3': { width: 297, height: 420 },
-};
-
-const c = (overrides: Partial<SheetCell> = {}): SheetCell => ({
-    text: '', rowSpan: 1, colSpan: 1, hAlign: 'left', vAlign: 'middle',
-    fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none',
-    fontSize: 11, borders: { top: true, bottom: true, left: true, right: true },
-    borderStyle: 'solid', borderColor: '#000000', borderWidth: 1,
-    ...overrides
-});
-
-// Auto-layout engine
-const generateAutoLayout = (config: ExtendedLayoutConfig): SheetLayout => {
-    const totalCols = 60; 
-    const mmToPx = 3.78; 
-    const baseRowHeightMm = config.defaultRowHeight || 10; 
-    
-    const cells: (SheetCell | null)[][] = [];
-    const rowHeights: number[] = [];
-    const colWidths: number[] = Array(totalCols).fill(((PAPER_DIMENSIONS[config.paperSize].width - 20) / totalCols) * mmToPx);
-
-    const addRow = (heightMm: number = baseRowHeightMm) => {
-        const row = Array(totalCols).fill(null).map(() => c({ borders: { top: false, bottom: false, left: false, right: false } }));
-        cells.push(row);
-        rowHeights.push(heightMm * mmToPx);
-        return cells.length - 1;
-    };
-
-    const placeCell = (r: number, cIdx: number, span: number, content: SheetCell) => {
-        while (r >= cells.length) addRow();
-        if (cIdx >= totalCols) return;
-        
-        const safeSpan = Math.min(span, totalCols - cIdx);
-        if (safeSpan <= 0) return;
-
-        const cellContent = {
-            ...content,
-            borderWidth: content.borderWidth ?? config.borderWidth,
-            borderColor: content.borderColor ?? config.borderColor,
-        };
-
-        cells[r][cIdx] = { ...cellContent, colSpan: safeSpan };
-        for (let k = 1; k < safeSpan; k++) {
-            if (cIdx + k < totalCols) cells[r][cIdx + k] = null;
-        }
-    };
-
-    // --- Header Generation Logic ---
-    const generateHeader = () => {
-        // Default header elements if not present
-        const elements = config.headerElements || [
-            { id: 'title', label: 'タイトル', height: 2, visible: true },
-            { id: 'score', label: '点数欄', height: 2, visible: true },
-            { id: 'name', label: '氏名欄', height: 1, visible: true }
-        ];
-
-        // Filter visible elements
-        const visibleElements = elements.filter(e => e.visible);
-        
-        let i = 0;
-        while (i < visibleElements.length) {
-            const el = visibleElements[i];
-            const nextEl = visibleElements[i+1];
-
-            // Special handling: If Title and Score are adjacent (Title then Score), try to put them on the same row(s)
-            // This preserves the classic "Test Name [Score]" layout.
-            if (el.id === 'title' && nextEl && nextEl.id === 'score') {
-                // Title takes left part, Score takes right part (e.g. 12 cols)
-                const scoreWidth = 12;
-                const titleWidth = totalCols - scoreWidth;
-                const rowSpan = Math.max(el.height, nextEl.height); // Use max height of the two
-                
-                const startRow = addRow(14); // First row slightly taller
-                // Add extra rows if span > 1
-                for(let k=1; k<rowSpan; k++) addRow(10);
-                
-                // Title box
-                placeCell(startRow, 0, titleWidth, c({ 
-                    text: config.name, rowSpan: rowSpan, fontSize: 18, fontWeight: 'bold', hAlign: 'center', 
-                    borders: { top: true, bottom: true, left: true, right: true } 
-                }));
-                
-                // Score box
-                placeCell(startRow, titleWidth, scoreWidth, c({ 
-                    text: '点数', fontSize: 10, vAlign: 'top', 
-                    borders: { top: true, bottom: true, left: true, right: true } 
-                }));
-                if (rowSpan > 1) {
-                    // Empty space below 'Score' label
-                    placeCell(startRow + 1, titleWidth, scoreWidth, c({ 
-                        text: '', rowSpan: rowSpan - 1,
-                        borders: { top: true, bottom: true, left: true, right: true } 
-                    }));
-                }
-                
-                i += 2; // Skip next element since we handled it
-            } else {
-                // Standard full-width placement for other elements (or isolated title/score)
-                const rowSpan = el.height;
-                const startRow = addRow(el.id === 'title' ? 14 : 10);
-                for(let k=1; k<rowSpan; k++) addRow(10);
-                
-                if (el.id === 'title') {
-                    placeCell(startRow, 0, totalCols, c({ 
-                        text: config.name, rowSpan: rowSpan, fontSize: 18, fontWeight: 'bold', hAlign: 'center', 
-                        borders: { top: true, bottom: true, left: true, right: true } 
-                    }));
-                } else if (el.id === 'name') {
-                    // Split name row: Class/Num (1/3) + Name (2/3)
-                    const infoWidth = Math.floor(totalCols / 3);
-                    const nameWidth = totalCols - infoWidth;
-                    placeCell(startRow, 0, infoWidth, c({ text: '  年     組     番', rowSpan: rowSpan }));
-                    placeCell(startRow, infoWidth, nameWidth, c({ text: '氏名', rowSpan: rowSpan }));
-                } else if (el.id === 'score') {
-                     // Isolated Score box. Usually better on the right.
-                     const scoreWidth = 12;
-                     // Place empty space on left, score on right
-                     // Or full width? Let's put it on right for consistency.
-                     placeCell(startRow, totalCols - scoreWidth, scoreWidth, c({ 
-                        text: '点数', fontSize: 10, vAlign: 'top', 
-                        borders: { top: true, bottom: true, left: true, right: true } 
-                    }));
-                    if (rowSpan > 1) {
-                        placeCell(startRow + 1, totalCols - scoreWidth, scoreWidth, c({ 
-                            text: '', rowSpan: rowSpan - 1,
-                            borders: { top: true, bottom: true, left: true, right: true } 
-                        }));
-                    }
-                }
-                i++;
-            }
-        }
-        
-        addRow(6); // Spacer after header
-    };
-
-    const generateBody = () => {
-        const sectionLabelWidth = 4;
-        const contentAreaWidth = totalCols - sectionLabelWidth - 1;
-        const contentStartCol = sectionLabelWidth;
-    
-        let globalQNum = 1;
-    
-        config.sections.forEach(section => {
-            const sectionStartRow = cells.length;
-            
-            let currentRow = addRow();
-            let currentContentCol = 0; 
-            let currentRowMaxHeightRatio = 1.0; 
-    
-            section.questions.forEach((q, idx) => {
-                const qNumText = q.labelOverride || `${globalQNum}`;
-                if (!q.labelOverride) globalQNum++;
-    
-                const qNumBoxWidth = 3;
-                let answerBoxWidth = 0;
-                
-                if (q.type === 'marksheet') {
-                    const choices = q.choices || 4;
-                    answerBoxWidth = (choices * 4) - 1; 
-                } else if (q.type === 'long_text') {
-                    answerBoxWidth = contentAreaWidth - qNumBoxWidth; 
-                } else if (q.type === 'english_word') {
-                     const wordCount = q.wordCount || 5;
-                     const singleLineLimit = 8; 
-                     if (wordCount > singleLineLimit) {
-                         answerBoxWidth = contentAreaWidth - qNumBoxWidth;
-                     } else {
-                         answerBoxWidth = (wordCount * 6) - 1;
-                     }
-                } else {
-                    answerBoxWidth = Math.floor((contentAreaWidth * q.widthRatio) / 10) - qNumBoxWidth;
-                    answerBoxWidth = Math.max(4, answerBoxWidth);
-                }
-    
-                const totalItemWidth = qNumBoxWidth + answerBoxWidth;
-                const gap = currentContentCol > 0 ? 2 : 0; 
-    
-                if (currentContentCol + gap + totalItemWidth > contentAreaWidth) {
-                    rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
-                    currentRow = addRow();
-                    currentContentCol = 0;
-                    currentRowMaxHeightRatio = 1.0;
-                } else {
-                    currentContentCol += gap;
-                }
-    
-                const heightRatio = q.heightRatio || 1.0;
-                
-                let englishRows = 1;
-                if (q.type === 'english_word') {
-                    const wordCount = q.wordCount || 5;
-                    const wordsPerLine = Math.floor((answerBoxWidth + 1) / 6);
-                    englishRows = Math.ceil(wordCount / Math.max(1, wordsPerLine));
-                }
-                
-                const totalHeightRatio = Math.max(heightRatio, englishRows);
-                currentRowMaxHeightRatio = Math.max(currentRowMaxHeightRatio, totalHeightRatio);
-    
-                const absCol = contentStartCol + currentContentCol;
-                placeCell(currentRow, absCol, qNumBoxWidth, c({ 
-                    text: qNumText, hAlign: 'center', backgroundColor: '#f3f4f6'
-                }));
-    
-                if (q.type === 'marksheet') {
-                    const choices = q.choices || 4;
-                    const labels = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-                    const text = labels.slice(0, choices).join('   '); 
-                    placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({
-                        text: text, hAlign: 'center',
-                        borders: { top: true, bottom: true, left: true, right: true }
-                    }));
-                } else if (q.type === 'english_word') {
-                    const wordCount = q.wordCount || 5;
-                    const wordUnit = 5;
-                    const gapUnit = 1;
-                    const wordsPerLine = Math.floor((answerBoxWidth + 1) / (wordUnit + gapUnit));
-                    
-                    for(let i=0; i<wordCount; i++) {
-                        const lineIndex = Math.floor(i / wordsPerLine);
-                        const indexInLine = i % wordsPerLine;
-                        const targetRow = currentRow + lineIndex;
-                        if (targetRow >= rowHeights.length) {
-                            addRow();
-                            rowHeights[targetRow] = baseRowHeightMm * mmToPx; 
-                        }
-                        
-                        const pos = indexInLine * (wordUnit + gapUnit);
-                        placeCell(targetRow, absCol + qNumBoxWidth + pos, wordUnit, c({
-                            text: '', 
-                            borders: { top: false, left: false, right: false, bottom: true },
-                            borderStyle: 'dashed' 
-                        }));
-                    }
-                } else {
-                    placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, c({ text: '' }));
-                }
-    
-                currentContentCol += totalItemWidth; 
-            });
-            
-            rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
-    
-            const sectionEndRow = cells.length;
-            const rowSpan = sectionEndRow - sectionStartRow;
-            if (rowSpan > 0) {
-                placeCell(sectionStartRow, 0, sectionLabelWidth, c({
-                    text: section.title, rowSpan: rowSpan, hAlign: 'center', vAlign: 'middle',
-                    fontSize: 14, fontWeight: 'bold', backgroundColor: '#e5e7eb'
-                }));
-                for(let rr=sectionStartRow+1; rr<sectionEndRow; rr++) {
-                    if (rr < cells.length) { 
-                        for(let cc=0; cc<sectionLabelWidth; cc++) { if (cc < totalCols) cells[rr][cc] = null; }
-                    }
-                }
-            }
-            
-            addRow(4);
-        });
-    };
-
-    if (config.headerPosition === 'bottom') {
-        generateBody();
-        addRow(10);
-        generateHeader();
-    } else {
-        generateHeader();
-        generateBody();
-    }
-
-    return {
-        id: `layout_${Date.now()}`,
-        name: config.name,
-        rows: cells.length,
-        cols: totalCols,
-        rowHeights,
-        colWidths,
-        cells,
-        config,
-    };
-};
-
-export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayouts, activeLayoutId, setActiveLayoutId }) => {
+export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayouts, activeLayoutId, setActiveLayoutId, onPrintPreview, children }) => {
     const [tab, setTab] = useState<'list' | 'edit'>('list');
     const [isInitModalOpen, setIsInitModalOpen] = useState(false);
     
     // --- Builder State ---
-    const [config, setConfig] = useState<ExtendedLayoutConfig>({
+    const [config, setConfig] = useState<LayoutConfig>({
         name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, sections: [],
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -336,23 +40,31 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
 
     useEffect(() => {
         if (activeLayoutId && layouts[activeLayoutId]?.config) {
-            const loadedConfig = layouts[activeLayoutId].config as ExtendedLayoutConfig;
-            // Merge defaults
-            const mergedHeader = { showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true, position: 'top' as const, ...loadedConfig.headerSettings };
-            // Initialize headerElements if missing
-            if (!loadedConfig.headerElements) {
-                loadedConfig.headerElements = [
+            const loadedConfig = layouts[activeLayoutId].config as LayoutConfig;
+            const mergedHeader = { 
+                showTitle: true, titleHeight: 2, showName: true, nameHeight: 1, showScore: true, position: 'top' as const, 
+                ...loadedConfig.headerSettings 
+            };
+            
+            let headerElements = loadedConfig.headerElements;
+            if (!headerElements) {
+                headerElements = [
                     { id: 'title', label: 'タイトル', height: 2, visible: mergedHeader.showTitle },
                     { id: 'score', label: '点数欄', height: 2, visible: mergedHeader.showScore },
                     { id: 'name', label: '氏名欄', height: mergedHeader.nameHeight || 1, visible: mergedHeader.showName }
                 ];
             }
+
             const mergedConfig = { 
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
-                headerSettings: mergedHeader 
+                headerSettings: mergedHeader,
+                headerElements: headerElements,
+                headerPosition: loadedConfig.headerPosition || 'top'
             };
             setConfig(mergedConfig);
+        } else if (!activeLayoutId) {
+           // Do nothing or reset
         }
     }, [activeLayoutId, layouts]);
 
@@ -369,7 +81,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             return;
         }
         
-        const newConfig: ExtendedLayoutConfig = {
+        const newConfig: LayoutConfig = {
             name: initName,
             paperSize: initSize,
             borderWidth: 1,
@@ -385,11 +97,9 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         };
         
         setConfig(newConfig);
-        
         const layout = generateAutoLayout(newConfig);
         setLayouts(prev => ({ ...prev, [layout.id]: layout }));
         setActiveLayoutId(layout.id);
-        
         setTab('edit');
         setIsInitModalOpen(false);
     };
@@ -485,9 +195,11 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
 
     const handleQuestionClick = (qId: string) => {
         setExpandedQuestionIds(prev => new Set([...prev, qId]));
+        const el = document.getElementById(`sidebar-q-${qId}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
 
-    const handleConfigChange = (newConfigPart: Partial<ExtendedLayoutConfig>) => {
+    const handleConfigChange = (newConfigPart: Partial<LayoutConfig>) => {
         const newConfig = { ...config, ...newConfigPart };
         setConfig(newConfig);
         const layout = generateAutoLayout(newConfig);
@@ -560,7 +272,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     return (
-        <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
+        <>
             {isInitModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-[100] flex justify-center items-center p-4">
                     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4">
@@ -589,43 +301,41 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 </div>
             )}
 
-            {tab === 'list' && (
-                <div className="flex flex-col p-4 space-y-4 h-full">
-                    <div className="flex justify-between items-center">
-                        <button onClick={() => setTab('list')} className={`text-lg font-bold border-b-2 ${tab === 'list' ? 'border-sky-500' : 'border-transparent'}`}>保存データ</button>
-                        <button onClick={() => setTab('edit')} className={`text-lg font-bold text-slate-400 border-b-2 border-transparent hover:text-slate-600`}>編集</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto space-y-2">
-                        {Object.values(layouts).map((layout: SheetLayout) => (
-                            <div key={layout.id} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${activeLayoutId === layout.id ? 'bg-sky-50 dark:bg-sky-900/50 border border-sky-200' : 'bg-slate-50 dark:bg-slate-700/50 border border-transparent hover:border-slate-300'}`}>
-                                <span onClick={() => { setActiveLayoutId(layout.id); setTab('edit'); }} className="flex-1 truncate font-medium">{layout.name}</span>
-                                <button onClick={() => handleDeleteLayout(layout.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-slate-600 rounded-full transition-colors"><Trash2Icon className="w-4 h-4" /></button>
+            {tab === 'list' ? (
+                <div className="w-full h-full flex">
+                    <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
+                        <div className="flex border-b dark:border-slate-700">
+                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium ${tab === 'list' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>一覧</button>
+                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium ${tab === 'edit' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>構成編集</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 p-4">
+                            {Object.values(layouts).map((layout: SheetLayout) => (
+                                <div key={layout.id} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${activeLayoutId === layout.id ? 'bg-sky-50 dark:bg-sky-900/50 border border-sky-200' : 'bg-slate-50 dark:bg-slate-700/50 border border-transparent hover:border-slate-300'}`}>
+                                    <span onClick={() => { setActiveLayoutId(layout.id); }} className="flex-1 truncate font-medium">{layout.name}</span>
+                                    <button onClick={() => handleDeleteLayout(layout.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-slate-600 rounded-full transition-colors"><Trash2Icon className="w-4 h-4" /></button>
+                                </div>
+                            ))}
+                            {Object.keys(layouts).length === 0 && <div className="text-center text-slate-400 py-10">作成されたレイアウトはありません</div>}
+                        </div>
+                        <div className="pt-4 border-t dark:border-slate-700 space-y-2 p-4">
+                            <button onClick={openInitModal} className="w-full flex items-center justify-center gap-2 p-3 bg-sky-600 text-white rounded-lg hover:bg-sky-500 transition-colors font-bold shadow-sm"><PlusIcon className="w-5 h-5"/> 新規作成</button>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={handleImportLayout} className="flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-xs text-slate-600 dark:text-slate-300"><FileUpIcon className="w-4 h-4"/>インポート</button>
+                                <button onClick={handleExportLayout} disabled={!activeLayoutId} className="flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-xs text-slate-600 dark:text-slate-300 disabled:opacity-50"><FileDownIcon className="w-4 h-4"/>保存</button>
                             </div>
-                        ))}
-                        {Object.keys(layouts).length === 0 && <div className="text-center text-slate-400 py-10">作成されたレイアウトはありません</div>}
-                    </div>
-                    <div className="pt-4 border-t dark:border-slate-700 space-y-2">
-                        <button onClick={openInitModal} className="w-full flex items-center justify-center gap-2 p-3 bg-sky-600 text-white rounded-lg hover:bg-sky-500 transition-colors font-bold shadow-sm"><PlusIcon className="w-5 h-5"/> 新規作成</button>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={handleImportLayout} className="flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-xs text-slate-600 dark:text-slate-300"><FileUpIcon className="w-4 h-4"/>インポート</button>
-                            <button onClick={handleExportLayout} disabled={!activeLayoutId} className="flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-xs text-slate-600 dark:text-slate-300 disabled:opacity-50"><FileDownIcon className="w-4 h-4"/>保存</button>
                         </div>
-                    </div>
+                    </aside>
+                    <main className="flex-1 overflow-hidden">{children}</main>
                 </div>
-            )}
-
-            {tab === 'edit' && (
-                <div className="flex h-full">
-                    {/* Left Panel: Settings */}
-                    <div className="w-80 flex-shrink-0 border-r dark:border-slate-700 flex flex-col p-4 bg-slate-50 dark:bg-slate-900 overflow-y-auto">
-                        <div className="flex items-center gap-2 mb-4">
-                            <button onClick={() => setTab('list')} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800"><ArrowLeftIcon className="w-5 h-5"/></button>
-                            <h3 className="font-bold">構成編集</h3>
+            ) : (
+                <div className="w-full h-full flex">
+                    <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
+                        <div className="flex border-b dark:border-slate-700">
+                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium ${tab === 'list' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>一覧</button>
+                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium ${tab === 'edit' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>構成編集</button>
                         </div>
-                        
-                        <div className="space-y-6">
-                            <div className="space-y-4 p-3 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                            <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
                                 <input type="text" value={config.name} onChange={e => { setConfig({...config, name: e.target.value}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-2 border-b border-transparent focus:border-sky-500 bg-transparent text-lg font-bold placeholder-slate-400 outline-none" placeholder="テスト名"/>
                                 <div className="grid grid-cols-2 gap-2">
                                     <select value={config.paperSize} onChange={e => { setConfig({...config, paperSize: e.target.value as PaperSize}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="p-1.5 border rounded bg-slate-50 dark:bg-slate-700 text-sm"><option value="A4">A4</option><option value="B5">B5</option><option value="A3">A3</option></select>
@@ -634,7 +344,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                         <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => { setConfig({...config, defaultRowHeight: parseInt(e.target.value) || 10}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-1 text-sm bg-transparent text-right"/>
                                     </div>
                                 </div>
-                                 {/* Header Settings */}
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs">
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="font-bold text-slate-500">ヘッダー設定</span>
@@ -662,13 +371,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => addQuestion('text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><ListIcon className="w-6 h-6 text-blue-500 mb-1"/><span className="text-xs font-bold">記述</span></button>
-                                <button onClick={() => addQuestion('marksheet')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><CalculatorIcon className="w-6 h-6 text-teal-500 mb-1"/><span className="text-xs font-bold">記号</span></button>
-                                <button onClick={() => addQuestion('english_word')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><PenLineIcon className="w-6 h-6 text-orange-500 mb-1"/><span className="text-xs font-bold">英単語</span></button>
-                                <button onClick={() => addQuestion('long_text')} className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-800 border hover:border-sky-500 rounded-lg transition-all shadow-sm"><FileUpIcon className="w-6 h-6 text-purple-500 mb-1"/><span className="text-xs font-bold">長文</span></button>
+                            <div className="sticky top-0 bg-white dark:bg-slate-800 z-10 py-2 space-y-2 border-b border-slate-100 dark:border-slate-700">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => addQuestion('text')} className="flex items-center justify-center gap-1 p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors shadow-sm"><ListIcon className="w-4 h-4"/><span className="text-xs font-bold">記述</span></button>
+                                    <button onClick={() => addQuestion('marksheet')} className="flex items-center justify-center gap-1 p-2 bg-teal-50 text-teal-700 border border-teal-200 rounded hover:bg-teal-100 transition-colors shadow-sm"><CalculatorIcon className="w-4 h-4"/><span className="text-xs font-bold">記号</span></button>
+                                    <button onClick={() => addQuestion('english_word')} className="flex items-center justify-center gap-1 p-2 bg-orange-50 text-orange-700 border border-orange-200 rounded hover:bg-orange-100 transition-colors shadow-sm"><PenLineIcon className="w-4 h-4"/><span className="text-xs font-bold">英単語</span></button>
+                                    <button onClick={() => addQuestion('long_text')} className="flex items-center justify-center gap-1 p-2 bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100 transition-colors shadow-sm"><FileUpIcon className="w-4 h-4"/><span className="text-xs font-bold">長文</span></button>
+                                </div>
+                                <button onClick={addSection} className="w-full flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold"><ArrowDownFromLineIcon className="w-4 h-4"/> 大問を追加</button>
                             </div>
-                            <button onClick={addSection} className="w-full flex items-center justify-center gap-2 p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold"><ArrowDownFromLineIcon className="w-4 h-4"/> 大問を追加</button>
                             
                             <div className="space-y-4">
                                 {config.sections.map((section, sIdx) => (
@@ -684,15 +395,13 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                             {section.questions.map((q, qIdx) => {
                                                 const isExpanded = expandedQuestionIds.has(q.id);
                                                 return (
-                                                    <div key={q.id} className="group flex flex-col gap-1 p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-sm relative">
+                                                    <div key={q.id} id={`sidebar-q-${q.id}`} className="group flex flex-col gap-1 p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-sm relative">
                                                         <div className="flex items-center gap-3">
                                                             <button onClick={() => toggleExpand(q.id)} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
                                                                 {isExpanded ? <ChevronUpIcon className="w-3 h-3 text-slate-400"/> : <ChevronDownIcon className="w-3 h-3 text-slate-400"/>}
                                                             </button>
                                                             <div className="flex-1 flex justify-between items-center text-xs">
-                                                                <span className="font-bold">
-                                                                    {q.type === 'marksheet' ? '記号' : q.type === 'long_text' ? '長文' : q.type === 'english_word' ? '英単語' : '記述'}
-                                                                </span>
+                                                                <span className="font-bold">{q.type === 'marksheet' ? '記号' : q.type === 'long_text' ? '長文' : q.type === 'english_word' ? '英単語' : '記述'}</span>
                                                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                     <button onClick={() => insertQuestionAfter(sIdx, qIdx, q)} className="p-1 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900 rounded"><PlusIcon className="w-3 h-3"/></button>
                                                                     <button onClick={() => deleteQuestion(section.id, q.id)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900 rounded"><MinusIcon className="w-3 h-3"/></button>
@@ -734,10 +443,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     </div>
                                 ))}
                             </div>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-900">
+                                <button onClick={() => handleCreateOrUpdateLayout(true)} className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold shadow-lg transform transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                    <RotateCcwIcon className="w-5 h-5"/> 構成を反映して更新
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    </aside>
 
-                    {/* Right Panel: Interactive Preview */}
+                    {/* Preview Area */}
                     <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 p-8 overflow-auto flex justify-center">
                         <div 
                             className="bg-white shadow-lg relative"
@@ -748,9 +462,21 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 boxSizing: 'border-box'
                             }}
                         >
-                            {config.headerSettings?.position === 'top' && (
+                            {/* Print Button in Header */}
+                             <div className="absolute top-2 right-2 flex gap-2 print:hidden z-20">
+                                {onPrintPreview && <button onClick={onPrintPreview} className="p-2 bg-sky-600 text-white rounded-full shadow hover:bg-sky-500 transition-colors" title="印刷プレビュー"><PrintIcon className="w-5 h-5"/></button>}
+                            </div>
+
+                            {config.headerPosition === 'top' && (
                                 <div className="border-b-2 border-black pb-2 mb-4 text-center">
-                                    {config.headerSettings?.showTitle && <h1 className="text-2xl font-bold">{config.name}</h1>}
+                                    {config.headerElements?.filter(e => e.visible).map(el => {
+                                        if (el.id === 'title') return <h1 key={el.id} className="text-2xl font-bold">{config.name}</h1>;
+                                        return null; 
+                                    })}
+                                    <div className="flex justify-between mt-2 text-sm text-slate-400">
+                                         {config.headerElements?.find(e => e.id === 'name')?.visible && <span>[氏名欄]</span>}
+                                         {config.headerElements?.find(e => e.id === 'score')?.visible && <span>[点数欄]</span>}
+                                    </div>
                                 </div>
                             )}
 
@@ -758,19 +484,20 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 <div key={section.id} className="flex mb-6 relative group/section">
                                     <div className="w-12 flex-shrink-0 border border-black flex items-center justify-center text-xl font-bold bg-gray-200 mr-2 relative">
                                         {section.title}
-                                        <div className="absolute top-0 -left-8 hidden group-hover/section:flex flex-col gap-1">
+                                        <div className="absolute top-0 -left-8 hidden group-hover/section:flex flex-col gap-1 z-20">
                                             <button onClick={() => addQuestion('text')} className="p-1 bg-white shadow rounded-full hover:text-green-600"><PlusIcon className="w-4 h-4"/></button>
                                         </div>
                                     </div>
                                     
                                     <div className="flex-1 flex flex-wrap content-start gap-y-2">
                                         {section.questions.map((q, qIdx) => {
-                                            // Re-calculate visual width for preview
                                             let widthStyle = '50%';
                                             if (q.type === 'long_text') widthStyle = '100%';
                                             else if (q.type === 'english_word') widthStyle = `${Math.min(100, (q.wordCount || 5) * 10)}%`;
                                             else widthStyle = `${(q.widthRatio / 20) * 100}%`;
                                             
+                                            const qLabel = q.labelOverride || "Q";
+
                                             return (
                                                 <div 
                                                     key={q.id} 
@@ -778,7 +505,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                     style={{ width: widthStyle, height: `${(config.defaultRowHeight || 10) * (q.heightRatio || 1)}mm` }}
                                                     onClick={() => handleQuestionClick(q.id)}
                                                 >
-                                                    <div className="w-8 border border-black border-r-0 bg-gray-100 flex items-center justify-center text-sm font-bold">Q</div>
+                                                    <div className="w-8 border border-black border-r-0 bg-gray-100 flex items-center justify-center text-sm font-bold">{qLabel}</div>
                                                     
                                                     <div className="flex-1 border border-black relative bg-white flex items-center overflow-hidden">
                                                         {q.type === 'marksheet' && (
@@ -792,7 +519,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                             </div>
                                                         )}
                                                         
-                                                        {/* Hover Controls Overlay - Fixed z-index and visibility */}
                                                         <div className="absolute right-0 top-0 bottom-0 w-8 bg-slate-100/90 border-l flex-col items-center justify-center gap-1 z-50 hidden group-hover/question:flex">
                                                             <button onClick={(e) => { e.stopPropagation(); insertQuestionAfter(sIdx, qIdx, q); }} className="p-1 text-green-600 hover:bg-green-200 rounded" title="追加"><PlusIcon className="w-3 h-3"/></button>
                                                             <button onClick={(e) => { e.stopPropagation(); deleteQuestion(section.id, q.id); }} className="p-1 text-red-600 hover:bg-red-200 rounded" title="削除"><MinusIcon className="w-3 h-3"/></button>
@@ -804,10 +530,15 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     </div>
                                 </div>
                             ))}
+                             {config.headerSettings?.position === 'bottom' && (
+                                <div className="border-t-2 border-black pt-2 mt-auto text-center">
+                                     <span className="text-slate-400">[下部ヘッダーエリア]</span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
-        </aside>
+        </>
     );
 };

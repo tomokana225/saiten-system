@@ -49,7 +49,6 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
         const wsData: any[][] = [];
         const merges: xlsx.Range[] = [];
 
-        // Map cells to Excel data and merges
         activeLayout.cells.forEach((row, r) => {
             const rowData: any[] = [];
             row.forEach((cell, c) => {
@@ -57,8 +56,6 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                     rowData.push(null);
                     return;
                 }
-                
-                // Construct cell object with style
                 const cellObj = {
                     v: cell.text,
                     t: 's',
@@ -87,29 +84,19 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
 
                 rowData.push(cellObj);
 
-                // Add merge info if span > 1
                 if (cell.rowSpan > 1 || cell.colSpan > 1) {
                     merges.push({
                         s: { r, c },
                         e: { r: r + cell.rowSpan - 1, c: c + cell.colSpan - 1 }
                     });
                 }
-                
-                // Fill placeholders for merged cells
                 for(let i = 1; i < cell.colSpan; i++) rowData.push(null);
             });
             wsData.push(rowData);
         });
 
         const ws = xlsx.utils.aoa_to_sheet([]);
-        
-        // Populate sheet manually to ensure style objects are preserved (aoa_to_sheet might strip them in basic version, but we try)
-        // Note: Standard SheetJS logic doesn't support 's' key. This requires a pro build or style-aware fork.
-        // For standard build, we can only set values.
-        
-        // Re-populating using dense mode
         ws['!ref'] = xlsx.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: activeLayout.cols - 1, r: activeLayout.rows - 1 } });
-        
         for (let r = 0; r < wsData.length; r++) {
             for (let c = 0; c < wsData[r].length; c++) {
                 const cell = wsData[r][c];
@@ -119,24 +106,19 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                 }
             }
         }
-
         ws['!merges'] = merges;
-
-        // Approximate column widths
         if (activeLayout.colWidths) {
             ws['!cols'] = activeLayout.colWidths.map(w => ({ wpx: w }));
         }
-        // Approximate row heights
         if (activeLayout.rowHeights) {
             ws['!rows'] = activeLayout.rowHeights.map(h => ({ hpx: h }));
         }
-
         xlsx.utils.book_append_sheet(wb, ws, "解答用紙");
         xlsx.writeFile(wb, `${activeLayout.name}.xlsx`);
     };
 
     return (
-        <div className="w-full h-full flex gap-4">
+        <div className="w-full h-full flex gap-4 overflow-hidden">
             {isPrintPreviewOpen && activeLayout && (
                  <div className="fixed inset-0 bg-black/60 z-50 flex flex-col">
                      <header className="bg-white dark:bg-slate-800 p-2 flex justify-between items-center print-preview-controls">
@@ -146,8 +128,10 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                             <button onClick={() => setIsPrintPreviewOpen(false)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><XIcon className="w-6 h-6"/></button>
                         </div>
                     </header>
-                    <main className="flex-1 overflow-auto bg-slate-400 dark:bg-slate-950/80 p-4">
-                        <PrintableSheetLayout ref={printRef} layout={activeLayout} />
+                    <main className="flex-1 overflow-auto bg-slate-400 dark:bg-slate-950/80 p-4 flex justify-center">
+                        <div className="shadow-lg bg-white">
+                             <PrintableSheetLayout ref={printRef} layout={activeLayout} />
+                        </div>
                     </main>
                  </div>
              )}
@@ -156,8 +140,8 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                 setLayouts={setLayouts}
                 activeLayoutId={activeLayoutId}
                 setActiveLayoutId={setActiveLayoutId}
-            />
-            <main className="flex-1 flex flex-col gap-4">
+                onPrintPreview={() => setIsPrintPreviewOpen(true)}
+            >
                 {activeLayout ? (
                     <div className="h-full flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
                         <div className="flex justify-between items-center border-b pb-2 dark:border-slate-700">
@@ -176,7 +160,7 @@ export const AnswerSheetCreator: React.FC<AnswerSheetCreatorProps> = ({ layouts,
                         </div>
                     </div>
                 )}
-            </main>
+            </LayoutSidebar>
         </div>
     );
 };

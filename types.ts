@@ -238,6 +238,43 @@ export interface SheetCell {
         left: boolean;
         right: boolean;
     };
+    borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
+    borderColor?: string;
+    borderWidth?: number; // in pixels (approx)
+}
+
+export interface HeaderElement {
+    id: 'title' | 'name' | 'score';
+    label: string;
+    height: number;
+    visible: boolean;
+}
+
+// Configuration for auto-generation logic
+export interface LayoutConfig {
+    name: string;
+    paperSize: 'A4' | 'B5' | 'A3';
+    borderWidth: number;
+    borderColor: string;
+    defaultRowHeight: number; // in mm
+    sections: {
+        id: string;
+        title: string;
+        questions: {
+            id: string;
+            type: 'text' | 'marksheet' | 'long_text' | 'english_word';
+            widthRatio: number;
+            heightRatio: number; // 1.0 = standard row height
+            chars?: number;
+            choices?: number;
+            wordCount?: number;
+            labelOverride?: string;
+        }[];
+    }[];
+    headerElements?: HeaderElement[]; // Ordered list of header elements
+    headerPosition?: 'top' | 'bottom';
+    // Legacy support
+    headerSettings?: any;
 }
 
 export interface SheetLayout {
@@ -248,6 +285,7 @@ export interface SheetLayout {
     rowHeights: number[];
     colWidths: number[];
     cells: (SheetCell | null)[][];
+    config?: LayoutConfig; // Store the config to allow re-editing
 }
 
 // Print settings types
