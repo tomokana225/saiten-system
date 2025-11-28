@@ -68,61 +68,32 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
 
     const renderEnglishGrid = (metadata: any) => {
         const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
-        const rows = Math.ceil(wordCount / (wordsPerLine || 10));
-        const cols = wordsPerLine || 10; // Default cols if undefined
+        const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
         
-        // Dynamic gap calculation
-        // Base gap: 4px. Scale with ratio.
-        const rowGap = lineHeightRatio ? Math.max(4, (lineHeightRatio - 1) * 20) : 8;
-
         return (
             <div style={{ 
                 width: '100%', 
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
-                justifyContent: 'space-evenly', // Distribute rows evenly in vertical space
-                padding: '4px',
-                gap: `${rowGap}px`
+                // No gap here, rely on flex-1 for even height distribution
+                padding: '0 8px' // Horizontal padding only
             }}>
-                {Array.from({ length: rows }).map((_, r) => {
-                    // Determine how many words in this specific row
-                    // Last row might have fewer words
-                    const startIdx = r * cols;
-                    const endIdx = Math.min(startIdx + cols, wordCount);
-                    const currentCols = endIdx - startIdx;
-
-                    return (
-                        <div key={r} style={{ 
+                {Array.from({ length: rows }).map((_, r) => (
+                    <div key={r} style={{ 
+                        flex: 1, // Distribute height evenly
+                        display: 'flex', 
+                        alignItems: 'flex-end', 
+                        width: '100%'
+                    }}>
+                        <div style={{
                             width: '100%',
-                            display: 'flex',
-                            alignItems: 'flex-end', // Align bottom borders
-                            gap: '8px', // Gap between word slots
-                            flex: 1 // Allow row to take available height
-                        }}>
-                            {Array.from({ length: cols }).map((_, c) => {
-                                // Render slots. If index >= wordCount, render invisible placeholder to keep alignment?
-                                // Or just render up to currentCols?
-                                // To keep grid aligned, rendering placeholders is better if justified, but here flex-start + fixed width cells or flex-1?
-                                // Let's use flex-1 to fill width.
-                                
-                                const idx = startIdx + c;
-                                const isPlaceholder = idx >= wordCount;
-                                
-                                return (
-                                    <div key={c} style={{ 
-                                        flex: 1, 
-                                        borderBottom: isPlaceholder ? 'none' : '1px dashed #333', 
-                                        height: '100%',
-                                        minHeight: '16px',
-                                        boxSizing: 'border-box',
-                                        position: 'relative'
-                                    }}></div>
-                                );
-                            })}
-                        </div>
-                    );
-                })}
+                            borderBottom: '1px dashed #333', 
+                            height: '1px', 
+                            marginBottom: '0'
+                        }}></div>
+                    </div>
+                ))}
             </div>
         );
     };
