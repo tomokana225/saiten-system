@@ -333,7 +333,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     const renderEnglishGrid = (metadata: any) => {
-        const { wordCount, wordsPerLine } = metadata;
+        const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
         
         return (
@@ -343,12 +343,12 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 display: 'flex', 
                 flexDirection: 'column', 
                 justifyContent: 'space-between', 
-                padding: '12px 8px'
+                padding: '4px 8px' 
             }}>
                 {Array.from({ length: rows }).map((_, r) => (
                     <div key={r} style={{ 
                         width: '100%',
-                        borderBottom: '1px dashed #333', 
+                        borderBottom: '1px dashed #666', 
                         height: '1px', 
                     }}></div>
                 ))}
@@ -431,21 +431,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 </div>
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
                                     <label className="flex items-center gap-2 cursor-pointer"><span className="text-[10px] font-bold text-slate-400">解答欄間隔:</span><input type="number" min="0" max="5" value={config.gapBetweenQuestions} onChange={e => handleConfigChange({gapBetweenQuestions: parseInt(e.target.value)})} className="w-10 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/></label>
-                                </div>
-                                <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
-                                    <label className="block text-[10px] font-bold text-slate-500">大問番号の形式</label>
-                                    <select 
-                                        value={sectionNumberingStyle} 
-                                        onChange={(e) => handleSectionNumberingChange(e.target.value as NumberingStyle)}
-                                        className="w-full p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"
-                                    >
-                                        <option value="I">I, II, III</option>
-                                        <option value="i">i, ii, iii</option>
-                                        <option value="1">1, 2, 3</option>
-                                        <option value="A">A, B, C</option>
-                                        <option value="a">a, b, c</option>
-                                        <option value="①">①, ②, ③</option>
-                                    </select>
                                 </div>
                                  {/* Header Settings */}
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs">
