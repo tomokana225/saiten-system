@@ -67,13 +67,8 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
     `;
 
     const renderEnglishGrid = (metadata: any) => {
-        const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
-        // Calculate rows based on word count estimate or explicit lines
+        const { wordCount, wordsPerLine } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
-        
-        // Calculate dynamic spacing based on ratio
-        // Base height per line is approx 10mm. Ratio 1.5 -> 15mm effective space.
-        // We distribute the lines within the container.
         
         return (
             <div style={{ 
@@ -81,15 +76,15 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
-                justifyContent: 'space-evenly', // Distribute lines evenly
-                padding: '4px 8px' // Inner padding
+                justifyContent: 'space-between', // Evenly space lines
+                padding: '12px 8px' // Add padding so top line isn't at very top
             }}>
                 {Array.from({ length: rows }).map((_, r) => (
                     <div key={r} style={{ 
                         width: '100%',
-                        borderBottom: '1px dashed #666', // Dark grey dashed line
-                        height: '1px', // Line itself
-                        marginBottom: r < rows - 1 ? '0' : '0', // handled by space-evenly
+                        borderBottom: '1px dashed #333', 
+                        height: '1px', 
+                        //marginBottom: '4px'
                     }}></div>
                 ))}
             </div>

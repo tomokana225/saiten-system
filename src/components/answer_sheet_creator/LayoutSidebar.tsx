@@ -332,7 +332,6 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
-    // Helper to render English grid in preview (same logic as PrintableSheetLayout)
     const renderEnglishGrid = (metadata: any) => {
         const { wordCount, wordsPerLine } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
@@ -343,13 +342,13 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
-                justifyContent: 'space-evenly', 
-                padding: '4px 8px' 
+                justifyContent: 'space-between', 
+                padding: '12px 8px'
             }}>
                 {Array.from({ length: rows }).map((_, r) => (
                     <div key={r} style={{ 
                         width: '100%',
-                        borderBottom: '1px dashed #666', 
+                        borderBottom: '1px dashed #333', 
                         height: '1px', 
                     }}></div>
                 ))}
