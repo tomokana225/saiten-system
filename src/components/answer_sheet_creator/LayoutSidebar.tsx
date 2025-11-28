@@ -335,9 +335,8 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const renderEnglishGrid = (metadata: any) => {
         const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
-        
-        // Calculate dynamic gap based on ratio if provided, otherwise default
-        const gap = lineHeightRatio ? `${(lineHeightRatio - 1) * 10}px` : '4px';
+        const cols = wordsPerLine || 10;
+        const rowGap = lineHeightRatio ? Math.max(4, (lineHeightRatio - 1) * 20) : 8;
         
         return (
             <div style={{ 
@@ -345,17 +344,38 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
-                justifyContent: 'flex-start',
-                padding: '4px 8px',
-                gap: gap
+                justifyContent: 'space-evenly', 
+                padding: '4px',
+                gap: `${rowGap}px`
             }}>
-                {Array.from({ length: rows }).map((_, r) => (
-                    <div key={r} style={{ 
-                        width: '100%',
-                        borderBottom: '1px dashed #666', 
-                        height: '0px', 
-                    }}></div>
-                ))}
+                {Array.from({ length: rows }).map((_, r) => {
+                    const startIdx = r * cols;
+                    const endIdx = Math.min(startIdx + cols, wordCount);
+                    return (
+                        <div key={r} style={{ 
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'flex-end', 
+                            gap: '8px', 
+                            flex: 1
+                        }}>
+                            {Array.from({ length: cols }).map((_, c) => {
+                                const idx = startIdx + c;
+                                const isPlaceholder = idx >= wordCount;
+                                return (
+                                    <div key={c} style={{ 
+                                        flex: 1, 
+                                        borderBottom: isPlaceholder ? 'none' : '1px dashed #333', 
+                                        height: '100%',
+                                        minHeight: '16px',
+                                        boxSizing: 'border-box',
+                                        position: 'relative'
+                                    }}></div>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
             </div>
         );
     };
