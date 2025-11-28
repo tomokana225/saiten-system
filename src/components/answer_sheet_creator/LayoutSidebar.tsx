@@ -442,32 +442,35 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                             <div className="space-y-4">
                                 {config.sections.map((section, sIdx) => (
                                     <div key={section.id} className="relative pl-6 border-l-2 border-slate-300 dark:border-slate-600 group/section">
-                                        <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full min-w-[2rem] h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300 overflow-hidden">
-                                            <input value={section.title} onChange={e => {
-                                                const ns = [...config.sections];
-                                                ns[sIdx].title = e.target.value;
-                                                handleConfigChange({sections: ns});
-                                            }} className="w-full h-full bg-transparent text-center outline-none rounded-full" />
-                                        </div>
-                                        <div className="absolute -right-8 top-0 p-1 hidden group-hover/section:block z-10">
-                                             <button onClick={() => removeSection(section.id)} className="text-slate-300 hover:text-red-500 p-1 bg-white dark:bg-slate-800 rounded shadow"><Trash2Icon className="w-4 h-4"/></button>
-                                        </div>
-                                        <div className="mb-2 flex gap-2 items-center">
-                                            <select 
-                                                value={section.numberingStyle || '1'} 
-                                                onChange={(e) => updateSection(section.id, { numberingStyle: e.target.value as NumberingStyle })}
-                                                className="text-[10px] p-1 border rounded bg-white dark:bg-slate-800"
-                                            >
-                                                <option value="1">1, 2...</option>
-                                                <option value="(1)">(1), (2)...</option>
-                                                <option value="[1]">[1], [2]...</option>
-                                                <option value="①">①, ②...</option>
-                                                <option value="A">A, B...</option>
-                                                <option value="a">a, b...</option>
-                                                <option value="I">I, II...</option>
-                                                <option value="i">i, ii...</option>
-                                                <option value="ア">ア, イ...</option>
-                                            </select>
+                                        {/* Improved Section Header Layout */}
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="flex-1 relative h-8">
+                                                 <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full min-w-[2rem] h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300 overflow-hidden shadow-sm">
+                                                    <input value={section.title} onChange={e => {
+                                                        const ns = [...config.sections];
+                                                        ns[sIdx].title = e.target.value;
+                                                        handleConfigChange({sections: ns});
+                                                    }} className="w-full h-full bg-transparent text-center outline-none rounded-full" />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <select 
+                                                    value={section.numberingStyle || '1'} 
+                                                    onChange={(e) => updateSection(section.id, { numberingStyle: e.target.value as NumberingStyle })}
+                                                    className="text-[10px] p-1 border rounded bg-white dark:bg-slate-800"
+                                                >
+                                                    <option value="1">1, 2...</option>
+                                                    <option value="(1)">(1), (2)...</option>
+                                                    <option value="[1]">[1], [2]...</option>
+                                                    <option value="①">①, ②...</option>
+                                                    <option value="A">A, B...</option>
+                                                    <option value="a">a, b...</option>
+                                                    <option value="I">I, II...</option>
+                                                    <option value="i">i, ii...</option>
+                                                    <option value="ア">ア, イ...</option>
+                                                </select>
+                                                <button onClick={() => removeSection(section.id)} className="text-slate-400 hover:text-red-500 p-1.5 bg-slate-100 dark:bg-slate-800 rounded hover:bg-red-50" title="大問を削除"><Trash2Icon className="w-4 h-4"/></button>
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
                                             {section.questions.map((q, qIdx) => {
