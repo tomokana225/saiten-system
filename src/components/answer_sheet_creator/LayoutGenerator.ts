@@ -1,4 +1,4 @@
-import type { SheetLayout, SheetCell, LayoutConfig } from '../../types';
+import type { SheetLayout, SheetCell, LayoutConfig, NumberingStyle } from '../../types';
 
 type PaperSize = 'A4' | 'B5' | 'A3';
 
@@ -15,6 +15,22 @@ export const createCell = (overrides: Partial<SheetCell> = {}): SheetCell => ({
     borderStyle: 'solid', borderColor: '#000000', borderWidth: 1,
     ...overrides
 });
+
+const formatNumber = (num: number, style: NumberingStyle): string => {
+    switch (style) {
+        case '1': return `${num}`;
+        case '(1)': return `(${num})`;
+        case '[1]': return `[${num}]`;
+        case '①': return ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'][num-1] || `${num}`;
+        case 'A': return String.fromCharCode(64 + num);
+        case 'a': return String.fromCharCode(96 + num);
+        case 'I': return ['I','II','III','IV','V','VI','VII','VIII','IX','X'][num-1] || `${num}`;
+        case 'i': return ['i','ii','iii','iv','v','vi','vii','viii','ix','x'][num-1] || `${num}`;
+        case 'ア': return ['ア','イ','ウ','エ','オ','カ','キ','ク','ケ','コ'][num-1] || `${num}`;
+        case 'none': return '';
+        default: return `${num}`;
+    }
+};
 
 export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
     // Higher resolution grid for finer control
@@ -68,7 +84,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
             const nextEl = visibleElements[i+1];
 
             if (el.id === 'title' && nextEl && nextEl.id === 'score') {
-                const scoreWidth = 16; 
+                const scoreWidth = 16; // Fixed width for score in high-res grid
                 const titleWidth = totalCols - scoreWidth;
                 const rowSpan = Math.max(el.height, nextEl.height); 
                 
@@ -115,7 +131,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
     };
 
     const generateBody = () => {
-        const sectionLabelWidth = 5; 
+        const sectionLabelWidth = 5; // slightly wider for high-res grid
         const contentAreaWidth = totalCols - sectionLabelWidth - 1;
         const contentStartCol = sectionLabelWidth;
         
@@ -126,13 +142,17 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
     
         config.sections.forEach(section => {
             const sectionStartRow = cells.length;
+            const numberingStyle = section.numberingStyle || '1'; // Default style
             
+            // Reset counter per section if needed? Usually continuous. 
+            // Assuming continuous unless user manually resets in future features.
+
             let currentRow = addRow();
             let currentContentCol = 0; 
             let currentRowMaxHeightRatio = 1.0; 
     
             section.questions.forEach((q, idx) => {
-                const qNumText = q.labelOverride || `${globalQNum}`;
+                const qNumText = q.labelOverride || formatNumber(globalQNum, numberingStyle);
                 if (!q.labelOverride) globalQNum++;
     
                 const qNumBoxWidth = 4; 
@@ -178,7 +198,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 }
     
                 const heightRatio = q.heightRatio || 1.0;
-                const lineHeightRatio = q.lineHeightRatio || 1.5; // Increased default line height for English
+                const lineHeightRatio = q.lineHeightRatio || 1.5;
                 
                 let englishRows = 1;
                 if (q.type === 'english_word') {
@@ -236,13 +256,11 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         borders: { top: true, bottom: true, left: true, right: true }
                     }));
 
-                    // Sync row heights for the block
                     for(let r=0; r<englishRows; r++) {
                          const rIdx = currentRow + r;
                          if (r > 0 && rIdx >= rowHeights.length) addRow();
                          
                          if (rIdx < rowHeights.length) {
-                             // Apply increased line height for English rows
                              rowHeights[rIdx] = Math.max(rowHeights[rIdx] || 0, baseRowHeightMm * lineHeightRatio * mmToPx);
                          }
                     }

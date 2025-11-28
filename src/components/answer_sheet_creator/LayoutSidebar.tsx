@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { SheetLayout, SheetCell, LayoutConfig, HeaderElement } from '../../types';
+import type { SheetLayout, SheetCell, LayoutConfig, HeaderElement, NumberingStyle } from '../../types';
 import { generateAutoLayout, PAPER_DIMENSIONS } from './LayoutGenerator';
 import { PlusIcon, Trash2Icon, FileUpIcon, FileDownIcon, XIcon, CalculatorIcon, ListIcon, BoxSelectIcon, PenLineIcon, ArrowDownFromLineIcon, ArrowRightIcon, ArrowLeftIcon, PaletteIcon, GripVerticalIcon, RotateCcwIcon, Edit3Icon, SettingsIcon, MinusIcon, ChevronDownIcon, ChevronUpIcon, AlignVerticalJustifyStartIcon, AlignVerticalJustifyEndIcon, PrintIcon } from '../icons';
 
@@ -90,7 +90,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
             gapBetweenQuestions: 2,
-            sections: [{ id: `sec_${Date.now()}`, title: 'I', questions: [] }],
+            sections: [{ id: `sec_${Date.now()}`, title: 'I', numberingStyle: '1', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
                 { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -111,6 +111,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         const newSection: SectionDef = {
             id: `sec_${Date.now()}`,
             title: ['I', 'II', 'III', 'IV', 'V'][config.sections.length] || `${config.sections.length + 1}`,
+            numberingStyle: '1',
             questions: []
         };
         const newConfig = { ...config, sections: [...config.sections, newSection] };
@@ -129,11 +130,22 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             setLayouts(prev => ({ ...prev, [layout.id]: layout }));
         }
     };
+    
+    const updateSection = (sectionId: string, updates: Partial<SectionDef>) => {
+        const newConfig = { 
+            ...config, 
+            sections: config.sections.map(s => s.id === sectionId ? { ...s, ...updates } : s) 
+        };
+        setConfig(newConfig);
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+    };
 
     const addQuestion = (type: QuestionType) => {
         let sections = [...config.sections];
         if (sections.length === 0) {
-            sections.push({ id: `sec_${Date.now()}`, title: 'I', questions: [] });
+            sections.push({ id: `sec_${Date.now()}`, title: 'I', numberingStyle: '1', questions: [] });
         }
         const lastSection = sections[sections.length - 1];
         const newQ = {
@@ -285,6 +297,34 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
+    const renderEnglishGrid = (metadata: any) => {
+        const { wordCount, wordsPerLine } = metadata;
+        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
+        const cols = wordsPerLine || wordCount;
+        
+        return (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {Array.from({ length: rows }).map((_, r) => (
+                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                        {Array.from({ length: cols }).map((_, c) => {
+                            const idx = r * cols + c;
+                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
+                            return (
+                                <div key={c} style={{ 
+                                    flex: 1, 
+                                    margin: '0 4px', 
+                                    borderBottom: '1px dashed black', 
+                                    height: '100%',
+                                    boxSizing: 'border-box'
+                                }}></div>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
     return (
         <aside className="w-full flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full max-w-7xl mx-auto">
             {isInitModalOpen && (
@@ -402,15 +442,32 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                             <div className="space-y-4">
                                 {config.sections.map((section, sIdx) => (
                                     <div key={section.id} className="relative pl-6 border-l-2 border-slate-300 dark:border-slate-600 group/section">
-                                        <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full w-8 h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300">
+                                        <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full min-w-[2rem] h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300 overflow-hidden">
                                             <input value={section.title} onChange={e => {
                                                 const ns = [...config.sections];
                                                 ns[sIdx].title = e.target.value;
                                                 handleConfigChange({sections: ns});
                                             }} className="w-full h-full bg-transparent text-center outline-none rounded-full" />
                                         </div>
-                                        <div className="absolute -right-8 top-0 p-1 hidden group-hover/section:block">
-                                             <button onClick={() => removeSection(section.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2Icon className="w-4 h-4"/></button>
+                                        <div className="absolute -right-8 top-0 p-1 hidden group-hover/section:block z-10">
+                                             <button onClick={() => removeSection(section.id)} className="text-slate-300 hover:text-red-500 p-1 bg-white dark:bg-slate-800 rounded shadow"><Trash2Icon className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="mb-2 flex gap-2 items-center">
+                                            <select 
+                                                value={section.numberingStyle || '1'} 
+                                                onChange={(e) => updateSection(section.id, { numberingStyle: e.target.value as NumberingStyle })}
+                                                className="text-[10px] p-1 border rounded bg-white dark:bg-slate-800"
+                                            >
+                                                <option value="1">1, 2...</option>
+                                                <option value="(1)">(1), (2)...</option>
+                                                <option value="[1]">[1], [2]...</option>
+                                                <option value="①">①, ②...</option>
+                                                <option value="A">A, B...</option>
+                                                <option value="a">a, b...</option>
+                                                <option value="I">I, II...</option>
+                                                <option value="i">i, ii...</option>
+                                                <option value="ア">ア, イ...</option>
+                                            </select>
                                         </div>
                                         <div className="space-y-2">
                                             {section.questions.map((q, qIdx) => {

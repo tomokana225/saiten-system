@@ -252,6 +252,8 @@ export interface HeaderElement {
     visible: boolean;
 }
 
+export type NumberingStyle = '1' | '(1)' | '[1]' | '①' | 'A' | 'a' | 'I' | 'i' | 'ア' | 'none';
+
 // Configuration for auto-generation logic
 export interface LayoutConfig {
     name: string;
@@ -263,6 +265,7 @@ export interface LayoutConfig {
     sections: {
         id: string;
         title: string;
+        numberingStyle?: NumberingStyle; // Added numbering style per section
         questions: {
             id: string;
             type: 'text' | 'marksheet' | 'long_text' | 'english_word';
