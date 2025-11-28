@@ -144,9 +144,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
             const sectionStartRow = cells.length;
             const numberingStyle = section.numberingStyle || '1'; // Default style
             
-            // Reset counter per section if needed? Usually continuous. 
-            // Assuming continuous unless user manually resets in future features.
-
             let currentRow = addRow();
             let currentContentCol = 0; 
             let currentRowMaxHeightRatio = 1.0; 
@@ -252,7 +249,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         text: '', 
                         rowSpan: englishRows,
                         type: 'english-grid',
-                        metadata: { wordCount, wordsPerLine },
+                        metadata: { wordCount, wordsPerLine, lineHeightRatio }, // Pass lineHeightRatio
                         borders: { top: true, bottom: true, left: true, right: true }
                     }));
 

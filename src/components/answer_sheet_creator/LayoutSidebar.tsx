@@ -298,14 +298,19 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     const renderEnglishGrid = (metadata: any) => {
-        const { wordCount, wordsPerLine } = metadata;
+        const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
         const cols = wordsPerLine || wordCount;
         
         return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 {Array.from({ length: rows }).map((_, r) => (
-                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                    <div key={r} style={{ 
+                        flex: 1, 
+                        display: 'flex', 
+                        alignItems: 'flex-end', 
+                        paddingBottom: '4px' 
+                    }}>
                         {Array.from({ length: cols }).map((_, c) => {
                             const idx = r * cols + c;
                             if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
@@ -314,7 +319,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     flex: 1, 
                                     margin: '0 4px', 
                                     borderBottom: '1px dashed black', 
-                                    height: '100%',
+                                    height: '60%',
                                     boxSizing: 'border-box'
                                 }}></div>
                             );
@@ -499,7 +504,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                 )}
                                                                 <div className="flex items-center gap-1">
                                                                     <span className="text-[10px] text-slate-400">高:</span>
-                                                                    <input type="number" step="0.5" min="0.5" max="5" value={q.heightRatio || 1.0} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
+                                                                    <input type="number" step="0.1" min="0.5" max="5" value={q.heightRatio || 1.0} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
                                                                 </div>
                                                                 {q.type === 'marksheet' && (
                                                                     <div className="flex items-center gap-1 col-span-2">
@@ -516,15 +521,9 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                     </div>
                                                                 )}
                                                                 {q.type === 'english_word' && (
-                                                                    <div className="flex gap-2 col-span-2">
-                                                                        <div className="flex items-center gap-1 flex-1">
-                                                                            <span className="text-[10px] text-slate-400">行の語数:</span>
-                                                                            <input type="number" min="1" max="20" value={q.wordsPerLine || ''} placeholder="自動" onChange={e => updateQuestion(section.id, q.id, { wordsPerLine: parseInt(e.target.value) || undefined })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-1 flex-1">
-                                                                            <span className="text-[10px] text-slate-400">行間:</span>
-                                                                            <input type="number" step="0.1" min="1.0" max="3.0" value={q.lineHeightRatio || 1.5} onChange={e => updateQuestion(section.id, q.id, { lineHeightRatio: parseFloat(e.target.value) })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                                        </div>
+                                                                    <div className="flex items-center gap-1 flex-1">
+                                                                        <span className="text-[10px] text-slate-400">行間:</span>
+                                                                        <input type="number" step="0.1" min="1.0" max="3.0" value={q.lineHeightRatio || 1.5} onChange={e => updateQuestion(section.id, q.id, { lineHeightRatio: parseFloat(e.target.value) })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
                                                                     </div>
                                                                 )}
                                                             </div>
