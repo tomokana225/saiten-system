@@ -68,34 +68,29 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
 
     const renderEnglishGrid = (metadata: any) => {
         const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
-        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
-        const cols = wordsPerLine || wordCount;
+        // Calculate rows based on word count estimate or explicit lines
+        const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
         
-        // Calculate dynamic gap based on ratio if provided, otherwise default
-        const gap = lineHeightRatio ? `${(lineHeightRatio - 1) * 10}px` : '4px';
+        // Calculate dynamic spacing based on ratio
+        // Base height per line is approx 10mm. Ratio 1.5 -> 15mm effective space.
+        // We distribute the lines within the container.
         
         return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: gap }}>
+            <div style={{ 
+                width: '100%', 
+                height: '100%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'space-evenly', // Distribute lines evenly
+                padding: '4px 8px' // Inner padding
+            }}>
                 {Array.from({ length: rows }).map((_, r) => (
                     <div key={r} style={{ 
-                        flex: 1, 
-                        display: 'flex', 
-                        alignItems: 'flex-end', 
-                    }}>
-                        {Array.from({ length: cols }).map((_, c) => {
-                            const idx = r * cols + c;
-                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
-                            return (
-                                <div key={c} style={{ 
-                                    flex: 1, 
-                                    margin: '0 4px', 
-                                    borderBottom: '1px dashed black', 
-                                    height: '60%',
-                                    boxSizing: 'border-box'
-                                }}></div>
-                            );
-                        })}
-                    </div>
+                        width: '100%',
+                        borderBottom: '1px dashed #666', // Dark grey dashed line
+                        height: '1px', // Line itself
+                        marginBottom: r < rows - 1 ? '0' : '0', // handled by space-evenly
+                    }}></div>
                 ))}
             </div>
         );
@@ -134,7 +129,7 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                         borderRight: cell.borders?.right ? borderStyleBase(cell.borderWidth, cell.borderStyle, cell.borderColor) : 'none',
                                         
                                         backgroundColor: cell.backgroundColor || 'transparent',
-                                        padding: '2px 4px',
+                                        padding: cell.type === 'english-grid' ? '0' : '2px 4px',
                                         whiteSpace: 'pre-wrap',
                                     };
                                     

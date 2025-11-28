@@ -140,8 +140,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const removeSection = (sectionId: string) => {
         if (window.confirm('この大問を削除しますか？')) {
             const newConfig = { ...config, sections: config.sections.filter(s => s.id !== sectionId) };
-            // Re-number sections if needed? Assuming user wants to keep manual titles if edited, but if auto...
-            // Let's re-apply numbering style to keep sequence correct
+            // Re-number sections
             newConfig.sections.forEach((s, idx) => {
                  s.title = formatSectionTitle(idx, sectionNumberingStyle);
             });
@@ -333,30 +332,26 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
-    // Updated renderer for preview
+    // Helper to render English grid in preview (same logic as PrintableSheetLayout)
     const renderEnglishGrid = (metadata: any) => {
-        const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
-        const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
-        const cols = wordsPerLine || wordCount;
+        const { wordCount, wordsPerLine } = metadata;
+        const rows = Math.ceil(wordCount / (wordsPerLine || 10)); 
         
         return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ 
+                width: '100%', 
+                height: '100%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'space-evenly', 
+                padding: '4px 8px' 
+            }}>
                 {Array.from({ length: rows }).map((_, r) => (
-                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-                        {Array.from({ length: cols }).map((_, c) => {
-                            const idx = r * cols + c;
-                            if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
-                            return (
-                                <div key={c} style={{ 
-                                    flex: 1, 
-                                    margin: '0 4px', 
-                                    borderBottom: '1px dashed black', 
-                                    height: '80%', // Ensure line is visible within row
-                                    boxSizing: 'border-box'
-                                }}></div>
-                            );
-                        })}
-                    </div>
+                    <div key={r} style={{ 
+                        width: '100%',
+                        borderBottom: '1px dashed #666', 
+                        height: '1px', 
+                    }}></div>
                 ))}
             </div>
         );
@@ -515,6 +510,11 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                     <option value="(1)">(1), (2)...</option>
                                                     <option value="[1]">[1], [2]...</option>
                                                     <option value="①">①, ②...</option>
+                                                    <option value="A">A, B...</option>
+                                                    <option value="a">a, b...</option>
+                                                    <option value="I">I, II...</option>
+                                                    <option value="i">i, ii...</option>
+                                                    <option value="ア">ア, イ...</option>
                                                 </select>
                                                 <button onClick={() => removeSection(section.id)} className="text-slate-400 hover:text-red-500 p-1.5 bg-slate-100 dark:bg-slate-800 rounded hover:bg-red-50 border border-slate-200 dark:border-slate-700" title="大問を削除"><Trash2Icon className="w-4 h-4"/></button>
                                             </div>
