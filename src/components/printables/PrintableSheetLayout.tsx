@@ -71,20 +71,16 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
         const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
         const cols = wordsPerLine || wordCount;
         
-        // Add padding bottom to simulate line height/gap if ratio > 1
-        // Standard line height is fully used, but we want "visual" gap for the underline.
-        // The simplest way is to use flex gap for rows, or padding.
-        // Since the cell height is already expanded by layout generator, we just need to align to bottom.
+        // Calculate dynamic gap based on ratio if provided, otherwise default
+        const gap = lineHeightRatio ? `${(lineHeightRatio - 1) * 10}px` : '4px';
         
         return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: gap }}>
                 {Array.from({ length: rows }).map((_, r) => (
                     <div key={r} style={{ 
                         flex: 1, 
                         display: 'flex', 
                         alignItems: 'flex-end', 
-                        // Padding bottom gives space between underline and box bottom/next line
-                        paddingBottom: '4px' 
                     }}>
                         {Array.from({ length: cols }).map((_, c) => {
                             const idx = r * cols + c;
@@ -94,7 +90,7 @@ export const PrintableSheetLayout = React.forwardRef<HTMLDivElement, { layout: S
                                     flex: 1, 
                                     margin: '0 4px', 
                                     borderBottom: '1px dashed black', 
-                                    height: '60%', // Line only takes up portion of the row height
+                                    height: '60%',
                                     boxSizing: 'border-box'
                                 }}></div>
                             );

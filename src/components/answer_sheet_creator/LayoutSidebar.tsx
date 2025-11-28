@@ -18,6 +18,21 @@ type QuestionType = 'text' | 'marksheet' | 'long_text' | 'english_word';
 type QuestionDef = LayoutConfig['sections'][0]['questions'][0];
 type SectionDef = LayoutConfig['sections'][0];
 
+// Helper for formatting section numbers
+const formatSectionTitle = (index: number, style: NumberingStyle): string => {
+    const num = index + 1;
+    switch (style) {
+        case '1': return `${num}`;
+        case 'I': return ['I','II','III','IV','V','VI','VII','VIII','IX','X'][index] || `${num}`;
+        case 'i': return ['i','ii','iii','iv','v','vi','vii','viii','ix','x'][index] || `${num}`;
+        case 'A': return String.fromCharCode(64 + num);
+        case 'a': return String.fromCharCode(96 + num);
+        case '①': return ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'][index] || `${num}`;
+        case 'ア': return ['ア','イ','ウ','エ','オ'][index] || `${num}`;
+        default: return `${num}`;
+    }
+};
+
 export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayouts, activeLayoutId, setActiveLayoutId, onPrintPreview, children }) => {
     const [tab, setTab] = useState<'list' | 'edit'>('list');
     const [isInitModalOpen, setIsInitModalOpen] = useState(false);
@@ -37,6 +52,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const [initName, setInitName] = useState('');
     const [initSize, setInitSize] = useState<PaperSize>('A4');
     const [initRowHeight, setInitRowHeight] = useState(10);
+    const [sectionNumberingStyle, setSectionNumberingStyle] = useState<NumberingStyle>('I');
 
     // Dynamic preview layout derived from current config
     const previewLayout = useMemo(() => generateAutoLayout(config), [config]);
@@ -110,7 +126,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const addSection = () => {
         const newSection: SectionDef = {
             id: `sec_${Date.now()}`,
-            title: ['I', 'II', 'III', 'IV', 'V'][config.sections.length] || `${config.sections.length + 1}`,
+            title: formatSectionTitle(config.sections.length, sectionNumberingStyle),
             numberingStyle: '1',
             questions: []
         };
@@ -124,6 +140,11 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     const removeSection = (sectionId: string) => {
         if (window.confirm('この大問を削除しますか？')) {
             const newConfig = { ...config, sections: config.sections.filter(s => s.id !== sectionId) };
+            // Re-number sections if needed? Assuming user wants to keep manual titles if edited, but if auto...
+            // Let's re-apply numbering style to keep sequence correct
+            newConfig.sections.forEach((s, idx) => {
+                 s.title = formatSectionTitle(idx, sectionNumberingStyle);
+            });
             setConfig(newConfig);
             const layout = generateAutoLayout(newConfig);
             if (activeLayoutId) layout.id = activeLayoutId;
@@ -142,10 +163,25 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         setLayouts(prev => ({ ...prev, [layout.id]: layout }));
     };
 
+    const handleSectionNumberingChange = (style: NumberingStyle) => {
+        setSectionNumberingStyle(style);
+        const newConfig = {
+            ...config,
+            sections: config.sections.map((s, idx) => ({
+                ...s,
+                title: formatSectionTitle(idx, style)
+            }))
+        };
+        setConfig(newConfig);
+        const layout = generateAutoLayout(newConfig);
+        if (activeLayoutId) layout.id = activeLayoutId;
+        setLayouts(prev => ({ ...prev, [layout.id]: layout }));
+    };
+
     const addQuestion = (type: QuestionType) => {
         let sections = [...config.sections];
         if (sections.length === 0) {
-            sections.push({ id: `sec_${Date.now()}`, title: 'I', numberingStyle: '1', questions: [] });
+            sections.push({ id: `sec_${Date.now()}`, title: formatSectionTitle(0, sectionNumberingStyle), numberingStyle: '1', questions: [] });
         }
         const lastSection = sections[sections.length - 1];
         const newQ = {
@@ -297,20 +333,16 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
         });
     };
 
+    // Updated renderer for preview
     const renderEnglishGrid = (metadata: any) => {
         const { wordCount, wordsPerLine, lineHeightRatio } = metadata;
         const rows = Math.ceil(wordCount / (wordsPerLine || wordCount));
         const cols = wordsPerLine || wordCount;
         
         return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {Array.from({ length: rows }).map((_, r) => (
-                    <div key={r} style={{ 
-                        flex: 1, 
-                        display: 'flex', 
-                        alignItems: 'flex-end', 
-                        paddingBottom: '4px' 
-                    }}>
+                    <div key={r} style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
                         {Array.from({ length: cols }).map((_, c) => {
                             const idx = r * cols + c;
                             if (idx >= wordCount) return <div key={c} style={{ flex: 1 }}></div>;
@@ -319,7 +351,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                     flex: 1, 
                                     margin: '0 4px', 
                                     borderBottom: '1px dashed black', 
-                                    height: '60%',
+                                    height: '80%', // Ensure line is visible within row
                                     boxSizing: 'border-box'
                                 }}></div>
                             );
@@ -406,6 +438,21 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
                                     <label className="flex items-center gap-2 cursor-pointer"><span className="text-[10px] font-bold text-slate-400">解答欄間隔:</span><input type="number" min="0" max="5" value={config.gapBetweenQuestions} onChange={e => handleConfigChange({gapBetweenQuestions: parseInt(e.target.value)})} className="w-10 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/></label>
                                 </div>
+                                <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
+                                    <label className="block text-[10px] font-bold text-slate-500">大問番号の形式</label>
+                                    <select 
+                                        value={sectionNumberingStyle} 
+                                        onChange={(e) => handleSectionNumberingChange(e.target.value as NumberingStyle)}
+                                        className="w-full p-1.5 border rounded bg-white dark:bg-slate-700 text-sm"
+                                    >
+                                        <option value="I">I, II, III</option>
+                                        <option value="i">i, ii, iii</option>
+                                        <option value="1">1, 2, 3</option>
+                                        <option value="A">A, B, C</option>
+                                        <option value="a">a, b, c</option>
+                                        <option value="①">①, ②, ③</option>
+                                    </select>
+                                </div>
                                  {/* Header Settings */}
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs">
                                     <div className="flex items-center justify-between mb-2">
@@ -448,8 +495,8 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                 {config.sections.map((section, sIdx) => (
                                     <div key={section.id} className="relative pl-6 border-l-2 border-slate-300 dark:border-slate-600 group/section">
                                         {/* Improved Section Header Layout */}
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <div className="flex-1 relative h-8">
+                                        <div className="flex items-center gap-2 mb-2 justify-between">
+                                            <div className="relative w-10 h-8">
                                                  <div className="absolute -left-[1.2rem] top-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-full min-w-[2rem] h-8 flex items-center justify-center font-serif font-bold text-slate-600 dark:text-slate-300 overflow-hidden shadow-sm">
                                                     <input value={section.title} onChange={e => {
                                                         const ns = [...config.sections];
@@ -462,19 +509,14 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                 <select 
                                                     value={section.numberingStyle || '1'} 
                                                     onChange={(e) => updateSection(section.id, { numberingStyle: e.target.value as NumberingStyle })}
-                                                    className="text-[10px] p-1 border rounded bg-white dark:bg-slate-800"
+                                                    className="text-[10px] p-1 border rounded bg-white dark:bg-slate-800 max-w-[80px]"
                                                 >
                                                     <option value="1">1, 2...</option>
                                                     <option value="(1)">(1), (2)...</option>
                                                     <option value="[1]">[1], [2]...</option>
                                                     <option value="①">①, ②...</option>
-                                                    <option value="A">A, B...</option>
-                                                    <option value="a">a, b...</option>
-                                                    <option value="I">I, II...</option>
-                                                    <option value="i">i, ii...</option>
-                                                    <option value="ア">ア, イ...</option>
                                                 </select>
-                                                <button onClick={() => removeSection(section.id)} className="text-slate-400 hover:text-red-500 p-1.5 bg-slate-100 dark:bg-slate-800 rounded hover:bg-red-50" title="大問を削除"><Trash2Icon className="w-4 h-4"/></button>
+                                                <button onClick={() => removeSection(section.id)} className="text-slate-400 hover:text-red-500 p-1.5 bg-slate-100 dark:bg-slate-800 rounded hover:bg-red-50 border border-slate-200 dark:border-slate-700" title="大問を削除"><Trash2Icon className="w-4 h-4"/></button>
                                             </div>
                                         </div>
                                         <div className="space-y-2">
