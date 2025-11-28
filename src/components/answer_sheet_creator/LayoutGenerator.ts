@@ -200,9 +200,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 let englishRows = 1;
                 if (q.type === 'english_word') {
                     const wordCount = q.wordCount || 5;
-                    // Recalculate logic to match width
-                    // answerBoxWidth is in grid units.
-                    // Approx 8 units per word for display
                     const wordUnit = 7;
                     const gapUnit = 1;
                     const wordsPerLine = q.wordsPerLine || Math.floor((answerBoxWidth + gapUnit) / (wordUnit + gapUnit));
@@ -252,23 +249,17 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                         text: '', 
                         rowSpan: englishRows,
                         type: 'english-grid',
-                        metadata: { wordCount, wordsPerLine, lineHeightRatio }, // Pass lineHeightRatio
+                        metadata: { wordCount, wordsPerLine, lineHeightRatio }, 
                         borders: { top: true, bottom: true, left: true, right: true }
                     }));
 
-                    // Sync row heights for ALL rows covered by this English block
-                    for(let r=0; r<englishRows; r++) {
-                         const rIdx = currentRow + r;
-                         // Ensure row exists
-                         if (rIdx >= rowHeights.length) {
-                             addRow(); // Add row if not exists (though placeCell handles cells, rowHeights need explicit set)
-                         }
-                         
-                         // Set height for this row to match line height
-                         // We use Math.max to ensure if multiple items share a row, the tallest wins
-                         const currentH = rowHeights[rIdx] || 0;
-                         const requiredH = baseRowHeightMm * lineHeightRatio * mmToPx;
-                         rowHeights[rIdx] = Math.max(currentH, requiredH);
+                    // ★ Calculate height for each english row
+                    const perRowHeightPx = baseRowHeightMm * lineHeightRatio * mmToPx;
+
+                    for (let r = 0; r < englishRows; r++) {
+                        const rIdx = currentRow + r;
+                        if (rIdx >= rowHeights.length) addRow();
+                        rowHeights[rIdx] = Math.max(rowHeights[rIdx] || 0, perRowHeightPx);
                     }
                 } else {
                     placeCell(currentRow, absCol + qNumBoxWidth, answerBoxWidth, createCell({ text: '' }));
@@ -277,14 +268,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
                 currentContentCol += totalItemWidth; 
             });
             
-            // Finalize first row height (max of single-line items or first line of multi-line)
-            // If English rows set heights already, this might overwrite or be overwritten.
-            // We need to be careful not to shrink rows that English block expanded.
-            // The loop above sets rowHeights directly.
-            // `currentRowMaxHeightRatio` tracks max height for the STARTING row of items.
-            
-            const calculatedH = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
-            rowHeights[currentRow] = Math.max(rowHeights[currentRow] || 0, calculatedH);
+            rowHeights[currentRow] = baseRowHeightMm * currentRowMaxHeightRatio * mmToPx;
     
             const sectionEndRow = cells.length;
             const rowSpan = sectionEndRow - sectionStartRow;
