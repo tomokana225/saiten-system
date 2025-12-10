@@ -14,17 +14,19 @@ interface DetectionDebugInfo {
     rowBoundaries: number[]; // Y coordinates of lines
     colBoundaries: number[]; // X coordinates of lines
     orientation: 'vertical' | 'horizontal';
+    scanZones?: { x: number, y: number, w: number, h: number, label: string }[];
 }
 
 // Helper to find peaks in a projection profile
-const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.15): number[] => {
+const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.35): number[] => {
     const peaks: number[] = [];
     let inPeak = false;
     let peakSum = 0;
     let peakMass = 0;
     
     const maxVal = Math.max(...profile);
-    const threshold = Math.max(3, maxVal * thresholdRatio); // Lower absolute threshold
+    // Use a relatively high threshold to target "large dark circles" and ignore noise/text
+    const threshold = Math.max(5, maxVal * thresholdRatio);
 
     for (let i = 0; i < length; i++) {
         const val = profile[i];
@@ -50,7 +52,7 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
 };
 
 const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
-    const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'vertical' };
+    const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [] };
     
     try {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
@@ -91,7 +93,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         const height = imageData.height;
 
         // Binarize helper
-        const isDark = (x: number, y: number, threshold = 140) => {
+        const isDark = (x: number, y: number, threshold = 160) => {
             const idx = (y * width + x) * 4;
             if (idx < 0 || idx >= data.length) return false;
             const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
@@ -126,92 +128,47 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             return profile;
         };
 
-        // --- Improved Edge Scanning for Non-Linear Grids ---
+        // --- Targeted Edge Scanning ---
+        // As per request:
+        // Rows: "Right edge has 3 vertical reference points" -> Scan rightmost 15%
+        // Cols: "Bottom edge has 10 horizontal reference points" -> Scan bottommost 15%
         
-        // 1. Detect Rows (Prioritize Right edge heavily as requested)
-        // Only scan the rightmost 10% to capture reference marks and avoid student marks.
-        const rowScans = [
-            { label: 'Right', profile: getProjection(Math.floor(width * 0.90), width, 0, height, 'row') },
-            { label: 'Left', profile: getProjection(0, Math.floor(width * 0.10), 0, height, 'row') },
-            { label: 'Center', profile: getProjection(Math.floor(width * 0.4), Math.floor(width * 0.6), 0, height, 'row') },
-        ];
+        const rightEdgeStart = Math.floor(width * 0.85);
+        const bottomEdgeStart = Math.floor(height * 0.85);
 
-        let rowCenters: number[] = [];
-        let bestRowConfidence = -1;
+        debugInfo.scanZones?.push(
+            { x: rightEdgeStart, y: 0, w: width - rightEdgeStart, h: height, label: 'Rows (Right)' },
+            { x: 0, y: bottomEdgeStart, w: width, h: height - bottomEdgeStart, label: 'Cols (Bottom)' }
+        );
+
+        // 1. Detect Rows (Right Edge)
+        const rowProfile = getProjection(rightEdgeStart, width, 0, height, 'row');
+        // Use high threshold (0.35) to find large dark circles only
+        let rowCenters = findPeaksInProfile(rowProfile, height, 0.35);
+
+        // 2. Detect Cols (Bottom Edge)
+        const colProfile = getProjection(0, width, bottomEdgeStart, height, 'col');
+        let colCenters = findPeaksInProfile(colProfile, width, 0.35);
+
+        // --- Fallback / Adjustment ---
+        // If we didn't find exactly what we expected, we can try slightly more lenient scanning or fallback to linear
         
-        for (const scan of rowScans) {
-            // Lower threshold to detect small dots
-            const peaks = findPeaksInProfile(scan.profile, height, 0.15);
-            
-            let confidence = 0;
-            if (peaks.length > 0) {
-                confidence = 10; // Base confidence
-                
-                // Massive bonus for Right edge as per user instruction
-                if (scan.label === 'Right') confidence += 200;
-                else if (scan.label === 'Left') confidence += 50;
-                
-                // Bonus for expected counts
-                if (peaks.length === 3 || peaks.length === 10) confidence += 20;
-            }
-
-            if (confidence > bestRowConfidence) {
-                bestRowConfidence = confidence;
-                rowCenters = peaks;
-            }
+        // Expected: 3 rows (Class, Num10, Num1), 10 cols (0-9)
+        if (rowCenters.length < 3) {
+             // Fallback: Linear 3 rows if absolutely nothing found
+             if (rowCenters.length === 0) {
+                 const step = height / 3;
+                 rowCenters = [step * 0.5, step * 1.5, step * 2.5];
+             }
+        }
+        if (colCenters.length < 10) {
+             // Fallback: Linear 10 cols
+             if (colCenters.length === 0) {
+                 const step = width / 10;
+                 for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
+             }
         }
 
-        // 2. Detect Cols (Prioritize Bottom edge)
-        // Only scan bottommost 10%
-        const colScans = [
-            { label: 'Bottom', profile: getProjection(0, width, Math.floor(height * 0.90), height, 'col') },
-            { label: 'Top', profile: getProjection(0, width, 0, Math.floor(height * 0.10), 'col') },
-            { label: 'Center', profile: getProjection(0, width, Math.floor(height * 0.4), Math.floor(height * 0.6), 'col') }
-        ];
-
-        let colCenters: number[] = [];
-        let bestColConfidence = -1;
-
-        for (const scan of colScans) {
-            const peaks = findPeaksInProfile(scan.profile, width, 0.15);
-            let confidence = 0;
-            if (peaks.length > 0) {
-                confidence = 10;
-                
-                if (scan.label === 'Bottom') confidence += 200;
-                else if (scan.label === 'Top') confidence += 50;
-
-                if (peaks.length === 10) confidence += 20;
-            }
-
-            if (confidence > bestColConfidence) {
-                bestColConfidence = confidence;
-                colCenters = peaks;
-            }
-        }
-
-        // --- Determine Orientation ---
-        let orientation: 'vertical' | 'horizontal' = 'vertical';
-        
-        // If clearly more columns than rows, it's horizontal (e.g. 3 rows, 10 cols)
-        if (colCenters.length >= 8 && rowCenters.length < 8) {
-            orientation = 'horizontal';
-        } else if (width > height * 1.2) {
-            orientation = 'horizontal';
-        } else if (height > width * 1.2) {
-            orientation = 'vertical';
-        }
-
-        // --- Fallback (Linear) only if absolutely nothing found ---
-        if (rowCenters.length < 1) {
-             const step = height / 10;
-             for(let i=0; i<10; i++) rowCenters.push(step * i + step/2);
-        }
-        if (colCenters.length < 1) {
-             const step = width / 10;
-             for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
-        }
-        
         // Calculate Grid Boundaries for Visualization
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
@@ -240,66 +197,38 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         debugInfo.cols = colCenters;
         debugInfo.rowBoundaries = rowBoundaries;
         debugInfo.colBoundaries = colBoundaries;
-        debugInfo.orientation = orientation;
+        debugInfo.orientation = 'horizontal'; // Fixed for this specific mark sheet type
 
         const indices: number[] = [];
 
-        if (orientation === 'horizontal') {
-            for (let r = 0; r < rowCenters.length; r++) {
-                const centerY = rowCenters[r];
-                const rowScores: {colIdx: number, darkness: number}[] = [];
+        // Grid Analysis: Iterate through detected rows and columns
+        for (let r = 0; r < rowCenters.length; r++) {
+            const centerY = rowCenters[r];
+            const rowScores: {colIdx: number, darkness: number}[] = [];
 
-                for (let c = 0; c < colCenters.length; c++) {
-                    const centerX = colCenters[c];
-                    const { filled, darkPixels } = checkFill(width, height, centerX, centerY, data, isDark);
-                    
-                    debugInfo.points.push({ x: centerX, y: centerY, filled });
-                    rowScores.push({ colIdx: c, darkness: darkPixels });
-                }
-
-                rowScores.sort((a, b) => b.darkness - a.darkness);
-                const winner = rowScores[0];
-                const runnerUp = rowScores[1];
-
-                const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (height / rowCenters.length);
-                const cellW = (width / colCenters.length); 
-                const cellArea = cellW * cellH;
-                const minDarkness = cellArea * 0.05;
-
-                if (winner.darkness > minDarkness && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
-                    indices.push(winner.colIdx);
-                } else {
-                    indices.push(-1); 
-                }
-            }
-
-        } else {
             for (let c = 0; c < colCenters.length; c++) {
                 const centerX = colCenters[c];
-                const colScores: {rowIdx: number, darkness: number}[] = [];
-
-                for (let r = 0; r < rowCenters.length; r++) {
-                    const centerY = rowCenters[r];
-                    const { filled, darkPixels } = checkFill(width, height, centerX, centerY, data, isDark);
-                    
-                    debugInfo.points.push({ x: centerX, y: centerY, filled });
-                    colScores.push({ rowIdx: r, darkness: darkPixels });
-                }
-
-                colScores.sort((a, b) => b.darkness - a.darkness);
-                const winner = colScores[0];
-                const runnerUp = colScores[1];
+                const { filled, darkPixels } = checkFill(width, height, centerX, centerY, data, isDark);
                 
-                const cellW = (c < colBoundaries.length - 1) ? colBoundaries[c+1] - colBoundaries[c] : (width / colCenters.length);
-                const cellH = (height / rowCenters.length);
-                const cellArea = cellW * cellH;
-                const minDarkness = cellArea * 0.05;
+                // Only show point if filled (reduces visual clutter of false positives)
+                debugInfo.points.push({ x: centerX, y: centerY, filled });
+                rowScores.push({ colIdx: c, darkness: darkPixels });
+            }
 
-                if (winner.darkness > minDarkness && (colScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
-                    indices.push(winner.rowIdx);
-                } else {
-                    indices.push(-1);
-                }
+            rowScores.sort((a, b) => b.darkness - a.darkness);
+            const winner = rowScores[0];
+            const runnerUp = rowScores[1];
+
+            // Dynamic cell area estimation for threshold
+            const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (height / rowCenters.length);
+            const cellW = (width / colCenters.length); 
+            const cellArea = cellW * cellH;
+            const minDarkness = cellArea * 0.05; // 5% fill
+
+            if (winner.darkness > minDarkness && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
+                indices.push(winner.colIdx);
+            } else {
+                indices.push(-1); 
             }
         }
         
@@ -311,9 +240,9 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
     }
 };
 
-// Helper for pixel sampling
+// Helper for pixel sampling - slightly tighter radius to avoid grid lines
 function checkFill(width: number, height: number, centerX: number, centerY: number, data: Uint8ClampedArray, isDark: (x:number, y:number)=>boolean) {
-    const sampleRadius = Math.max(2, Math.min(width, height) * 0.015);
+    const sampleRadius = Math.max(2, Math.min(width, height) * 0.012); 
     let darkPixels = 0;
     let totalPixels = 0;
 
@@ -328,58 +257,71 @@ function checkFill(width: number, height: number, centerX: number, centerY: numb
             totalPixels++;
         }
     }
-    const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.30;
+    const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.35; // 35% threshold
     return { filled: isFilled, darkPixels };
 }
 
 const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
     if (!debugInfo) return null;
 
-    const isHorizontal = debugInfo.orientation === 'horizontal';
-    
     return (
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 50 }}>
-            {/* Draw Grid Lines */}
-            {debugInfo.rowBoundaries.map((y, i) => (
-                <line key={`row-line-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(0, 255, 255, 0.6)" strokeWidth="1" strokeDasharray="4 2" />
-            ))}
-            {debugInfo.colBoundaries.map((x, i) => (
-                <line key={`col-line-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(255, 0, 255, 0.6)" strokeWidth="1" strokeDasharray="4 2" />
+            {/* Draw Scan Zones (Debug) */}
+            {debugInfo.scanZones?.map((z, i) => (
+                <rect key={`zone-${i}`} x={z.x} y={z.y} width={z.w} height={z.h} fill="rgba(0, 255, 255, 0.05)" stroke="rgba(0,255,255,0.3)" strokeDasharray="2 2" />
             ))}
 
-            {/* Draw Center Points/Labels */}
+            {/* Draw Reference Lines - derived from peaks */}
             {debugInfo.rows.map((y, i) => (
-                !isHorizontal && <text key={`row-lbl-${i}`} x="2" y={y + 3} fill="cyan" fontSize={Math.min(10, height/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{i}</text>
+                <line key={`row-center-${i}`} x1={width * 0.8} y1={y} x2={width} y2={y} stroke="cyan" strokeWidth="2" />
+            ))}
+            {debugInfo.cols.map((x, i) => (
+                <line key={`col-center-${i}`} x1={x} y1={height * 0.8} x2={x} y2={height} stroke="magenta" strokeWidth="2" />
+            ))}
+
+            {/* Draw Grid Lines (Boundaries) */}
+            {debugInfo.rowBoundaries.map((y, i) => (
+                <line key={`row-line-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(255, 255, 255, 0.4)" strokeWidth="1" strokeDasharray="2 2" />
+            ))}
+            {debugInfo.colBoundaries.map((x, i) => (
+                <line key={`col-line-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(255, 255, 255, 0.4)" strokeWidth="1" strokeDasharray="2 2" />
+            ))}
+
+            {/* Labels */}
+            {debugInfo.rows.map((y, i) => (
+                <text key={`row-lbl-${i}`} x={width - 15} y={y + 3} fill="cyan" fontSize={Math.min(10, height/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>Row{i}</text>
             ))}
             {debugInfo.cols.map((x, i) => {
-                // Adjust label for 1-0 numbering if 10 columns
                 let label = i.toString();
                 if (debugInfo.cols.length === 10) {
                     label = ((i + 1) % 10).toString();
                 }
-                return isHorizontal && <text key={`col-lbl-${i}`} x={x - 3} y="10" fill="magenta" fontSize={Math.min(10, width/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{label}</text>;
+                return <text key={`col-lbl-${i}`} x={x - 3} y={height - 5} fill="magenta" fontSize={Math.min(10, width/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{label}</text>;
             })}
             
-            {/* Draw Detection Points */}
-            {debugInfo.points.map((p, i) => (
+            {/* Draw Detected/Filled Points */}
+            {debugInfo.points.filter(p => p.filled).map((p, i) => (
                 <circle 
                     key={i} 
                     cx={p.x} 
                     cy={p.y} 
-                    r={Math.max(2, Math.min(width, height) * 0.01)} 
-                    fill={p.filled ? "rgba(0, 255, 0, 0.7)" : "rgba(255, 0, 0, 0.2)"}
-                    stroke={p.filled ? "lime" : "transparent"} 
-                    strokeWidth="1"
+                    r={Math.max(3, Math.min(width, height) * 0.015)} 
+                    fill="rgba(0, 255, 0, 0.6)"
+                    stroke="lime"
+                    strokeWidth="2"
                 />
             ))}
             
             <g transform="translate(2, 2)">
-                <rect x="0" y="0" width="140" height="34" fill="rgba(0,0,0,0.7)" rx="4" />
+                <rect x="0" y="0" width="160" height="46" fill="rgba(0,0,0,0.7)" rx="4" />
                 <text x="6" y="12" fill="white" fontSize="9" fontWeight="bold">
-                    {isHorizontal ? '横 (列=1~0)' : '縦 (行=0~9)'}
+                    マークシート検出 (基準点方式)
                 </text>
                 <text x="6" y="24" fill="white" fontSize="9">
-                    検出: {debugInfo.rows.length}行 x {debugInfo.cols.length}列
+                    右端(行): {debugInfo.rows.length}点 / 下端(列): {debugInfo.cols.length}点
+                </text>
+                 <text x="6" y="36" fill="#ccc" fontSize="8">
+                    ※右と下の黒い基準点を認識して補正
                 </text>
             </g>
         </svg>
