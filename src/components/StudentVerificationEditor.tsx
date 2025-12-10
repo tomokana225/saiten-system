@@ -1,22 +1,251 @@
-import React, { useState, useMemo, useRef } from 'react';
-import type { Student, StudentInfo } from '../types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import type { Student, StudentInfo, Area, Template } from '../types';
 import { AreaType } from '../types';
 import { fileToArrayBuffer } from '../utils';
 import { AnswerSnippet } from './AnswerSnippet';
-import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon } from './icons';
+import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon, SparklesIcon, SpinnerIcon, EyeIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
+
+// Type to store debug information about the grid detection
+interface DetectionDebugInfo {
+    points: { x: number; y: number; filled: boolean }[];
+    rows: number[]; // Y coordinates
+    cols: number[]; // X coordinates
+}
+
+const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ idString: string | null, debugInfo: DetectionDebugInfo }> => {
+    const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [] };
+    
+    try {
+        const result = await window.electronAPI.invoke('get-image-details', imagePath);
+        if (!result.success || !result.details?.url) return { idString: null, debugInfo };
+        
+        const dataUrl = result.details.url;
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return { idString: null, debugInfo };
+        
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(area.x, area.y, area.width, area.height);
+        const data = imageData.data;
+        const width = area.width;
+        const height = area.height;
+
+        // --- Logic to detect Timing Marks ---
+        // 1. Detect Rows by scanning the rightmost 20% of the image
+        const rowScanXStart = Math.floor(width * 0.8);
+        const rowProjections: number[] = new Array(height).fill(0);
+        
+        for (let y = 0; y < height; y++) {
+            let darkCount = 0;
+            for (let x = rowScanXStart; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                if (gray < 128) darkCount++;
+            }
+            rowProjections[y] = darkCount;
+        }
+
+        // Simple peak detection for rows
+        const rowCenters: number[] = [];
+        let inPeak = false;
+        let peakStart = 0;
+        const rowThreshold = (width - rowScanXStart) * 0.1; // 10% darkness threshold
+
+        for (let y = 0; y < height; y++) {
+            if (rowProjections[y] > rowThreshold) {
+                if (!inPeak) {
+                    inPeak = true;
+                    peakStart = y;
+                }
+            } else {
+                if (inPeak) {
+                    inPeak = false;
+                    rowCenters.push((peakStart + y) / 2);
+                }
+            }
+        }
+
+        // 2. Detect Cols by scanning the bottom 20% of the image
+        const colScanYStart = Math.floor(height * 0.8);
+        const colProjections: number[] = new Array(width).fill(0);
+
+        for (let x = 0; x < width; x++) {
+            let darkCount = 0;
+            for (let y = colScanYStart; y < height; y++) {
+                const idx = (y * width + x) * 4;
+                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                if (gray < 128) darkCount++;
+            }
+            colProjections[x] = darkCount;
+        }
+
+        // Simple peak detection for cols
+        const colCenters: number[] = [];
+        inPeak = false;
+        peakStart = 0;
+        const colThreshold = (height - colScanYStart) * 0.1;
+
+        for (let x = 0; x < width; x++) {
+            if (colProjections[x] > colThreshold) {
+                if (!inPeak) {
+                    inPeak = true;
+                    peakStart = x;
+                }
+            } else {
+                if (inPeak) {
+                    inPeak = false;
+                    colCenters.push((peakStart + x) / 2);
+                }
+            }
+        }
+
+        // --- Fallback Logic ---
+        // If we didn't find exactly 10 rows or 4 cols, fallback to geometric division
+        // Assuming the marks might be missing or the crop is tight around bubbles
+        let finalRowCenters = rowCenters;
+        let finalColCenters = colCenters;
+
+        if (rowCenters.length !== 10) {
+            // console.warn(`Detected ${rowCenters.length} rows, falling back to geometric split.`);
+            finalRowCenters = [];
+            const rowHeight = height / 10;
+            for(let i=0; i<10; i++) finalRowCenters.push(rowHeight * i + rowHeight/2);
+        }
+
+        if (colCenters.length !== 4) {
+            // console.warn(`Detected ${colCenters.length} cols, falling back to geometric split.`);
+            finalColCenters = [];
+            // If we detected timing marks, the bubbles are to the LEFT of them.
+            // If not, we assume full width.
+            // Heuristic: If we used timing marks, we assumed they were on the right.
+            // The bubbles should be in the left 80%? 
+            // If fallback, assume simple 4 cols distributed evenly.
+            const colWidth = width / 4;
+            for(let i=0; i<4; i++) finalColCenters.push(colWidth * i + colWidth/2);
+        } else {
+            // If we detected columns via bottom marks, use them directly. 
+            // However, the bottom marks should align with the bubble columns.
+        }
+
+        debugInfo.rows = finalRowCenters;
+        debugInfo.cols = finalColCenters;
+
+        // --- Reading the Grid ---
+        let idString = '';
+        const numCols = 4; // We expect 4 digits
+        const numRows = 10; // We expect 0-9
+
+        // If we have more detected centers than needed, take the ones that make sense (e.g. first 4 cols)
+        // For simplicity, we sample at the computed centers.
+
+        for (let c = 0; c < numCols; c++) {
+            // If we fell back to geometric, use geometric. If we have detected centers, use them.
+            // If we have > 4 detected cols, usually the first 4 are the digits.
+            const centerX = c < finalColCenters.length ? finalColCenters[c] : (width/4 * c + width/8);
+            
+            const columnScores: {row: number, darkness: number}[] = [];
+
+            for (let r = 0; r < numRows; r++) {
+                const centerY = r < finalRowCenters.length ? finalRowCenters[r] : (height/10 * r + height/20);
+                
+                // Sample a small box around the center
+                const sampleRadius = Math.min(width, height) * 0.02; 
+                let darkPixels = 0;
+                let totalPixels = 0;
+
+                const startY = Math.max(0, Math.floor(centerY - sampleRadius));
+                const endY = Math.min(height, Math.floor(centerY + sampleRadius));
+                const startX = Math.max(0, Math.floor(centerX - sampleRadius));
+                const endX = Math.min(width, Math.floor(centerX + sampleRadius));
+
+                for (let y = startY; y < endY; y++) {
+                    for (let x = startX; x < endX; x++) {
+                        const idx = (y * width + x) * 4;
+                        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                        if (gray < 128) darkPixels++;
+                        totalPixels++;
+                    }
+                }
+                
+                const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.4; // 40% darkness threshold
+                debugInfo.points.push({ x: centerX, y: centerY, filled: isFilled });
+                
+                columnScores.push({ row: r, darkness: darkPixels });
+            }
+
+            // Find best row in this column
+            columnScores.sort((a, b) => b.darkness - a.darkness);
+            const winner = columnScores[0];
+            const runnerUp = columnScores[1];
+            
+            // Confidence check
+            if (winner.darkness > 10 && winner.darkness > runnerUp.darkness * 1.5) {
+                idString += winner.row.toString();
+            } else {
+                idString += '?';
+            }
+        }
+        
+        return { idString: idString.includes('?') ? null : idString, debugInfo };
+        
+    } catch (e) {
+        console.error("Student ID Analysis Error:", e);
+        return { idString: null, debugInfo };
+    }
+};
+
+const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
+    if (!debugInfo || debugInfo.points.length === 0) return null;
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-10">
+            <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
+                {/* Draw grid lines for debugging if rows/cols detected */}
+                {debugInfo.rows.map((y, i) => (
+                    <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
+                ))}
+                {debugInfo.cols.map((x, i) => (
+                    <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
+                ))}
+                
+                {/* Draw intersection points */}
+                {debugInfo.points.map((p, i) => (
+                    <circle 
+                        key={i} 
+                        cx={p.x} 
+                        cy={p.y} 
+                        r={width * 0.015} 
+                        fill={p.filled ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.4)"} 
+                        stroke="white"
+                        strokeWidth="1"
+                    />
+                ))}
+            </svg>
+        </div>
+    );
+};
 
 export const StudentVerificationEditor = () => {
     const { activeProject, handleStudentSheetsChange, handleStudentInfoChange } = useProject();
     const { uploadedSheets, studentInfo: studentInfoList, template, areas } = activeProject!;
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [draggedSheetIndex, setDraggedSheetIndex] = useState<number | null>(null);
     const [draggedInfoIndex, setDraggedInfoIndex] = useState<number | null>(null);
     const [dragOverSheetIndex, setDragOverSheetIndex] = useState<number | null>(null);
     const [dragOverInfoIndex, setDragOverInfoIndex] = useState<number | null>(null);
+    const [isSorting, setIsSorting] = useState(false);
+    const [showDebugGrid, setShowDebugGrid] = useState(false);
+    const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({});
 
     const nameArea = useMemo(() => areas.find(a => a.type === AreaType.NAME), [areas]);
+    const studentIdArea = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_MARK), [areas]);
     const createBlankSheet = (): Student => ({ id: `blank-sheet-${Date.now()}-${Math.random()}`, originalName: '（空の行）', filePath: null });
     
     const numRows = Math.max(uploadedSheets.length, studentInfoList.length);
@@ -103,6 +332,92 @@ export const StudentVerificationEditor = () => {
         setDragOverInfoIndex(null);
     };
 
+    const handleSortByStudentIdMark = async () => {
+        if (!studentIdArea) {
+            alert('テンプレート編集画面で「学籍番号」エリアを設定してください。');
+            return;
+        }
+        if (uploadedSheets.filter(s => s.filePath).length === 0) return;
+
+        setIsSorting(true);
+        setDebugInfos({}); // Clear old debug info
+        let matchCount = 0;
+
+        try {
+            // 1. Analyze all valid sheets
+            const sheetsWithIds = await Promise.all(uploadedSheets.map(async (sheet) => {
+                if (!sheet.filePath) return { sheet, id: null };
+                const { idString, debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
+                setDebugInfos(prev => ({ ...prev, [sheet.id]: debugInfo }));
+                return { sheet, id: idString };
+            }));
+
+            // 2. Prepare new sheet array aligned with studentInfo
+            const newSheets: Student[] = new Array(studentInfoList.length).fill(null);
+            const remainingSheets: Student[] = [];
+
+            // 3. Match
+            sheetsWithIds.forEach(({ sheet, id }) => {
+                if (id) {
+                    // Try to match id (e.g. "1310") to Class/Number (e.g. "1-3", "10" => "1310")
+                    const matchIndex = studentInfoList.findIndex(info => {
+                        const targetId = (info.class + info.number).replace(/[^0-9]/g, '');
+                        return targetId === id;
+                    });
+
+                    if (matchIndex !== -1 && !newSheets[matchIndex]) {
+                        newSheets[matchIndex] = sheet;
+                        matchCount++;
+                    } else {
+                        remainingSheets.push(sheet);
+                    }
+                } else {
+                    remainingSheets.push(sheet);
+                }
+            });
+
+            // 4. Fill gaps in newSheets with remainingSheets or blank placeholders
+            const finalSheets: Student[] = [];
+            for (let i = 0; i < studentInfoList.length; i++) {
+                if (newSheets[i]) {
+                    finalSheets.push(newSheets[i]);
+                } else {
+                    finalSheets.push(createBlankSheet()); 
+                }
+            }
+            
+            // Append unmatched sheets at the end
+            finalSheets.push(...remainingSheets);
+
+            handleStudentSheetsChange(finalSheets);
+            if (!showDebugGrid) setShowDebugGrid(true); // Automatically show debug info to verify
+            alert(`${matchCount}件の解答用紙をマッチングしました。「認識位置を表示」でズレがないか確認してください。`);
+
+        } catch (error) {
+            console.error("Sorting error:", error);
+            alert("並べ替え中にエラーが発生しました。");
+        } finally {
+            setIsSorting(false);
+        }
+    };
+
+    // Effect to run initial detection on load if debug grid is on, just to populate visuals?
+    // Probably too heavy. Only populate on sort or explicit check? 
+    // Let's create a "Scan" button if debug is on and no data.
+    const handleRefreshDebug = async () => {
+        if (!studentIdArea) return;
+        setIsSorting(true);
+        const newDebugInfos: Record<string, DetectionDebugInfo> = {};
+        for (const sheet of uploadedSheets) {
+            if (sheet.filePath) {
+                const { debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
+                newDebugInfos[sheet.id] = debugInfo;
+            }
+        }
+        setDebugInfos(newDebugInfos);
+        setIsSorting(false);
+    };
+
     return (
          <div className="w-full space-y-4 flex flex-col h-full">
             <div className="flex-shrink-0 flex justify-between items-center">
@@ -110,11 +425,30 @@ export const StudentVerificationEditor = () => {
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">生徒情報と解答用紙の照合・修正</h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400">左右のリストをドラッグして順序を調整し、ズレを修正してください。</p>
                 </div>
-                <label className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
-                    <PlusIcon className="w-4 h-4" />
-                    <span>解答用紙を追加</span>
-                    <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*" />
-                </label>
+                <div className="flex items-center gap-2">
+                    {studentIdArea && (
+                        <>
+                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 cursor-pointer bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
+                                <input type="checkbox" checked={showDebugGrid} onChange={e => { setShowDebugGrid(e.target.checked); if(e.target.checked && Object.keys(debugInfos).length===0) handleRefreshDebug(); }} className="rounded text-sky-600"/>
+                                <EyeIcon className="w-4 h-4"/>
+                                <span>認識位置を表示</span>
+                            </label>
+                            <button 
+                                onClick={handleSortByStudentIdMark} 
+                                disabled={isSorting}
+                                className="flex items-center space-x-2 px-3 py-2 text-sm bg-purple-600 text-white hover:bg-purple-500 rounded-md transition-colors disabled:opacity-50"
+                            >
+                                {isSorting ? <SpinnerIcon className="w-4 h-4"/> : <SparklesIcon className="w-4 h-4"/>}
+                                <span>{isSorting ? '読取中...' : '学籍番号マークで並べ替え'}</span>
+                            </button>
+                        </>
+                    )}
+                    <label className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
+                        <PlusIcon className="w-4 h-4" />
+                        <span>解答用紙を追加</span>
+                        <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*" />
+                    </label>
+                </div>
             </div>
             
              <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md">
@@ -125,6 +459,8 @@ export const StudentVerificationEditor = () => {
                         {Array.from({ length: Math.max(uploadedSheets.length, numRows) }).map((_, index) => {
                             const sheet = uploadedSheets[index];
                             const isDraggable = !!sheet;
+                            const debugInfo = sheet ? debugInfos[sheet.id] : undefined;
+                            
                             return (
                                 <div 
                                     key={sheet?.id || `empty-sheet-${index}`}
@@ -143,7 +479,20 @@ export const StudentVerificationEditor = () => {
                                             <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0"><GripVerticalIcon className="w-6 h-6" /></div>
                                             <div className="flex-1 h-full relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
                                                 {sheet.filePath ? (
-                                                    <AnswerSnippet imageSrc={sheet.filePath} area={nameArea} template={template} />
+                                                    // Decide whether to show Name or ID Area based on debug mode
+                                                    <div className="relative w-full h-full">
+                                                        <AnswerSnippet 
+                                                            imageSrc={sheet.filePath} 
+                                                            area={showDebugGrid && studentIdArea ? studentIdArea : nameArea} 
+                                                            template={template} 
+                                                        />
+                                                        {showDebugGrid && debugInfo && studentIdArea && (
+                                                            <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
+                                                        )}
+                                                        {showDebugGrid && !debugInfo && (
+                                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white text-xs">未スキャン</div>
+                                                        )}
+                                                    </div>
                                                 ) : (
                                                     <div className="flex items-center justify-center h-full text-xs text-slate-400">空の行</div>
                                                 )}

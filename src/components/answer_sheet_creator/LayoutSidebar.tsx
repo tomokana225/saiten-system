@@ -414,8 +414,8 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 <div className="w-full h-full flex">
                     <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
                         <div className="flex border-b dark:border-slate-700">
-                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium ${tab === 'list' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>一覧</button>
-                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium ${tab === 'edit' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>構成編集</button>
+                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium border-b-2 border-sky-500 text-sky-600`}>一覧</button>
+                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700`}>構成編集</button>
                         </div>
                         <div className="flex-1 overflow-y-auto space-y-2 p-4">
                             {Object.values(layouts).map((layout: SheetLayout) => (
@@ -440,8 +440,8 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 <div className="w-full h-full flex">
                     <aside className="w-96 flex-shrink-0 flex flex-col bg-white dark:bg-slate-800 border-r dark:border-slate-700 h-full">
                         <div className="flex border-b dark:border-slate-700">
-                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium ${tab === 'list' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>一覧</button>
-                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium ${tab === 'edit' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>構成編集</button>
+                            <button onClick={() => setTab('list')} className={`flex-1 py-3 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700`}>一覧</button>
+                            <button onClick={() => setTab('edit')} className={`flex-1 py-3 text-sm font-medium border-b-2 border-sky-500 text-sky-600`}>構成編集</button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-6">
                             <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
@@ -564,107 +564,4 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                 {q.type !== 'long_text' && (
                                                                     <div className="flex items-center gap-1">
                                                                         <span className="text-[10px] text-slate-400">幅:</span>
-                                                                        <input type="range" min="1" max="40" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500"/>
-                                                                    </div>
-                                                                )}
-                                                                <div className="flex items-center gap-1">
-                                                                    <span className="text-[10px] text-slate-400">高:</span>
-                                                                    <input type="number" step="0.1" min="0.5" max="5" value={q.heightRatio || 1.0} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                                </div>
-                                                                {q.type === 'marksheet' && (
-                                                                    <div className="flex items-center gap-1 col-span-2">
-                                                                        <span className="text-[10px] text-slate-400">択:</span>
-                                                                        <div className="flex gap-1">
-                                                                            {[3, 4, 5].map(n => <button key={n} onClick={() => updateQuestion(section.id, q.id, { choices: n })} className={`px-1.5 py-0.5 text-[10px] rounded border ${q.choices === n ? 'bg-sky-500 text-white border-sky-500' : 'bg-slate-50 dark:bg-slate-700 border-slate-300'}`}>{n}</button>)}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                                {q.type === 'english_word' && (
-                                                                    <div className="flex items-center gap-1 col-span-2">
-                                                                        <span className="text-[10px] text-slate-400">単語数:</span>
-                                                                        <input type="number" min="1" max="100" value={q.wordCount || 5} onChange={e => updateQuestion(section.id, q.id, { wordCount: parseInt(e.target.value) })} className="w-12 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                                    </div>
-                                                                )}
-                                                                {q.type === 'english_word' && (
-                                                                    <div className="flex items-center gap-1 flex-1">
-                                                                        <span className="text-[10px] text-slate-400">行間:</span>
-                                                                        <input type="number" step="0.1" min="1.0" max="3.0" value={q.lineHeightRatio || 1.5} onChange={e => updateQuestion(section.id, q.id, { lineHeightRatio: parseFloat(e.target.value) })} className="w-full p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="p-4 bg-slate-50 dark:bg-slate-900">
-                                <button onClick={() => handleCreateOrUpdateLayout(true)} className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold shadow-lg transform transition-transform active:scale-95 flex items-center justify-center gap-2">
-                                    <RotateCcwIcon className="w-5 h-5"/> 構成を反映して更新
-                                </button>
-                            </div>
-                        </div>
-                    </aside>
-
-                    {/* Right Panel: Real Preview using generated Layout */}
-                    <div className="flex-1 bg-slate-200 dark:bg-slate-900/50 p-8 overflow-auto flex justify-center">
-                        <div className="relative shadow-2xl">
-                            <div className="absolute top-2 right-2 flex gap-2 print:hidden z-20">
-                                {onPrintPreview && <button onClick={onPrintPreview} className="p-2 bg-sky-600 text-white rounded-full shadow hover:bg-sky-500 transition-colors" title="印刷プレビュー"><PrintIcon className="w-5 h-5"/></button>}
-                            </div>
-                            {/* Render the actual SheetLayout as a table, scaled down slightly for viewing */}
-                            <div style={{ 
-                                width: `${PAPER_DIMENSIONS[config.paperSize].width}mm`, 
-                                height: `${PAPER_DIMENSIONS[config.paperSize].height}mm`,
-                                backgroundColor: 'white',
-                                padding: '10mm',
-                                boxSizing: 'border-box',
-                                overflow: 'hidden' 
-                            }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                                    <colgroup>
-                                        {previewLayout.colWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
-                                    </colgroup>
-                                    <tbody>
-                                        {previewLayout.cells.map((row, r) => (
-                                            <tr key={r} style={{ height: `${previewLayout.rowHeights[r]}px` }}>
-                                                {row.map((cell, c) => {
-                                                    if (!cell) return null;
-                                                    const borderStyleBase = `${cell.borderWidth || 1}px ${cell.borderStyle || 'solid'} ${cell.borderColor || '#000'}`;
-                                                    const style: React.CSSProperties = {
-                                                        textAlign: cell.hAlign,
-                                                        verticalAlign: cell.vAlign,
-                                                        fontWeight: cell.fontWeight,
-                                                        fontStyle: cell.fontStyle,
-                                                        textDecoration: cell.textDecoration,
-                                                        fontSize: `${cell.fontSize}pt`,
-                                                        borderTop: cell.borders?.top ? borderStyleBase : 'none',
-                                                        borderBottom: cell.borders?.bottom ? borderStyleBase : 'none',
-                                                        borderLeft: cell.borders?.left ? borderStyleBase : 'none',
-                                                        borderRight: cell.borders?.right ? borderStyleBase : 'none',
-                                                        backgroundColor: cell.backgroundColor || 'transparent',
-                                                        padding: '2px 4px',
-                                                        overflow: 'hidden',
-                                                        wordWrap: 'break-word',
-                                                        whiteSpace: 'pre-wrap'
-                                                    };
-                                                    return (
-                                                        <td key={c} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={style}>
-                                                            {cell.type === 'english-grid' ? renderEnglishGrid(cell.metadata) : cell.text}
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </aside>
-    );
-};
+                                                                        <input type="range" min="1" max="40" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-20

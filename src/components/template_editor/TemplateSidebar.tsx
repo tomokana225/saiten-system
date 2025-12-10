@@ -12,6 +12,7 @@ export const areaTypeColors: { [key in AreaType]: { hex: string; bg: string; tex
     [AreaTypeEnum.MARK_SHEET]: { hex: '#14b8a6', bg: 'bg-teal-100 dark:bg-teal-900/50', text: 'text-teal-800 dark:text-teal-300', hover: 'hover:bg-teal-200/50 dark:hover:bg-teal-800/50' },
     [AreaTypeEnum.QUESTION_NUMBER]: { hex: '#64748b', bg: 'bg-slate-200 dark:bg-slate-700', text: 'text-slate-800 dark:text-slate-300', hover: 'hover:bg-slate-300/50 dark:hover:bg-slate-600/50' },
     [AreaTypeEnum.ALIGNMENT_MARK]: { hex: '#ef4444', bg: 'bg-red-200 dark:bg-red-700', text: 'text-red-800 dark:text-red-300', hover: 'hover:bg-red-300/50 dark:hover:bg-red-600/50' },
+    [AreaTypeEnum.STUDENT_ID_MARK]: { hex: '#8b5cf6', bg: 'bg-violet-200 dark:bg-violet-700', text: 'text-violet-800 dark:text-violet-300', hover: 'hover:bg-violet-300/50 dark:hover:bg-violet-600/50' },
 };
 
 const fallbackColor = areaTypeColors[AreaTypeEnum.QUESTION_NUMBER];
@@ -146,22 +147,22 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ areas, setArea
                                     value={area.name}
                                     onChange={(e) => {
                                         e.stopPropagation();
-                                        handleAreaChange(area.id, 'name', e.target.value)
+                                        handleAreaChange(area.id, 'name', e.target.value);
                                     }}
+                                    className="font-medium bg-transparent border-b border-transparent focus:border-slate-300 outline-none w-full text-sm"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="font-semibold bg-transparent w-full text-sm"
                                 />
+                            </div>
+                            <div className="flex justify-between items-center mt-1">
                                 <select
                                     value={area.type}
-                                    onChange={(e) => {
-                                        e.stopPropagation();
-                                        handleAreaChange(area.id, 'type', e.target.value)
-                                    }}
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`text-xs p-1 rounded-md bg-transparent ${colors.text}`}
+                                    onChange={(e) => handleAreaChange(area.id, 'type', e.target.value)}
+                                    className="text-xs p-1 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800"
                                 >
-                                    {Object.values(AreaTypeEnum).map(type => <option key={type} value={type}>{type}</option>)}
+                                    {Object.values(AreaTypeEnum).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
+                                <span className="text-xs text-slate-400">{Math.round(area.width)}x{Math.round(area.height)}</span>
                             </div>
                         </div>
                     );

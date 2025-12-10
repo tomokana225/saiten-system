@@ -53,6 +53,7 @@ export enum AreaType {
     MARK_SHEET = 'マークシート',
     QUESTION_NUMBER = '問題番号',
     ALIGNMENT_MARK = '基準マーク',
+    STUDENT_ID_MARK = '学籍番号',
 }
 
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;

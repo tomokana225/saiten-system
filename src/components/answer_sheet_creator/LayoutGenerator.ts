@@ -135,7 +135,6 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
         const contentAreaWidth = totalCols - sectionLabelWidth - 1;
         const contentStartCol = sectionLabelWidth;
         
-        const useGap = config.gapBetweenQuestions !== false; // default true
         const gapSize = config.gapBetweenQuestions !== undefined ? config.gapBetweenQuestions : 2;
 
         let globalQNum = 1;
