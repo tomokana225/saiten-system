@@ -44,74 +44,82 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const imageData = ctx.getImageData(0, 0, img.width, img.height);
             const data = imageData.data;
 
-            // 1. Calculate global average brightness for adaptive thresholding
-            let totalBrightness = 0;
-            let pixelCount = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                // Simple grayscale
-                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                totalBrightness += gray;
-                pixelCount++;
-            }
-            const avgBrightness = totalBrightness / pixelCount;
-            // Pixels darker than 85% of average are considered "marked". 
-            // This works better for varied lighting than a fixed 128 threshold.
-            const darknessThreshold = avgBrightness * 0.85;
-
             const options = point.markSheetOptions || 4;
             const isHorizontal = point.markSheetLayout === 'horizontal';
             const segmentWidth = isHorizontal ? img.width / options : img.width;
             const segmentHeight = isHorizontal ? img.height : img.height / options;
             
-            const darknessScores = Array(options).fill(0);
+            const roiAverages: number[] = [];
 
+            // 1. Calculate average brightness for the CENTER ROI of each option
             for (let i = 0; i < options; i++) {
                 const xStart = Math.floor(isHorizontal ? i * segmentWidth : 0);
                 const yStart = Math.floor(isHorizontal ? 0 : i * segmentHeight);
-                const xEnd = Math.ceil(xStart + segmentWidth);
-                const yEnd = Math.ceil(yStart + segmentHeight);
+                
+                // Define ROI: Center 50% of the segment to avoid borders and noise
+                // "1ブロックの中の中心に四角を作って"
+                const roiMarginX = segmentWidth * 0.25; 
+                const roiMarginY = segmentHeight * 0.25;
+                
+                const roiX = Math.floor(xStart + roiMarginX);
+                const roiY = Math.floor(yStart + roiMarginY);
+                const roiW = Math.ceil(segmentWidth * 0.5);
+                const roiH = Math.ceil(segmentHeight * 0.5);
 
-                // Margin to avoid border noise (15% from edges)
-                const xMargin = (xEnd - xStart) * 0.15;
-                const yMargin = (yEnd - yStart) * 0.15;
+                let totalBrightness = 0;
+                let pixelCount = 0;
 
-                let darkPixelScore = 0;
-                for (let y = yStart + yMargin; y < yEnd - yMargin; y++) {
-                    for (let x = xStart + xMargin; x < xEnd - xMargin; x++) {
-                        const idx = (Math.floor(y) * img.width + Math.floor(x)) * 4;
-                        if (idx >= data.length) continue;
-                        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-                        if (gray < darknessThreshold) {
-                            // Weight by how dark it is compared to threshold
-                            darkPixelScore += (darknessThreshold - gray);
-                        }
+                for (let y = roiY; y < roiY + roiH; y++) {
+                    for (let x = roiX; x < roiX + roiW; x++) {
+                        // Boundary check
+                        if (x < 0 || x >= img.width || y < 0 || y >= img.height) continue;
+
+                        const idx = (y * img.width + x) * 4;
+                        const r = data[idx];
+                        const g = data[idx + 1];
+                        const b = data[idx + 2];
+                        // Simple grayscale
+                        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                        totalBrightness += gray;
+                        pixelCount++;
                     }
                 }
-                darknessScores[i] = darkPixelScore;
+                
+                roiAverages[i] = pixelCount > 0 ? totalBrightness / pixelCount : 255;
             }
-            
-            let maxScore = -1;
-            let maxIndex = -1;
-            darknessScores.forEach((score, index) => {
-                if (score > maxScore) {
-                    maxScore = score;
-                    maxIndex = index;
+
+            // 2. Determine "Paper White" baseline
+            // We assume at least one option is NOT marked (empty). 
+            // The brightest option represents the paper color.
+            const paperBrightness = Math.max(...roiAverages);
+
+            // 3. Find the darkest option (lowest brightness value)
+            let minBrightness = 255;
+            let minIndex = -1;
+
+            roiAverages.forEach((brightness, index) => {
+                if (brightness < minBrightness) {
+                    minBrightness = brightness;
+                    minIndex = index;
                 }
             });
-            
-            // Heuristic check: Is the max score significant enough?
-            // Minimum required score depends on segment size, but we can assume
-            // if it's very low, it's just noise.
-            // Using a relative check: Max score should be significantly higher than average score if all were empty?
-            // Or just use a safe baseline.
-            const segmentArea = (segmentWidth * 0.7) * (segmentHeight * 0.7); // Effective ROI area
-            // If avg diff is 10 (out of 255) for 5% of pixels, that's meaningful.
-            const minScoreThreshold = segmentArea * 5; 
 
-            if (maxScore > minScoreThreshold) {
-                resolve(maxIndex);
+            // 4. Threshold check
+            // The marked option must be significantly darker than the paper.
+            // e.g., Mark must be < 80% brightness of the paper.
+            // If paper is white (250), mark must be < 200.
+            // If paper is gray (100), mark must be < 80.
+            const thresholdRatio = 0.80; 
+            
+            // Absolute difference check (e.g. at least 30 levels darker) handles noise better on very dark images
+            const minDiff = 30;
+
+            const isDarkEnough = (minBrightness < paperBrightness * thresholdRatio) && ((paperBrightness - minBrightness) > minDiff);
+
+            if (isDarkEnough && minIndex !== -1) {
+                resolve(minIndex);
             } else {
-                resolve(-1); // No clear mark detected
+                resolve(-1); // No mark detected (or nothing dark enough)
             }
         };
         img.onerror = () => resolve(-1);
@@ -208,7 +216,12 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     if (!studentSnippet) continue;
                     
                     const detectedMarkIndex = await analyzeMarkSheetSnippet(studentSnippet, point);
-                    const status = detectedMarkIndex === point.correctAnswerIndex ? ScoringStatus.CORRECT : ScoringStatus.INCORRECT;
+                    
+                    // If -1 (no mark), default to INCORRECT with 0 score
+                    const status = (detectedMarkIndex !== -1 && detectedMarkIndex === point.correctAnswerIndex) 
+                        ? ScoringStatus.CORRECT 
+                        : ScoringStatus.INCORRECT;
+                        
                     const score = status === ScoringStatus.CORRECT ? point.points : 0;
                     
                     updates.push({ studentId: student.id, areaId, scoreData: { status, score, detectedMarkIndex }});

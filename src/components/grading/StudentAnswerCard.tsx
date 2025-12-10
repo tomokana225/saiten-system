@@ -21,25 +21,27 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ point, detectedMark
             {options.map((_, i) => {
                 const isCorrectAnswer = i === point.correctAnswerIndex;
                 const isDetectedAnswer = i === detectedMarkIndex;
+                const isIncorrectMark = isDetectedAnswer && !isCorrectAnswer;
                 
                 let style: React.CSSProperties = {
                     borderWidth: '0px',
                     backgroundColor: 'transparent',
+                    position: 'relative'
                 };
 
-                // Logic:
-                // 1. If this index is the Correct Answer -> Green
-                // 2. If this index is what the student marked AND it is NOT Correct -> Red
+                // Visual Logic:
+                // 1. Correct Answer: Green frame
+                // 2. Incorrectly marked answer: Red frame
                 
                 if (isCorrectAnswer) {
                     style = {
-                        border: '3px solid rgba(34, 197, 94, 0.8)', // Green
-                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        border: '3px solid rgba(34, 197, 94, 0.9)', // Green
+                        boxShadow: '0 0 4px rgba(34, 197, 94, 0.5) inset',
                     };
-                } else if (isDetectedAnswer) {
+                } else if (isIncorrectMark) {
                     style = {
-                        border: '3px solid rgba(239, 68, 68, 0.8)', // Red
-                        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                        border: '3px solid rgba(239, 68, 68, 0.9)', // Red
+                        boxShadow: '0 0 4px rgba(239, 68, 68, 0.5) inset',
                     };
                 }
 
@@ -125,6 +127,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                     onClick={handleAnswerClick}
                     manualPanOffset={scoreData?.manualPanOffset}
                     onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)}
+                    padding={15}
                 >
                     <AnnotationOverlay annotations={scoreData?.annotations || []} />
                     <MarkSheetOverlay point={point} detectedMarkIndex={scoreData?.detectedMarkIndex} />
