@@ -194,16 +194,17 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 };
 
 const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
-    if (!debugInfo || debugInfo.points.length === 0) return null;
+    // Show grid even if points are missing (fallback mode) to help debug alignment
+    if (!debugInfo) return null;
 
     return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 50 }}>
             {/* Draw grid lines for debugging if rows/cols detected */}
             {debugInfo.rows.map((y, i) => (
-                <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(0, 255, 255, 0.5)" strokeWidth="1" strokeDasharray="2 2"/>
+                <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
             ))}
             {debugInfo.cols.map((x, i) => (
-                <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(0, 255, 255, 0.5)" strokeWidth="1" strokeDasharray="2 2"/>
+                <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
             ))}
             
             {/* Draw intersection points */}

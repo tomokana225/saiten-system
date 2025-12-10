@@ -45,6 +45,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [activeTool, setActiveTool] = useState<AreaType | 'select' | 'pan'>('select');
     const [drawState, setDrawState] = useState<DrawState | null>(null);
     const [clipboard, setClipboard] = useState<Area[]>([]);
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
     
     // Panning state
     const [panState, setPanState] = useState<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -120,6 +121,11 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
 
+            if (e.code === 'Space') {
+                e.preventDefault(); // Prevent scrolling down
+                setIsSpacePressed(true);
+            }
+
             if (e.key === 'Escape') {
                 setActiveTool('select');
                 setDrawState(null);
@@ -166,8 +172,16 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 }
             }
         };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space') setIsSpacePressed(false);
+        };
+
         window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
     }, [selectedAreaIds, areas, handleAreasChange, clipboard]);
 
     // Use native event listener for 'wheel' to properly prevent default browser zooming
@@ -247,7 +261,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if (activeTool === 'pan') {
+        // Allow panning with Pan Tool, Spacebar + Click, or Middle Click (button 1)
+        const isMiddleClick = e.button === 1;
+        const isSpacePan = e.button === 0 && isSpacePressed;
+        
+        if (activeTool === 'pan' || isMiddleClick || isSpacePan) {
+            e.preventDefault();
             if (containerRef.current) {
                 setPanState({
                     isPanning: true,
@@ -393,9 +412,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         let cursor = 'default';
-        if (activeTool === 'pan') cursor = panState?.isPanning ? 'grabbing' : 'grab';
+        if (activeTool === 'pan' || isSpacePressed) cursor = panState?.isPanning ? 'grabbing' : 'grab';
         else if (activeTool !== 'select') cursor = 'crosshair';
-        if (activeTool === 'select') {
+        if (activeTool === 'select' && !isSpacePressed) {
             const selectedAreas = areas.filter(a => selectedAreaIds.has(a.id));
             let handleFound = false;
             for (const area of selectedAreas) {
@@ -412,7 +431,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             }
         }
         canvas.style.cursor = cursor;
-    }, [activeTool, areas, selectedAreaIds, drawState, getResizeHandle, panState]);
+    }, [activeTool, areas, selectedAreaIds, drawState, getResizeHandle, panState, isSpacePressed]);
 
     return (
         <div className="w-full h-full flex gap-4">
@@ -431,7 +450,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 />
                 <div 
                     ref={containerRef}
-                    className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg"
+                    className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg cursor-default"
                 >
                     <div
                         className="relative"
