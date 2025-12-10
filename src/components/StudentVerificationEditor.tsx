@@ -33,10 +33,11 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         if (!ctx) return { idString: null, debugInfo };
         
         ctx.drawImage(img, 0, 0);
+        // Ensure we use the actual integer dimensions of the extracted data to avoid RangeError with Float sizes
         const imageData = ctx.getImageData(area.x, area.y, area.width, area.height);
         const data = imageData.data;
-        const width = area.width;
-        const height = area.height;
+        const width = imageData.width;
+        const height = imageData.height;
 
         // Binarize helper
         const isDark = (x: number, y: number, threshold = 140) => {
@@ -131,12 +132,9 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         }
 
         // --- Determine Orientation ---
-        // If we have many columns (~10) and few rows (~3-5), it's Horizontal (0-9 goes right).
-        // If we have many rows (~10) and few columns (~3-5), it's Vertical (0-9 goes down).
-        
         const numRows = rowCenters.length;
         const numCols = colCenters.length;
-        let orientation: 'vertical' | 'horizontal' = 'vertical'; // default
+        let orientation: 'vertical' | 'horizontal' = 'vertical';
 
         // Heuristic: If columns are significantly more than rows, or if we detect ~10 cols, likely horizontal.
         if (numCols >= 8 && numRows < 8) {
@@ -153,12 +151,10 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 
         if (orientation === 'horizontal') {
             // Horizontal Layout (e.g. Class, Num10, Num1 in rows; 0-9 in columns)
-            // Iterate over ROWS (Data Fields)
             for (let r = 0; r < rowCenters.length; r++) {
                 const centerY = rowCenters[r];
                 const rowScores: {colIdx: number, darkness: number}[] = [];
 
-                // For each column (Digit 0-9), check if it's filled
                 for (let c = 0; c < colCenters.length; c++) {
                     const centerX = colCenters[c];
                     const { filled, darkPixels } = checkFill(width, height, centerX, centerY, data, isDark);
@@ -172,53 +168,8 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
                 const winner = rowScores[0];
                 const runnerUp = rowScores[1];
 
-                // Standard confidence check
                 if (winner.darkness > 5 && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.3)) {
-                    // Assuming columns are ordered 0, 1, 2... 9 left to right
-                    // Map colIdx directly to digit.
-                    // If colCenters.length is exactly 10, idx 0 is '0'.
-                    // If more, we might need mapping logic, but usually 0-9 is standard.
-                    // Handle case where user selects "1 2 ... 9 0" vs "0 1 2 ... 9"
-                    // For now, assume 0-indexed standard layout.
-                    // If colIdx is 9 (10th column), it might be 9 or 0 depending on layout.
-                    // But standard Japanese marksheet is 1,2,3...9,0 or 0,1,2...9.
-                    // Let's assume index maps to value for now (0->0, 1->1...).
-                    // Correction: In many Japanese sheets, '0' is at the end (index 9) or start (index 0).
-                    // A safe default is (index + offset) % 10. 
-                    // Let's stick to simple index mapping and allow user to fix.
-                    // Typically: 0,1,2,3,4,5,6,7,8,9.
-                    
-                    // Simple heuristic: if 10 columns found, map index to digit.
-                    let digit = winner.colIdx;
-                    // Common pattern: 1,2,3...9,0 -> index 0 is 1, index 9 is 0.
-                    // Common pattern: 0,1,2...9 -> index 0 is 0.
-                    // Without OCR we can't be 100% sure, but simple index is a good start.
-                    // Let's assume strict 0..9 order for simple mapping, or provide UI to swap.
-                    // Actually, the image provided shows 1..9,0.
-                    // Let's try to infer or just output index and let user correct.
-                    // BUT, to be helpful:
-                    // If detected ID matches a student, great.
-                    // For the specific image provided: 1, 2, 6 are marked.
-                    // Column indices: 1(for 1), 2(for 2), 6(for 6).
-                    // This implies index 0 is '0' or blank?
-                    // Image: [1] is the first bubble? No, the image shows "1" written, and the bubble "1" is marked.
-                    // The bubble "1" is the *first* bubble visible in that row?
-                    // Wait, the image has bubbles "0" through "9" or "1" through "0"?
-                    // Image: Row 1 has bubbles "0", "1"... no, actually look close.
-                    // Row 1: Written "1". Bubbles: [0] [1] [2] ... The blackened one is the second one?
-                    // Ah, the image provided has bubbles: (1) (2) (3) ... (9) (0).
-                    // So if index 0 is marked, it's '1'. If index 9 is marked, it's '0'.
-                    
-                    // Let's default to returning the index % 10 for now?
-                    // Or 0-9?
-                    // Given we can't OCR the headers, let's output the index (0-9) and rely on fuzzy match in parent.
-                    // We will map index to string.
-                    const val = (winner.colIdx + 1) % 10; // Try mapping 0->1 ... 9->0 pattern?
-                    // Or just simple index. Let's return index for standard 0-9.
-                    // If the user's sheet is 1-0, index 0 is 1.
-                    
-                    // Let's use simple index 0-9 for robustness, user can verify.
-                    // Or better: Let's assume standard 0-9 order.
+                    // Assume 0-indexed layout (0,1,2...9)
                     idString += winner.colIdx.toString();
                 } else {
                     idString += '?';
@@ -227,7 +178,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 
         } else {
             // Vertical Layout (Standard: Cols are fields, Rows are digits 0-9)
-            // Iterate over COLUMNS (Data Fields)
             for (let c = 0; c < colCenters.length; c++) {
                 const centerX = colCenters[c];
                 const colScores: {rowIdx: number, darkness: number}[] = [];
@@ -283,12 +233,10 @@ function checkFill(width: number, height: number, centerX: number, centerY: numb
 }
 
 const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
-    // Show grid even if points are missing (fallback mode) to help debug alignment
     if (!debugInfo) return null;
 
     return (
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 50 }}>
-            {/* Draw grid lines for debugging if rows/cols detected */}
             {debugInfo.rows.map((y, i) => (
                 <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
             ))}
@@ -296,7 +244,6 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
                 <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
             ))}
             
-            {/* Draw intersection points */}
             {debugInfo.points.map((p, i) => (
                 <circle 
                     key={i} 
@@ -309,7 +256,6 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
                 />
             ))}
             
-            {/* Orientation Indicator */}
             <text x="5" y="15" fill="red" fontSize="12" fontWeight="bold">
                 {debugInfo.orientation === 'horizontal' ? '横書き' : '縦書き'}
             </text>
@@ -393,7 +339,6 @@ export const StudentVerificationEditor = () => {
 
     const handleInfoInputChange = (index: number, field: string, value: string) => {
         const newInfo = [...studentInfoList];
-        // Ensure existence
         while (newInfo.length <= index) {
             newInfo.push({ id: `new-info-${Date.now()}-${Math.random()}`, class: '', number: '', name: '' });
         }
@@ -454,9 +399,8 @@ export const StudentVerificationEditor = () => {
                         // Flexible 4-Digit Format Matching
                         // e.g. Detected "1310" -> Grade 1, Class 3, Number 10
                         if (detectedId.length >= 3) {
-                            // Extract last 2 digits as number, rest as class/grade
                             const markNumber = detectedId.slice(-2); 
-                            const markClassPart = detectedId.slice(0, -2);
+                            const markClassPart = detectedId.slice(0, -2); // "13" or "3"
 
                             const infoNumStr = info.number.replace(/[^0-9]/g, '');
                             const infoNumPadded = infoNumStr.padStart(2, '0');
@@ -467,10 +411,6 @@ export const StudentVerificationEditor = () => {
                             // Check if class info contains the detected class part
                             if (infoClassNums.includes(markClassPart)) return true;
                         }
-                        
-                        // Try matching assuming standard layout indices 
-                        // (e.g. index 0 -> "1", index 9 -> "0")
-                        // If detectedId "015" matches info number "15" (class "0"? or just noise)
                         
                         return false;
                     });
@@ -581,8 +521,6 @@ export const StudentVerificationEditor = () => {
                             const isDraggable = !!sheet;
                             const debugInfo = sheet ? debugInfos[sheet.id] : undefined;
                             
-                            // Determine the target area to display (Name or ID Mark)
-                            // If neither exists, targetArea will be undefined.
                             const targetArea = showDebugGrid && studentIdArea ? studentIdArea : nameArea;
 
                             return (
