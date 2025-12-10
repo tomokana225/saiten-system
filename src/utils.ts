@@ -31,73 +31,101 @@ export const loadImage = (src: string): Promise<HTMLImageElement> => {
 
 /**
  * Finds the four corner alignment marks (fiducial markers) in an image.
- * This is a simplified implementation that scans the corners of the image for dark squares.
+ * Improves robustness by using adaptive thresholding and centroid calculation.
  * @param imageData The ImageData object of the image to analyze.
  * @returns An object with the coordinates of the four corners, or null if not found.
  */
 export const findAlignmentMarks = (imageData: ImageData) => {
     const { data, width, height } = imageData;
-    const threshold = 128; // Binarization threshold
-    const cornerSize = Math.min(width, height) * 0.2; // Scan 20% of the image in each corner
+    // Scan larger area (25%) to ensure marks are caught even if slightly offset
+    const cornerSizeW = Math.floor(width * 0.25);
+    const cornerSizeH = Math.floor(height * 0.25);
 
-    const findMarkInCorner = (xStart: number, yStart: number, xEnd: number, yEnd: number) => {
-        let maxBlob = { size: 0, x: 0, y: 0, count: 0 };
-        const visited = new Array(width * height).fill(false);
+    const getCornerCentroid = (startX: number, startY: number, endX: number, endY: number) => {
+        let totalBrightness = 0;
+        let pixelCount = 0;
 
-        for (let y = yStart; y < yEnd; y++) {
-            for (let x = xStart; x < xEnd; x++) {
-                const idx = (y * width + x);
-                const pixelIdx = idx * 4;
-                const r = data[pixelIdx];
-                const g = data[pixelIdx + 1];
-                const b = data[pixelIdx + 2];
-                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        // 1. Calculate local average brightness to determine adaptive threshold
+        // Sampling every 4th pixel for speed
+        for (let y = startY; y < endY; y += 4) {
+            for (let x = startX; x < endX; x += 4) {
+                const idx = (y * width + x) * 4;
+                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                totalBrightness += gray;
+                pixelCount++;
+            }
+        }
+        
+        if (pixelCount === 0) return null;
+        const avgBrightness = totalBrightness / pixelCount;
+        // Threshold: pixels significantly darker than average (e.g., 70% of average)
+        const threshold = avgBrightness * 0.7;
 
-                if (!visited[idx] && gray < threshold) {
-                    const blob = { size: 0, x: 0, y: 0, count: 0 };
+        // 2. Find the largest connected component (blob) of dark pixels
+        let maxBlob = { size: 0, sumX: 0, sumY: 0 };
+        const visited = new Uint8Array((endX - startX) * (endY - startY)); // 0: unvisited, 1: visited
+
+        const getVisited = (x: number, y: number) => visited[(y - startY) * (endX - startX) + (x - startX)];
+        const setVisited = (x: number, y: number) => visited[(y - startY) * (endX - startX) + (x - startX)] = 1;
+
+        // We assume the alignment mark is somewhat significant in size
+        const minBlobSize = (cornerSizeW * cornerSizeH) * 0.001; // 0.1% of area
+
+        for (let y = startY; y < endY; y += 2) {
+            for (let x = startX; x < endX; x += 2) {
+                if (getVisited(x, y)) continue;
+
+                const idx = (y * width + x) * 4;
+                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+
+                if (gray < threshold) {
+                    // Start BFS for blob
+                    let currentSize = 0;
+                    let currentSumX = 0;
+                    let currentSumY = 0;
                     const stack = [[x, y]];
-                    visited[idx] = true;
+                    setVisited(x, y);
 
                     while (stack.length > 0) {
                         const [cx, cy] = stack.pop()!;
-                        blob.size++;
-                        blob.x += cx;
-                        blob.y += cy;
+                        currentSize++;
+                        currentSumX += cx;
+                        currentSumY += cy;
 
-                        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-                            const nx = cx + dx;
-                            const ny = cy + dy;
-                            if (nx >= xStart && nx < xEnd && ny >= yStart && ny < yEnd) {
-                                const nIdx = (ny * width + nx);
-                                const nPixelIdx = nIdx * 4;
-                                const nr = data[nPixelIdx];
-                                const ng = data[nPixelIdx + 1];
-                                const nb = data[nPixelIdx + 2];
-                                const nGray = 0.299 * nr + 0.587 * ng + 0.114 * nb;
-                                if (!visited[nIdx] && nGray < threshold) {
-                                    visited[nIdx] = true;
+                        // Check neighbors (4-connectivity)
+                        const neighbors = [
+                            [cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]
+                        ];
+
+                        for (const [nx, ny] of neighbors) {
+                            if (nx >= startX && nx < endX && ny >= startY && ny < endY && !getVisited(nx, ny)) {
+                                const nIdx = (ny * width + nx) * 4;
+                                const nGray = 0.299 * data[nIdx] + 0.587 * data[nIdx + 1] + 0.114 * data[nIdx + 2];
+                                if (nGray < threshold) {
+                                    setVisited(nx, ny);
                                     stack.push([nx, ny]);
                                 }
                             }
                         }
                     }
 
-                    if (blob.size > maxBlob.size) {
-                        maxBlob = blob;
+                    if (currentSize > maxBlob.size && currentSize > minBlobSize) {
+                        maxBlob = { size: currentSize, sumX: currentSumX, sumY: currentSumY };
                     }
                 }
             }
         }
-        if (maxBlob.size > 10) { // Minimum blob size to be considered a mark
-            return { x: maxBlob.x / maxBlob.size, y: maxBlob.y / maxBlob.size };
+
+        if (maxBlob.size > 0) {
+            return { x: maxBlob.sumX / maxBlob.size, y: maxBlob.sumY / maxBlob.size };
         }
         return null;
     };
 
-    const tl = findMarkInCorner(0, 0, cornerSize, cornerSize);
-    const tr = findMarkInCorner(width - cornerSize, 0, width, cornerSize);
-    const br = findMarkInCorner(width - cornerSize, height - cornerSize, width, height);
-    const bl = findMarkInCorner(0, height - cornerSize, cornerSize, height);
+    const tl = getCornerCentroid(0, 0, cornerSizeW, cornerSizeH);
+    const tr = getCornerCentroid(width - cornerSizeW, 0, width, cornerSizeH);
+    const br = getCornerCentroid(width - cornerSizeW, height - cornerSizeH, width, height);
+    const bl = getCornerCentroid(0, height - cornerSizeH, cornerSizeW, height);
 
     if (tl && tr && br && bl) {
         return { tl, tr, br, bl };
