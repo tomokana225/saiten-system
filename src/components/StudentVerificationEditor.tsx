@@ -143,12 +143,9 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
             // Sort just in case
             finalRowCenters.sort((a,b) => a - b);
             // If we detected too many (noise), try to filter or just take top 10 if spaced evenly
-            // For now, let's assume detection is decent or fallback handles it.
             if (finalRowCenters.length > 10) {
                 // If more than 10, maybe we caught some frame edges. 
                 // A smart logic would be to find the most regular sequence of 10.
-                // Simplified: Take the 10 largest peaks? Or just the middle ones?
-                // Let's rely on the user to adjust crop area if it's too noisy.
             }
         }
 
@@ -165,11 +162,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 
         // --- Reading the Grid ---
         let idString = '';
-        // Note: The timing marks on the bottom usually align with the columns.
-        // The timing marks on the right align with the rows (0-9).
-        // We iterate through columns, and for each column, find the darkest row.
-        
-        // Safety check: ensure we don't go out of bounds if marks are weird
         const numColsToRead = Math.min(finalColCenters.length, 10); // reasonable cap
 
         for (let c = 0; c < numColsToRead; c++) {
@@ -181,7 +173,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
                 const centerY = finalRowCenters[r];
                 
                 // Sample a small box around the intersection (centerX, centerY)
-                // Since timing marks are at the edge, the intersection is the bubble center.
                 const sampleRadius = Math.min(width, height) * 0.015; 
                 let darkPixels = 0;
                 let totalPixels = 0;
@@ -211,11 +202,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
             
             // Confidence check: Winner should be significantly darker than runner up and absolute darkness
             if (winner.darkness > 5 && (columnScores.length < 2 || winner.darkness > runnerUp.darkness * 1.5)) {
-                // Assuming rows are 0, 1, 2... 9 from top to bottom
-                // If the timing marks map strictly to 0-9 rows.
-                // Sometimes rows are 1-9 then 0. 
-                // Standard: 0 at top? Or 1 at top?
-                // Let's assume 0 at top for index 0. If common format is [0,1,2...9], index is digit.
+                // Assuming rows are 0, 1, 2... 9 from top to bottom. Row index 0 corresponds to digit '0'.
                 idString += winner.rowIdx.toString();
             } else {
                 idString += '?';
@@ -387,10 +374,40 @@ export const StudentVerificationEditor = () => {
             // 3. Match
             sheetsWithIds.forEach(({ sheet, id }) => {
                 if (id) {
-                    // Try to match id (e.g. "1310") to Class/Number (e.g. "1-3", "10" => "1310")
+                    const detectedId = id;
+                    // Try to match id (e.g. "1310") to Class/Number.
+                    
                     const matchIndex = studentInfoList.findIndex(info => {
-                        const targetId = (info.class + info.number).replace(/[^0-9]/g, '');
-                        return targetId === id;
+                        // Standard matching (Concatenation)
+                        const simpleCombined = (info.class + info.number).replace(/[^0-9]/g, '');
+                        if (simpleCombined === detectedId) return true;
+
+                        // 4-Digit Format Matching: Grade(1) Class(1) Num(2)
+                        // e.g. Detected "1310" -> Grade 1, Class 3, Number 10
+                        // Roster might be: Class "1-3", Number "10" OR Class "3", Number "10"
+                        if (detectedId.length === 4) {
+                            const markGrade = detectedId[0];
+                            const markClass = detectedId[1];
+                            const markNumber = detectedId.substring(2); // "10"
+
+                            // Normalize info number to 2 digits (e.g. "1" -> "01", "10" -> "10")
+                            const infoNumStr = info.number.replace(/[^0-9]/g, '');
+                            const infoNumPadded = infoNumStr.padStart(2, '0');
+
+                            if (infoNumPadded !== markNumber) return false;
+
+                            // Normalize info class (e.g. "1-3" -> "13", "3" -> "3")
+                            const infoClassNums = info.class.replace(/[^0-9]/g, '');
+
+                            // Case A: Roster class contains both grade and class (e.g. "1-3" -> "13")
+                            if (infoClassNums.includes(markGrade) && infoClassNums.includes(markClass)) return true;
+                            
+                            // Case B: Roster class is just class, user implied grade (e.g. "3")
+                            // We allow this if the number matched perfectly.
+                            if (infoClassNums === markClass) return true;
+                        }
+                        
+                        return false;
                     });
 
                     if (matchIndex !== -1 && !newSheets[matchIndex]) {
