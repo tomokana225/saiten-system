@@ -88,7 +88,8 @@ export const PointAllocator = () => {
             let detectedCount = 0;
             for (const point of markSheetPoints) {
                 const area = areas.find(a => a.id === point.id)!;
-                const imageData = mainCtx.getImageData(area.x, area.y, area.width, area.height);
+                // Use rounded coordinates to prevent IndexSizeError/RangeError
+                const imageData = mainCtx.getImageData(Math.floor(area.x), Math.floor(area.y), Math.floor(area.width), Math.floor(area.height));
                 const data = imageData.data;
                 const options = point.markSheetOptions || 4;
                 const isHorizontal = point.markSheetLayout === 'horizontal';
@@ -100,14 +101,20 @@ export const PointAllocator = () => {
                 for (let i = 0; i < options; i++) {
                     const xStart = isHorizontal ? i * segmentWidth : 0;
                     const yStart = isHorizontal ? 0 : i * segmentHeight;
-                    const roiMargin = 0.1;
+                    
+                    // Increase margin to 20% to ignore borders and focus on the center fill
+                    const roiMargin = 0.2;
                     const roiXStart = Math.floor(xStart + segmentWidth * roiMargin);
                     const roiYStart = Math.floor(yStart + segmentHeight * roiMargin);
                     const roiXEnd = Math.ceil(xStart + segmentWidth * (1 - roiMargin));
                     const roiYEnd = Math.ceil(yStart + segmentHeight * (1 - roiMargin));
                     let invertedGraySum = 0;
+                    
                     for (let y = roiYStart; y < roiYEnd; y++) {
                         for (let x = roiXStart; x < roiXEnd; x++) {
+                            // Boundary check
+                            if (x < 0 || x >= area.width || y < 0 || y >= area.height) continue;
+
                             const idx = (y * area.width + x) * 4;
                             const r = data[idx];
                             const g = data[idx + 1];
@@ -126,11 +133,15 @@ export const PointAllocator = () => {
 
                 const winner = scoresWithIndices[0];
                 const runnerUp = scoresWithIndices[1];
-                const roiArea = (segmentWidth * (1 - 2 * 0.1)) * (segmentHeight * (1 - 2 * 0.1));
-                const minThreshold = roiArea * 255 * 0.05; // 5% of max possible darkness in ROI
+                
+                const roiW = segmentWidth * (1 - 2 * 0.2);
+                const roiH = segmentHeight * (1 - 2 * 0.2);
+                const roiArea = roiW * roiH;
+                const minThreshold = roiArea * 255 * 0.05; // 5% darkness required
 
+                // Relaxed ratio from 1.4 to 1.2 to detect lighter marks
                 const isConfidentWinner = winner.score > minThreshold && 
-                                          (!runnerUp || winner.score > runnerUp.score * 1.4);
+                                          (!runnerUp || winner.score > runnerUp.score * 1.2);
 
                 if (isConfidentWinner) {
                     const pointIndex = updatedPoints.findIndex(p => p.id === point.id);

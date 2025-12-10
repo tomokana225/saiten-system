@@ -14,12 +14,12 @@ interface DetectionDebugInfo {
     orientation: 'vertical' | 'horizontal';
 }
 
-const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ idString: string | null, debugInfo: DetectionDebugInfo }> => {
+const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
     const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], orientation: 'vertical' };
     
     try {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
-        if (!result.success || !result.details?.url) return { idString: null, debugInfo };
+        if (!result.success || !result.details?.url) return { indices: null, debugInfo };
         
         const dataUrl = result.details.url;
         const img = new Image();
@@ -30,7 +30,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return { idString: null, debugInfo };
+        if (!ctx) return { indices: null, debugInfo };
         
         ctx.drawImage(img, 0, 0);
         // Ensure we use the actual integer dimensions of the extracted data to avoid RangeError with Float sizes
@@ -50,7 +50,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         
         // 1. Detect Rows (Y-axis peaks)
         const rowProjectionProfile: number[] = new Array(height).fill(0);
-        // Scan almost full width/height to catch timing marks at edges
         const scanXStart = 2;
         const scanXEnd = width - 2;
 
@@ -136,7 +135,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         const numCols = colCenters.length;
         let orientation: 'vertical' | 'horizontal' = 'vertical';
 
-        // Heuristic: If columns are significantly more than rows, or if we detect ~10 cols, likely horizontal.
         if (numCols >= 8 && numRows < 8) {
             orientation = 'horizontal';
         } else {
@@ -147,10 +145,10 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         debugInfo.cols = colCenters;
         debugInfo.orientation = orientation;
 
-        let idString = '';
+        const indices: number[] = [];
 
         if (orientation === 'horizontal') {
-            // Horizontal Layout (e.g. Class, Num10, Num1 in rows; 0-9 in columns)
+            // Horizontal Layout
             for (let r = 0; r < rowCenters.length; r++) {
                 const centerY = rowCenters[r];
                 const rowScores: {colIdx: number, darkness: number}[] = [];
@@ -163,21 +161,19 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
                     rowScores.push({ colIdx: c, darkness: darkPixels });
                 }
 
-                // Find the best column for this row
                 rowScores.sort((a, b) => b.darkness - a.darkness);
                 const winner = rowScores[0];
                 const runnerUp = rowScores[1];
 
                 if (winner.darkness > 5 && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.3)) {
-                    // Assume 0-indexed layout (0,1,2...9)
-                    idString += winner.colIdx.toString();
+                    indices.push(winner.colIdx);
                 } else {
-                    idString += '?';
+                    indices.push(-1); // Unknown/Not marked
                 }
             }
 
         } else {
-            // Vertical Layout (Standard: Cols are fields, Rows are digits 0-9)
+            // Vertical Layout
             for (let c = 0; c < colCenters.length; c++) {
                 const centerX = colCenters[c];
                 const colScores: {rowIdx: number, darkness: number}[] = [];
@@ -190,24 +186,23 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
                     colScores.push({ rowIdx: r, darkness: darkPixels });
                 }
 
-                // Find best row for this column
                 colScores.sort((a, b) => b.darkness - a.darkness);
                 const winner = colScores[0];
                 const runnerUp = colScores[1];
                 
                 if (winner.darkness > 5 && (colScores.length < 2 || winner.darkness > runnerUp.darkness * 1.3)) {
-                    idString += winner.rowIdx.toString();
+                    indices.push(winner.rowIdx);
                 } else {
-                    idString += '?';
+                    indices.push(-1);
                 }
             }
         }
         
-        return { idString: idString.includes('?') ? null : idString, debugInfo };
+        return { indices: indices.some(i => i !== -1) ? indices : null, debugInfo };
         
     } catch (e) {
         console.error("Student ID Analysis Error:", e);
-        return { idString: null, debugInfo };
+        return { indices: null, debugInfo };
     }
 };
 
@@ -370,16 +365,16 @@ export const StudentVerificationEditor = () => {
         if (uploadedSheets.filter(s => s.filePath).length === 0) return;
 
         setIsSorting(true);
-        setDebugInfos({}); // Clear old debug info
+        setDebugInfos({}); 
         let matchCount = 0;
 
         try {
-            // 1. Analyze all valid sheets
-            const sheetsWithIds = await Promise.all(uploadedSheets.map(async (sheet) => {
-                if (!sheet.filePath) return { sheet, id: null };
-                const { idString, debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
+            // 1. Analyze all valid sheets to get raw indices
+            const sheetsWithIndices = await Promise.all(uploadedSheets.map(async (sheet) => {
+                if (!sheet.filePath) return { sheet, indices: null };
+                const { indices, debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
                 setDebugInfos(prev => ({ ...prev, [sheet.id]: debugInfo }));
-                return { sheet, id: idString };
+                return { sheet, indices };
             }));
 
             // 2. Prepare new sheet array aligned with studentInfo
@@ -387,32 +382,42 @@ export const StudentVerificationEditor = () => {
             const remainingSheets: Student[] = [];
 
             // 3. Match
-            sheetsWithIds.forEach(({ sheet, id }) => {
-                if (id) {
-                    const detectedId = id;
-                    
+            sheetsWithIndices.forEach(({ sheet, indices }) => {
+                if (indices) {
                     const matchIndex = studentInfoList.findIndex(info => {
-                        // Standard matching (Concatenation)
-                        const simpleCombined = (info.class + info.number).replace(/[^0-9]/g, '');
-                        if (simpleCombined === detectedId) return true;
-
-                        // Flexible 4-Digit Format Matching
-                        // e.g. Detected "1310" -> Grade 1, Class 3, Number 10
-                        if (detectedId.length >= 3) {
-                            const markNumber = detectedId.slice(-2); 
-                            const markClassPart = detectedId.slice(0, -2); // "13" or "3"
-
-                            const infoNumStr = info.number.replace(/[^0-9]/g, '');
-                            const infoNumPadded = infoNumStr.padStart(2, '0');
-
-                            if (infoNumPadded !== markNumber) return false;
-
-                            const infoClassNums = info.class.replace(/[^0-9]/g, '');
-                            // Check if class info contains the detected class part
-                            if (infoClassNums.includes(markClassPart)) return true;
-                        }
+                        // Generate candidates based on common layouts
+                        // 1. Standard 0-9: index 0 is '0', index 9 is '9' (or vice versa)
+                        //    Usually vertical: 0 at top.
+                        //    Horizontal often: 1, 2, ... 9, 0 (index 0 is '1', index 9 is '0')
                         
-                        return false;
+                        const detectedId_TypeA = indices.map(i => i.toString()).join(''); // Direct index
+                        const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); // 1..9,0 mapping (idx 0->1, idx 9->0)
+
+                        const candidates = [detectedId_TypeA, detectedId_TypeB];
+                        
+                        // Check match for any candidate
+                        return candidates.some(detectedId => {
+                            // Standard matching (Concatenation)
+                            const simpleCombined = (info.class + info.number).replace(/[^0-9]/g, '');
+                            if (simpleCombined === detectedId) return true;
+
+                            // Flexible 4-Digit Format Matching (Grade/Class + Number)
+                            // e.g. Detected "1310" -> Grade 1, Class 3, Number 10
+                            if (detectedId.length >= 3) {
+                                const markNumber = detectedId.slice(-2); 
+                                const markClassPart = detectedId.slice(0, -2); 
+
+                                const infoNumStr = info.number.replace(/[^0-9]/g, '');
+                                const infoNumPadded = infoNumStr.padStart(2, '0');
+
+                                if (infoNumPadded !== markNumber) return false;
+
+                                const infoClassNums = info.class.replace(/[^0-9]/g, '');
+                                // Check if class info contains the detected class part
+                                if (infoClassNums.includes(markClassPart)) return true;
+                            }
+                            return false;
+                        });
                     });
 
                     if (matchIndex !== -1 && !newSheets[matchIndex]) {
@@ -426,7 +431,7 @@ export const StudentVerificationEditor = () => {
                 }
             });
 
-            // 4. Fill gaps in newSheets with remainingSheets or blank placeholders
+            // 4. Fill gaps
             const finalSheets: Student[] = [];
             for (let i = 0; i < studentInfoList.length; i++) {
                 if (newSheets[i]) {
@@ -438,7 +443,6 @@ export const StudentVerificationEditor = () => {
                 }
             }
             
-            // Append any left over remainingSheets
             finalSheets.push(...remainingSheets);
 
             handleStudentSheetsChange(finalSheets);
