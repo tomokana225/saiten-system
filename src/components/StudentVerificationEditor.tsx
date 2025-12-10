@@ -3,18 +3,19 @@ import type { Student, StudentInfo, Area, Template } from '../types';
 import { AreaType } from '../types';
 import { fileToArrayBuffer } from '../utils';
 import { AnswerSnippet } from './AnswerSnippet';
-import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon, SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, InfoIcon } from './icons';
+import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon, SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, InfoIcon, SettingsIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 
 // Type to store debug information about the grid detection
 interface DetectionDebugInfo {
-    points: { x: number; y: number; filled: boolean }[];
+    points: { x: number; y: number; filled: boolean; ratio: number }[]; // Added ratio
     rows: number[]; // Y coordinates of centers
     cols: number[]; // X coordinates of centers
     rowBoundaries: number[]; // Y coordinates of lines
     colBoundaries: number[]; // X coordinates of lines
     orientation: 'vertical' | 'horizontal';
     scanZones?: { x: number, y: number, w: number, h: number, label: string }[];
+    rois?: { x: number, y: number, w: number, h: number }[]; // Added ROIs for visualization
 }
 
 // Helper to find peaks in a projection profile
@@ -25,7 +26,6 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     let peakMass = 0;
     
     const maxVal = Math.max(...profile);
-    // Use a relatively high threshold to target "large dark circles" and ignore noise/text
     const threshold = Math.max(5, maxVal * thresholdRatio);
 
     for (let i = 0; i < length; i++) {
@@ -51,8 +51,8 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     return peaks;
 };
 
-const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
-    const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [] };
+const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThreshold: number, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
+    const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [], rois: [] };
     
     try {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
@@ -94,7 +94,8 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
         if (!mainCrop) return { indices: null, debugInfo };
 
         // Helper: Binarize check relative to a specific image data buffer
-        const isDark = (imgData: ImageData, x: number, y: number, threshold = 160) => {
+        // Note: markThreshold is passed in (default typically around 130-160)
+        const isDark = (imgData: ImageData, x: number, y: number, threshold = markThreshold) => {
             const idx = (y * imgData.width + x) * 4;
             if (idx < 0 || idx >= imgData.data.length) return false;
             const gray = 0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2];
@@ -115,7 +116,7 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
                 for (let y = 0; y < imgData.height; y++) {
                     let darkCount = 0;
                     for (let x = scanXStart; x < scanXEnd; x++) {
-                        if (isDark(imgData, x, y)) darkCount++;
+                        if (isDark(imgData, x, y, 160)) darkCount++; // Use fixed threshold for structure detection
                     }
                     profile[y] = darkCount;
                 }
@@ -123,7 +124,7 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
                 for (let x = 0; x < imgData.width; x++) {
                     let darkCount = 0;
                     for (let y = scanYStart; y < scanYEnd; y++) {
-                        if (isDark(imgData, x, y)) darkCount++;
+                        if (isDark(imgData, x, y, 160)) darkCount++; // Use fixed threshold for structure detection
                     }
                     profile[x] = darkCount;
                 }
@@ -135,22 +136,14 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
         let rowCenters: number[] = [];
         
         if (refRightArea) {
-            // Use explicitly defined Right Reference Area
             const refCrop = getCropData(refRightArea);
             if (refCrop) {
-                // Scan the entire ref area
                 const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'row');
-                const localPeaks = findPeaksInProfile(profile, refCrop.sh, 0.30); // Slightly more sensitive for user-defined area
-                
-                // Translate local ref coords to main area coords
-                // Absolute Y = refCrop.sy + localY
-                // Main Relative Y = Absolute Y - mainCrop.sy
+                const localPeaks = findPeaksInProfile(profile, refCrop.sh, 0.30);
                 rowCenters = localPeaks.map(y => (refCrop.sy + y) - mainCrop.sy);
-                
                 debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Right' });
             }
         } else {
-            // Fallback: Scan rightmost 15% of Main Area
             const scanXStart = Math.floor(mainCrop.sw * 0.85);
             const profile = getProjection(mainCrop.imageData, scanXStart, mainCrop.sw, 0, mainCrop.sh, 'row');
             rowCenters = findPeaksInProfile(profile, mainCrop.sh, 0.35);
@@ -161,21 +154,14 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
         let colCenters: number[] = [];
 
         if (refBottomArea) {
-            // Use explicitly defined Bottom Reference Area
             const refCrop = getCropData(refBottomArea);
             if (refCrop) {
                 const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'col');
                 const localPeaks = findPeaksInProfile(profile, refCrop.sw, 0.30);
-                
-                // Translate local ref coords to main area coords
-                // Absolute X = refCrop.sx + localX
-                // Main Relative X = Absolute X - mainCrop.sx
                 colCenters = localPeaks.map(x => (refCrop.sx + x) - mainCrop.sx);
-                
                 debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Bottom' });
             }
         } else {
-            // Fallback: Scan bottommost 15% of Main Area
             const scanYStart = Math.floor(mainCrop.sh * 0.85);
             const profile = getProjection(mainCrop.imageData, 0, mainCrop.sw, scanYStart, mainCrop.sh, 'col');
             colCenters = findPeaksInProfile(profile, mainCrop.sw, 0.35);
@@ -196,24 +182,23 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
         
-        // Construct boundaries (midpoints between centers)
         if (rowCenters.length > 0) {
-            const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : 20;
+            const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : (mainCrop.sh / rowCenters.length);
             rowBoundaries.push(Math.max(0, rowCenters[0] - firstStep/2));
             for(let i=0; i < rowCenters.length - 1; i++) {
                 rowBoundaries.push((rowCenters[i] + rowCenters[i+1]) / 2);
             }
-            const lastStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[rowCenters.length-2]) : 20;
+            const lastStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[rowCenters.length-2]) : firstStep;
             rowBoundaries.push(Math.min(mainCrop.sh, rowCenters[rowCenters.length-1] + lastStep/2));
         }
 
         if (colCenters.length > 0) {
-            const firstStep = colCenters.length > 1 ? (colCenters[1] - colCenters[0]) : 20;
+            const firstStep = colCenters.length > 1 ? (colCenters[1] - colCenters[0]) : (mainCrop.sw / colCenters.length);
             colBoundaries.push(Math.max(0, colCenters[0] - firstStep/2));
             for(let i=0; i < colCenters.length - 1; i++) {
                 colBoundaries.push((colCenters[i] + colCenters[i+1]) / 2);
             }
-            const lastStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[colCenters.length-2]) : 20;
+            const lastStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[colCenters.length-2]) : firstStep;
             colBoundaries.push(Math.min(mainCrop.sw, colCenters[colCenters.length-1] + lastStep/2));
         }
 
@@ -225,18 +210,34 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
 
         const indices: number[] = [];
 
-        // Grid Analysis: Iterate through detected rows and columns
+        // Grid Analysis: Use ROI in center of cell
         for (let r = 0; r < rowCenters.length; r++) {
-            const centerY = rowCenters[r];
             const rowScores: {colIdx: number, darkness: number}[] = [];
+            
+            // Safe boundary access
+            const cellTop = rowBoundaries[r];
+            const cellBottom = rowBoundaries[r+1] || mainCrop.sh;
+            const cellHeight = cellBottom - cellTop;
 
             for (let c = 0; c < colCenters.length; c++) {
-                const centerX = colCenters[c];
-                // Check fill using mainCrop data
-                const { filled, darkPixels } = checkFill(mainCrop.sw, mainCrop.sh, centerX, centerY, mainCrop.imageData.data, (x, y) => isDark(mainCrop.imageData, x, y));
+                const cellLeft = colBoundaries[c];
+                const cellRight = colBoundaries[c+1] || mainCrop.sw;
+                const cellWidth = cellRight - cellLeft;
+
+                // Define ROI: Center 40% of the cell
+                const roiW = Math.max(2, cellWidth * 0.4);
+                const roiH = Math.max(2, cellHeight * 0.4);
+                const roiX = cellLeft + (cellWidth - roiW) / 2;
+                const roiY = cellTop + (cellHeight - roiH) / 2;
+
+                debugInfo.rois?.push({ x: roiX, y: roiY, w: roiW, h: roiH });
+
+                const { filled, darkPixels, ratio } = checkFill(
+                    roiX, roiY, roiW, roiH, 
+                    mainCrop.imageData.data, mainCrop.sw, markThreshold
+                );
                 
-                // Only show point if filled (reduces visual clutter of false positives)
-                debugInfo.points.push({ x: centerX, y: centerY, filled });
+                debugInfo.points.push({ x: roiX + roiW/2, y: roiY + roiH/2, filled, ratio });
                 rowScores.push({ colIdx: c, darkness: darkPixels });
             }
 
@@ -244,13 +245,20 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
             const winner = rowScores[0];
             const runnerUp = rowScores[1];
 
-            // Dynamic cell area estimation for threshold
-            const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (mainCrop.sh / rowCenters.length);
-            const cellW = (mainCrop.sw / colCenters.length); 
-            const cellArea = cellW * cellH;
-            const minDarkness = cellArea * 0.05; // 5% fill
+            // Use the filled status from checkFill for the winner as a primary check
+            // Recalculate filled status for winner specifically to be sure
+            const cellLeft = colBoundaries[winner.colIdx];
+            const cellRight = colBoundaries[winner.colIdx+1] || mainCrop.sw;
+            const cellWidth = cellRight - cellLeft;
+            const roiW = Math.max(2, cellWidth * 0.4);
+            const roiH = Math.max(2, cellHeight * 0.4);
+            const roiX = cellLeft + (cellWidth - roiW) / 2;
+            const roiY = cellTop + (cellHeight - roiH) / 2;
+            
+            const { filled: isWinnerFilled } = checkFill(roiX, roiY, roiW, roiH, mainCrop.imageData.data, mainCrop.sw, markThreshold);
 
-            if (winner.darkness > minDarkness && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
+            // Logic: Winner must be filled AND significantly darker than runner up (if any)
+            if (isWinnerFilled && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
                 indices.push(winner.colIdx);
             } else {
                 indices.push(-1); 
@@ -265,25 +273,28 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightA
     }
 };
 
-// Helper for pixel sampling
-function checkFill(width: number, height: number, centerX: number, centerY: number, data: Uint8ClampedArray, isDark: (x:number, y:number)=>boolean) {
-    const sampleRadius = Math.max(2, Math.min(width, height) * 0.012); 
+// Updated checkFill with ROI rect
+function checkFill(startX: number, startY: number, w: number, h: number, data: Uint8ClampedArray, imageWidth: number, threshold: number) {
     let darkPixels = 0;
     let totalPixels = 0;
+    
+    const endX = startX + w;
+    const endY = startY + h;
 
-    const startY = Math.max(0, Math.floor(centerY - sampleRadius));
-    const endY = Math.min(height, Math.ceil(centerY + sampleRadius));
-    const startX = Math.max(0, Math.floor(centerX - sampleRadius));
-    const endX = Math.min(width, Math.ceil(centerX + sampleRadius));
-
-    for (let y = startY; y < endY; y++) {
-        for (let x = startX; x < endX; x++) {
-            if (isDark(x, y)) darkPixels++;
+    for (let y = Math.floor(startY); y < endY; y++) {
+        for (let x = Math.floor(startX); x < endX; x++) {
+            const idx = (y * imageWidth + x) * 4;
+            if (idx < 0 || idx >= data.length) continue;
+            // Grayscale
+            const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            if (gray < threshold) darkPixels++;
             totalPixels++;
         }
     }
-    const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.35; // 35% threshold
-    return { filled: isFilled, darkPixels };
+    const ratio = totalPixels > 0 ? darkPixels / totalPixels : 0;
+    // 30% fill required within the small ROI (center of mark)
+    const isFilled = ratio > 0.30; 
+    return { filled: isFilled, darkPixels, ratio };
 }
 
 const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
@@ -296,12 +307,9 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
                 <rect key={`zone-${i}`} x={z.x} y={z.y} width={z.w} height={z.h} fill="rgba(0, 255, 255, 0.05)" stroke={z.label.includes('User') ? "lime" : "cyan"} strokeDasharray="4 2" />
             ))}
 
-            {/* Draw Reference Lines - derived from peaks */}
-            {debugInfo.rows.map((y, i) => (
-                <line key={`row-center-${i}`} x1={0} y1={y} x2={width} y2={y} stroke="cyan" strokeWidth="1" strokeOpacity="0.5" />
-            ))}
-            {debugInfo.cols.map((x, i) => (
-                <line key={`col-center-${i}`} x1={x} y1={0} x2={x} y2={height} stroke="magenta" strokeWidth="1" strokeOpacity="0.5" />
+            {/* Draw ROIs */}
+            {debugInfo.rois?.map((r, i) => (
+                <rect key={`roi-${i}`} x={r.x} y={r.y} width={r.w} height={r.h} fill="none" stroke="rgba(255, 255, 0, 0.5)" strokeWidth="1" />
             ))}
 
             {/* Draw Grid Lines (Boundaries) */}
@@ -325,16 +333,16 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
             })}
             
             {/* Draw Detected/Filled Points */}
-            {debugInfo.points.filter(p => p.filled).map((p, i) => (
-                <circle 
-                    key={i} 
-                    cx={p.x} 
-                    cy={p.y} 
-                    r={Math.max(3, Math.min(width, height) * 0.015)} 
-                    fill="rgba(0, 255, 0, 0.6)"
-                    stroke="lime"
-                    strokeWidth="2"
-                />
+            {debugInfo.points.map((p, i) => (
+                <g key={`pt-${i}`}>
+                    <circle 
+                        cx={p.x} 
+                        cy={p.y} 
+                        r={Math.max(2, Math.min(width, height) * 0.01)} 
+                        fill={p.filled ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.3)"}
+                    />
+                    <text x={p.x} y={p.y} fontSize={8} fill="white" textAnchor="middle" dy={10}>{(p.ratio*100).toFixed(0)}%</text>
+                </g>
             ))}
             
             <g transform="translate(2, 2)">
@@ -363,6 +371,7 @@ export const StudentVerificationEditor = () => {
     const [dragOverInfoIndex, setDragOverInfoIndex] = useState<number | null>(null);
     const [isSorting, setIsSorting] = useState(false);
     const [showDebugGrid, setShowDebugGrid] = useState(false);
+    const [markThreshold, setMarkThreshold] = useState(130); // Default sensitivity
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({});
 
     const nameArea = useMemo(() => areas.find(a => a.type === AreaType.NAME), [areas]);
@@ -473,7 +482,8 @@ export const StudentVerificationEditor = () => {
                 const { indices, debugInfo } = await analyzeStudentIdMark(
                     sheet.filePath, 
                     studentIdArea,
-                    studentIdRefRight, // Pass reference areas if they exist
+                    markThreshold,
+                    studentIdRefRight, 
                     studentIdRefBottom
                 );
                 setDebugInfos(prev => ({ ...prev, [sheet.id]: debugInfo }));
@@ -564,6 +574,7 @@ export const StudentVerificationEditor = () => {
                 const { debugInfo } = await analyzeStudentIdMark(
                     sheet.filePath, 
                     studentIdArea,
+                    markThreshold,
                     studentIdRefRight,
                     studentIdRefBottom
                 );
@@ -572,6 +583,14 @@ export const StudentVerificationEditor = () => {
         }
         setDebugInfos(newDebugInfos);
     };
+
+    // Re-run debug analysis when threshold changes (debounced if needed, but for now direct)
+    useEffect(() => {
+        if (showDebugGrid && studentIdArea) {
+            const timeout = setTimeout(handleRefreshDebug, 500);
+            return () => clearTimeout(timeout);
+        }
+    }, [markThreshold]);
 
     return (
          <div className="w-full space-y-4 flex flex-col h-full">
@@ -595,6 +614,18 @@ export const StudentVerificationEditor = () => {
                     )}
                     {studentIdArea && (
                         <>
+                            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
+                                <span className="text-xs text-slate-500 font-bold whitespace-nowrap">濃さ判定:</span>
+                                <input 
+                                    type="range" 
+                                    min="50" max="220" 
+                                    value={markThreshold} 
+                                    onChange={e => setMarkThreshold(Number(e.target.value))}
+                                    className="w-24 accent-sky-600"
+                                    title={`閾値: ${markThreshold} (低いほど濃いマークのみ検出)`}
+                                />
+                                <span className="text-xs text-slate-500 w-6 text-right">{markThreshold}</span>
+                            </div>
                             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 cursor-pointer bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
                                 <input 
                                     type="checkbox" 
