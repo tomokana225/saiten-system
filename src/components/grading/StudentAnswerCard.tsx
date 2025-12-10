@@ -103,7 +103,8 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                 </p>
             </div>
             
-            <div className="relative aspect-video">
+            {/* Aspect ratio set to match area, with fallback min-height */}
+            <div className="relative w-full bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px' }}>
                 <AnswerSnippet 
                     imageSrc={student.filePath}
                     area={area}
@@ -112,9 +113,10 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                     onClick={handleAnswerClick}
                     manualPanOffset={scoreData?.manualPanOffset}
                     onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)}
-                />
-                <AnnotationOverlay annotations={scoreData?.annotations || []} />
-                <MarkSheetOverlay point={point} detectedMarkIndex={scoreData?.detectedMarkIndex} />
+                >
+                    <AnnotationOverlay annotations={scoreData?.annotations || []} />
+                    <MarkSheetOverlay point={point} detectedMarkIndex={scoreData?.detectedMarkIndex} />
+                </AnswerSnippet>
             </div>
 
             <div className="flex items-center justify-around gap-1">
