@@ -564,4 +564,48 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                                                 {q.type !== 'long_text' && (
                                                                     <div className="flex items-center gap-1">
                                                                         <span className="text-[10px] text-slate-400">幅:</span>
-                                                                        <input type="range" min="1" max="40" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-20
+                                                                        <input type="range" min="1" max="40" value={q.widthRatio} onChange={e => updateQuestion(section.id, q.id, { widthRatio: parseInt(e.target.value) })} className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-500"/>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-[10px] text-slate-400">高:</span>
+                                                                    <input type="number" min="0.5" max="10" step="0.5" value={q.heightRatio} onChange={e => updateQuestion(section.id, q.id, { heightRatio: parseFloat(e.target.value) })} className="w-10 p-0.5 text-center border rounded bg-white dark:bg-slate-900"/>
+                                                                </div>
+                                                                {q.type === 'english_word' && (
+                                                                    <>
+                                                                        <div className="flex items-center gap-1 col-span-2">
+                                                                            <span className="text-[10px] text-slate-400">行間:</span>
+                                                                            <input type="number" min="1" max="5" step="0.1" value={q.lineHeightRatio || 1.5} onChange={e => updateQuestion(section.id, q.id, { lineHeightRatio: parseFloat(e.target.value) })} className="w-12 p-0.5 text-center border rounded bg-white dark:bg-slate-900"/>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 col-span-2">
+                                                                            <span className="text-[10px] text-slate-400">単語数:</span>
+                                                                            <input type="number" min="1" max="100" value={q.wordCount || 5} onChange={e => updateQuestion(section.id, q.id, { wordCount: parseInt(e.target.value) })} className="w-12 p-0.5 text-center border rounded bg-white dark:bg-slate-900"/>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                                {q.type === 'marksheet' && (
+                                                                    <div className="flex items-center gap-1 col-span-2">
+                                                                        <span className="text-[10px] text-slate-400">選択肢数:</span>
+                                                                        <input type="number" min="2" max="10" value={q.choices || 4} onChange={e => updateQuestion(section.id, q.id, { choices: parseInt(e.target.value) })} className="w-10 p-0.5 text-center border rounded bg-white dark:bg-slate-900"/>
+                                                                    </div>
+                                                                )}
+                                                                <div className="col-span-2">
+                                                                    <input type="text" placeholder="ラベル (任意)" value={q.labelOverride || ''} onChange={e => updateQuestion(section.id, q.id, { labelOverride: e.target.value })} className="w-full p-1 border rounded bg-white dark:bg-slate-900 text-[10px]"/>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </aside>
+                    <main className="flex-1 overflow-hidden">{children}</main>
+                </div>
+            )}
+        </aside>
+    );
+};
