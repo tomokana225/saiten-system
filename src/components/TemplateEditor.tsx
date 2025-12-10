@@ -45,6 +45,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [activeTool, setActiveTool] = useState<AreaType | 'select' | 'pan'>('select');
     const [drawState, setDrawState] = useState<DrawState | null>(null);
     const [clipboard, setClipboard] = useState<Area[]>([]);
+    
+    // Panning state
+    const [panState, setPanState] = useState<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
@@ -197,7 +200,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         return () => {
             container.removeEventListener('wheel', onWheel);
         };
-    }, []); // Empty dependency array to bind once, use refs for current values
+    }, []);
 
     useLayoutEffect(() => {
         if (targetScrollRef.current && containerRef.current) {
@@ -208,12 +211,55 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
     }, [zoom]);
 
+    // Global mouse move for panning (because mouse might leave the container)
+    useEffect(() => {
+        const handleGlobalMouseMove = (e: MouseEvent) => {
+            if (panState && panState.isPanning && containerRef.current) {
+                e.preventDefault();
+                const dx = e.clientX - panState.startX;
+                const dy = e.clientY - panState.startY;
+                containerRef.current.scrollLeft = panState.scrollLeft - dx;
+                containerRef.current.scrollTop = panState.scrollTop - dy;
+            }
+        };
+
+        const handleGlobalMouseUp = () => {
+            if (panState && panState.isPanning) {
+                setPanState(null);
+            }
+        };
+
+        if (panState && panState.isPanning) {
+            window.addEventListener('mousemove', handleGlobalMouseMove);
+            window.addEventListener('mouseup', handleGlobalMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleGlobalMouseMove);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [panState]);
+
+
     const getRelativeCoords = (e: React.MouseEvent): { x: number, y: number } => {
         const rect = canvasRef.current!.getBoundingClientRect();
         return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        if (activeTool === 'pan') {
+            if (containerRef.current) {
+                setPanState({
+                    isPanning: true,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    scrollLeft: containerRef.current.scrollLeft,
+                    scrollTop: containerRef.current.scrollTop
+                });
+            }
+            return;
+        }
+
         const pos = getRelativeCoords(e);
         const clickedArea = areas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         if (activeTool === 'select' && clickedArea) {
@@ -245,7 +291,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         } else if (activeTool === 'select' && !clickedArea) {
             setSelectedAreaIds(new Set());
             setDrawState(null);
-        } else if (activeTool !== 'select' && activeTool !== 'pan') {
+        } else if (activeTool !== 'select') {
             setDrawState({ isDrawing: true, isResizing: false, isMoving: false, startPoint: pos, resizeHandle: null, moveStartArea: null });
         }
     };
@@ -347,7 +393,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         let cursor = 'default';
-        if (activeTool === 'pan') cursor = 'grab';
+        if (activeTool === 'pan') cursor = panState?.isPanning ? 'grabbing' : 'grab';
         else if (activeTool !== 'select') cursor = 'crosshair';
         if (activeTool === 'select') {
             const selectedAreas = areas.filter(a => selectedAreaIds.has(a.id));
@@ -366,7 +412,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             }
         }
         canvas.style.cursor = cursor;
-    }, [activeTool, areas, selectedAreaIds, drawState, getResizeHandle]);
+    }, [activeTool, areas, selectedAreaIds, drawState, getResizeHandle, panState]);
 
     return (
         <div className="w-full h-full flex gap-4">
