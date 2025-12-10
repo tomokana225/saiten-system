@@ -442,7 +442,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 template={template} 
                 onTemplateChange={handleTemplateChange}
             />
-            <main className="flex-1 flex flex-col gap-4">
+            <main className="flex-1 flex flex-col gap-4 overflow-hidden">
                 <TemplateToolbar 
                     activeTool={activeTool} 
                     setActiveTool={setActiveTool}
