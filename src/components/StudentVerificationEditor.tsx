@@ -38,22 +38,26 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         const height = area.height;
 
         // Binarize helper
-        const isDark = (x: number, y: number, threshold = 128) => {
+        const isDark = (x: number, y: number, threshold = 140) => {
             const idx = (y * width + x) * 4;
             const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
             return gray < threshold;
         };
 
-        // --- Logic to detect Timing Marks (Reference Marks) ---
-        
-        // 1. Detect Rows by scanning the RIGHTMOST strip (e.g. last 15%)
-        // We project horizontally within this strip to find vertical positions (Y).
-        const rightStripStart = Math.floor(width * 0.85);
+        // --- Logic to detect Timing Marks / Grid Structure ---
+        // Changed to scan the FULL area projection to robustly find Grade/Class/Number columns
+        // regardless of their position (left/center/right).
+
+        // 1. Detect Rows (Digits 0-9) by projecting horizontally across the full width
         const rowProjectionProfile: number[] = new Array(height).fill(0);
         
+        // Skip edges to avoid noise from adjacent borders
+        const scanXStart = Math.floor(width * 0.05);
+        const scanXEnd = Math.floor(width * 0.95);
+
         for (let y = 0; y < height; y++) {
             let darkCount = 0;
-            for (let x = rightStripStart; x < width; x++) {
+            for (let x = scanXStart; x < scanXEnd; x++) {
                 if (isDark(x, y)) darkCount++;
             }
             rowProjectionProfile[y] = darkCount;
@@ -63,11 +67,12 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         const rowCenters: number[] = [];
         let inPeak = false;
         let peakStart = 0;
-        let peakSum = 0; // weighted sum for centroid
-        let peakMass = 0; // total mass
-        // Adaptive threshold for the strip: average darkness * 1.5
-        const stripAvg = rowProjectionProfile.reduce((a, b) => a + b, 0) / height;
-        const rowThreshold = Math.max(5, stripAvg * 1.5); 
+        let peakSum = 0; 
+        let peakMass = 0;
+        
+        // Dynamic threshold for rows based on the profile statistics
+        const maxRowVal = Math.max(...rowProjectionProfile);
+        const rowThreshold = maxRowVal * 0.25; // Lower threshold to catch lighter marks
 
         for (let y = 0; y < height; y++) {
             const val = rowProjectionProfile[y];
@@ -83,20 +88,21 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
             } else {
                 if (inPeak) {
                     inPeak = false;
-                    // Centroid
                     if (peakMass > 0) rowCenters.push(peakSum / peakMass);
                 }
             }
         }
 
-        // 2. Detect Cols by scanning the BOTTOM strip (e.g. last 15%)
-        // We project vertically within this strip to find horizontal positions (X).
-        const bottomStripStart = Math.floor(height * 0.85);
+        // 2. Detect Cols (Grade, Class, Number) by projecting vertically across the full height
         const colProjectionProfile: number[] = new Array(width).fill(0);
+        
+        // Skip edges
+        const scanYStart = Math.floor(height * 0.05);
+        const scanYEnd = Math.floor(height * 0.95);
 
         for (let x = 0; x < width; x++) {
             let darkCount = 0;
-            for (let y = bottomStripStart; y < height; y++) {
+            for (let y = scanYStart; y < scanYEnd; y++) {
                 if (isDark(x, y)) darkCount++;
             }
             colProjectionProfile[x] = darkCount;
@@ -108,8 +114,9 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         peakStart = 0;
         peakSum = 0;
         peakMass = 0;
-        const colStripAvg = colProjectionProfile.reduce((a, b) => a + b, 0) / width;
-        const colThreshold = Math.max(5, colStripAvg * 1.5);
+        
+        const maxColVal = Math.max(...colProjectionProfile);
+        const colThreshold = maxColVal * 0.25;
 
         for (let x = 0; x < width; x++) {
             const val = colProjectionProfile[x];
@@ -134,24 +141,21 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         let finalRowCenters = rowCenters;
         let finalColCenters = colCenters;
 
-        // If detection failed (too few marks), fallback to uniform grid
-        if (rowCenters.length < 5) { // Expecting roughly 10 digits
+        // Rows: Expecting roughly 10 digits (0-9)
+        if (rowCenters.length < 5) { 
              finalRowCenters = [];
              const rowHeight = height / 10;
              for(let i=0; i<10; i++) finalRowCenters.push(rowHeight * i + rowHeight/2);
         } else {
-            // Sort just in case
             finalRowCenters.sort((a,b) => a - b);
-            // If we detected too many (noise), try to filter or just take top 10 if spaced evenly
-            if (finalRowCenters.length > 10) {
-                // If more than 10, maybe we caught some frame edges. 
-                // A smart logic would be to find the most regular sequence of 10.
-            }
+            // Simple logic: if we found way too many, try to merge close ones or pick the strongest?
+            // For now, if > 12, it might be noisy, but let's trust the threshold.
         }
 
-        if (colCenters.length < 2) { // Expecting at least column marks
+        // Cols: Expecting at least 2 (Class, Number), usually 4 (Grade, Class, Num1, Num2)
+        if (colCenters.length < 2) { 
             finalColCenters = [];
-            const colWidth = width / 4; // Assume 4 digits default
+            const colWidth = width / 4; 
             for(let i=0; i<4; i++) finalColCenters.push(colWidth * i + colWidth/2);
         } else {
             finalColCenters.sort((a,b) => a - b);
@@ -162,7 +166,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 
         // --- Reading the Grid ---
         let idString = '';
-        const numColsToRead = Math.min(finalColCenters.length, 10); // reasonable cap
+        const numColsToRead = Math.min(finalColCenters.length, 10); 
 
         for (let c = 0; c < numColsToRead; c++) {
             const centerX = finalColCenters[c];
@@ -173,7 +177,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
                 const centerY = finalRowCenters[r];
                 
                 // Sample a small box around the intersection (centerX, centerY)
-                const sampleRadius = Math.min(width, height) * 0.015; 
+                const sampleRadius = Math.min(width, height) * 0.02; // Slightly larger sample area
                 let darkPixels = 0;
                 let totalPixels = 0;
 
@@ -200,9 +204,9 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
             const winner = columnScores[0];
             const runnerUp = columnScores[1];
             
-            // Confidence check: Winner should be significantly darker than runner up and absolute darkness
-            if (winner.darkness > 5 && (columnScores.length < 2 || winner.darkness > runnerUp.darkness * 1.5)) {
-                // Assuming rows are 0, 1, 2... 9 from top to bottom. Row index 0 corresponds to digit '0'.
+            // Confidence check
+            if (winner.darkness > 5 && (columnScores.length < 2 || winner.darkness > runnerUp.darkness * 1.3)) {
+                // Assuming rows are 0, 1, 2... 9 from top to bottom.
                 idString += winner.rowIdx.toString();
             } else {
                 idString += '?';
