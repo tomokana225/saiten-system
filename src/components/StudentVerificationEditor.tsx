@@ -16,6 +16,41 @@ interface DetectionDebugInfo {
     orientation: 'vertical' | 'horizontal';
 }
 
+// Helper to find peaks in a projection profile
+const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.2): number[] => {
+    const peaks: number[] = [];
+    let inPeak = false;
+    let peakSum = 0;
+    let peakMass = 0;
+    
+    const maxVal = Math.max(...profile);
+    // Dynamic threshold: at least 5 pixels, or ratio of max
+    const threshold = Math.max(3, maxVal * thresholdRatio);
+
+    for (let i = 0; i < length; i++) {
+        const val = profile[i];
+        if (val > threshold) {
+            if (!inPeak) {
+                inPeak = true;
+                peakSum = 0;
+                peakMass = 0;
+            }
+            peakSum += i * val;
+            peakMass += val;
+        } else {
+            if (inPeak) {
+                inPeak = false;
+                if (peakMass > 0) peaks.push(peakSum / peakMass);
+            }
+        }
+    }
+    // Check if peak ends at the edge
+    if (inPeak && peakMass > 0) {
+        peaks.push(peakSum / peakMass);
+    }
+    return peaks;
+};
+
 const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
     const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'vertical' };
     
@@ -42,7 +77,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         let sw = Math.floor(area.width);
         let sh = Math.floor(area.height);
 
-        // Clamp values to be within image bounds
         if (sx < 0) { sw += sx; sx = 0; }
         if (sy < 0) { sh += sy; sy = 0; }
         if (sx + sw > canvas.width) sw = canvas.width - sx;
@@ -66,83 +100,86 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             return gray < threshold;
         };
 
-        // --- Logic to detect Timing Marks / Grid Structure ---
-        
-        // 1. Detect Rows (Y-axis peaks)
-        const rowProjectionProfile: number[] = new Array(height).fill(0);
-        const scanXStart = Math.floor(width * 0.1);
-        const scanXEnd = Math.ceil(width * 0.9);
+        // --- Improved Detection Logic: Scan Specific Regions (Edges) ---
+        // Instead of scanning the whole image which might have noise (handwriting),
+        // we scan margins where timing marks usually are.
 
-        for (let y = 0; y < height; y++) {
-            let darkCount = 0;
-            for (let x = scanXStart; x < scanXEnd; x++) {
-                if (isDark(x, y)) darkCount++;
-            }
-            rowProjectionProfile[y] = darkCount;
-        }
-
-        const rowCenters: number[] = [];
-        let inPeak = false;
-        let peakSum = 0; 
-        let peakMass = 0;
-        
-        const maxRowVal = Math.max(...rowProjectionProfile);
-        const rowThreshold = Math.max(5, maxRowVal * 0.25); // Require distinct peaks
-
-        for (let y = 0; y < height; y++) {
-            const val = rowProjectionProfile[y];
-            if (val > rowThreshold) {
-                if (!inPeak) {
-                    inPeak = true;
-                    peakSum = 0;
-                    peakMass = 0;
+        const getProjection = (
+            scanXStart: number, scanXEnd: number, 
+            scanYStart: number, scanYEnd: number, 
+            direction: 'row' | 'col'
+        ) => {
+            const size = direction === 'row' ? height : width;
+            const profile = new Array(size).fill(0);
+            
+            if (direction === 'row') {
+                // Sum along X (horizontally) to project onto Y axis -> Find Rows
+                for (let y = 0; y < height; y++) {
+                    let darkCount = 0;
+                    for (let x = scanXStart; x < scanXEnd; x++) {
+                        if (isDark(x, y)) darkCount++;
+                    }
+                    profile[y] = darkCount;
                 }
-                peakSum += y * val;
-                peakMass += val;
             } else {
-                if (inPeak) {
-                    inPeak = false;
-                    if (peakMass > 0) rowCenters.push(peakSum / peakMass);
+                // Sum along Y (vertically) to project onto X axis -> Find Cols
+                for (let x = 0; x < width; x++) {
+                    let darkCount = 0;
+                    for (let y = scanYStart; y < scanYEnd; y++) {
+                        if (isDark(x, y)) darkCount++;
+                    }
+                    profile[x] = darkCount;
                 }
             }
-        }
+            return profile;
+        };
 
-        // 2. Detect Cols (X-axis peaks)
-        const colProjectionProfile: number[] = new Array(width).fill(0);
-        const scanYStart = Math.floor(height * 0.1);
-        const scanYEnd = Math.ceil(height * 0.9);
+        // 1. Detect Rows (Scan Left margin, Right margin, Center)
+        // Timing marks for rows are usually on the Left or Right
+        const rowScans = [
+            { label: 'Left', profile: getProjection(0, Math.floor(width * 0.2), 0, height, 'row') },
+            { label: 'Right', profile: getProjection(Math.floor(width * 0.8), width, 0, height, 'row') },
+            { label: 'Center', profile: getProjection(Math.floor(width * 0.2), Math.floor(width * 0.8), 0, height, 'row') },
+        ];
 
-        for (let x = 0; x < width; x++) {
-            let darkCount = 0;
-            for (let y = scanYStart; y < scanYEnd; y++) {
-                if (isDark(x, y)) darkCount++;
-            }
-            colProjectionProfile[x] = darkCount;
-        }
-
-        const colCenters: number[] = [];
-        inPeak = false;
-        peakSum = 0;
-        peakMass = 0;
+        // Pick best row candidate (most distinct peaks)
+        let rowCenters: number[] = [];
+        let maxRowPeaks = 0;
         
-        const maxColVal = Math.max(...colProjectionProfile);
-        const colThreshold = Math.max(5, maxColVal * 0.25);
+        for (const scan of rowScans) {
+            const peaks = findPeaksInProfile(scan.profile, height, 0.25);
+            // We prefer scans that find around 10 rows (digits 0-9) or appropriate number
+            if (peaks.length > maxRowPeaks) {
+                maxRowPeaks = peaks.length;
+                rowCenters = peaks;
+            }
+            // Heuristic: If we found exactly 10 peaks, that's likely our digits 0-9
+            if (peaks.length === 10) { 
+                rowCenters = peaks; 
+                break; 
+            }
+        }
 
-        for (let x = 0; x < width; x++) {
-            const val = colProjectionProfile[x];
-            if (val > colThreshold) {
-                if (!inPeak) {
-                    inPeak = true;
-                    peakSum = 0;
-                    peakMass = 0;
-                }
-                peakSum += x * val;
-                peakMass += val;
-            } else {
-                if (inPeak) {
-                    inPeak = false;
-                    if (peakMass > 0) colCenters.push(peakSum / peakMass);
-                }
+        // 2. Detect Cols (Scan Top margin, Bottom margin, Center)
+        // Timing marks for cols are usually Top or Bottom
+        const colScans = [
+            { label: 'Top', profile: getProjection(0, width, 0, Math.floor(height * 0.2), 'col') },
+            { label: 'Bottom', profile: getProjection(0, width, Math.floor(height * 0.8), height, 'col') },
+            { label: 'Center', profile: getProjection(0, width, Math.floor(height * 0.2), Math.floor(height * 0.8), 'col') }
+        ];
+
+        let colCenters: number[] = [];
+        let maxColPeaks = 0;
+
+        for (const scan of colScans) {
+            const peaks = findPeaksInProfile(scan.profile, width, 0.25);
+            if (peaks.length > maxColPeaks) {
+                maxColPeaks = peaks.length;
+                colCenters = peaks;
+            }
+            if (peaks.length === 10) {
+                colCenters = peaks;
+                break;
             }
         }
 
@@ -150,16 +187,14 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         
         let orientation: 'vertical' | 'horizontal' = 'vertical';
         
-        // Simple Heuristic: 
         // Horizontal Layout: Wide (Width > Height), 10 cols (0-9)
         // Vertical Layout: Tall (Height > Width), 10 rows (0-9)
-        
         if (width > height * 1.2) {
             orientation = 'horizontal';
         } else if (height > width * 1.2) {
             orientation = 'vertical';
         } else {
-            // If square-ish, trust the detection counts
+            // Square-ish: rely on detection count
             if (colCenters.length >= 8 && rowCenters.length < 8) orientation = 'horizontal';
             else orientation = 'vertical';
         }
@@ -175,7 +210,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 for(let i=0; i<10; i++) rowCenters.push(step * i + step/2);
             }
             // Columns: Expect roughly the number of digits in ID (e.g., 3-8 cols)
-            // If detection completely failed (e.g. < 1), estimate based on aspect ratio assuming square cells
             if (colCenters.length < 1) {
                  const estimatedCols = Math.max(1, Math.round(width / (height / 10)));
                  const step = width / estimatedCols;
@@ -203,13 +237,12 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         
         // Create boundaries based on centers (approximate)
         if (rowCenters.length > 0) {
-            const rowStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[0]) / (rowCenters.length - 1) : height;
-            // Start half a step before first center
+            const rowStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[0]) / (rowCenters.length - 1) : height / Math.max(1, rowCenters.length);
             const startY = rowCenters[0] - rowStep/2;
             for(let i=0; i<=rowCenters.length; i++) rowBoundaries.push(startY + i*rowStep);
         }
         if (colCenters.length > 0) {
-            const colStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[0]) / (colCenters.length - 1) : width;
+            const colStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[0]) / (colCenters.length - 1) : width / Math.max(1, colCenters.length);
             const startX = colCenters[0] - colStep/2;
             for(let i=0; i<=colCenters.length; i++) colBoundaries.push(startX + i*colStep);
         }
@@ -240,8 +273,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 const winner = rowScores[0];
                 const runnerUp = rowScores[1];
 
-                // Heuristic: Darkest needs to be somewhat dark, and darker than runner up
-                // Use a relative threshold based on cell size
                 const cellArea = (width / colCenters.length) * (height / rowCenters.length);
                 const minDarkness = cellArea * 0.05; // 5% fill
 

@@ -106,6 +106,11 @@ export const PointAllocator = () => {
                 const data = imageData.data;
                 const options = point.markSheetOptions || 4;
                 const isHorizontal = point.markSheetLayout === 'horizontal';
+                
+                // --- Simple Grid Logic (Can be improved with edge scanning like StudentVerificationEditor if needed) ---
+                // For Answer Key setting, we assume the template is clean, so simple equal division usually works.
+                // However, robustness is good.
+                
                 const segmentWidth = isHorizontal ? sw / options : sw;
                 const segmentHeight = isHorizontal ? sh : sh / options;
                 
