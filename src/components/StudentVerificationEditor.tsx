@@ -233,10 +233,16 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
     return (
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 50 }}>
             {debugInfo.rows.map((y, i) => (
-                <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
+                <g key={`row-${i}`}>
+                    <line x1="0" y1={y} x2={width} y2={y} stroke="cyan" strokeWidth="1" strokeOpacity="0.6"/>
+                    <text x="2" y={y - 2} fill="cyan" fontSize="10" fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{i}</text>
+                </g>
             ))}
             {debugInfo.cols.map((x, i) => (
-                <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(255, 99, 71, 0.7)" strokeWidth="1" strokeDasharray="2 2"/>
+                <g key={`col-${i}`}>
+                    <line x1={x} y1="0" x2={x} y2={height} stroke="magenta" strokeWidth="1" strokeOpacity="0.6"/>
+                    <text x={x + 2} y="12" fill="magenta" fontSize="10" fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{i}</text>
+                </g>
             ))}
             
             {debugInfo.points.map((p, i) => (
@@ -244,16 +250,22 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
                     key={i} 
                     cx={p.x} 
                     cy={p.y} 
-                    r={Math.min(width, height) * 0.015} 
-                    fill={p.filled ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.4)"} 
-                    stroke="white"
-                    strokeWidth="1"
+                    r={Math.min(width, height) * 0.02} 
+                    fill="transparent"
+                    stroke={p.filled ? "lime" : "red"} 
+                    strokeWidth="2"
                 />
             ))}
             
-            <text x="5" y="15" fill="red" fontSize="12" fontWeight="bold">
-                {debugInfo.orientation === 'horizontal' ? '横書き' : '縦書き'}
-            </text>
+            <g transform="translate(5, 5)">
+                <rect x="0" y="0" width="160" height="40" fill="rgba(0,0,0,0.7)" rx="4" />
+                <text x="10" y="16" fill="white" fontSize="12" fontWeight="bold">
+                    {debugInfo.orientation === 'horizontal' ? '横向き(列=値)' : '縦向き(行=値)'}
+                </text>
+                <text x="10" y="32" fill="white" fontSize="11">
+                    Rows: {debugInfo.rows.length}, Cols: {debugInfo.cols.length}
+                </text>
+            </g>
         </svg>
     );
 };
