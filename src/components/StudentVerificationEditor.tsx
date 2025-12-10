@@ -3,7 +3,7 @@ import type { Student, StudentInfo, Area, Template } from '../types';
 import { AreaType } from '../types';
 import { fileToArrayBuffer } from '../utils';
 import { AnswerSnippet } from './AnswerSnippet';
-import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon, SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon } from './icons';
+import { Trash2Icon, PlusIcon, GripVerticalIcon, XIcon, UploadCloudIcon, ArrowDownFromLineIcon, ArrowRightIcon, SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, InfoIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 
 // Type to store debug information about the grid detection
@@ -51,7 +51,7 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     return peaks;
 };
 
-const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
+const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
     const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [] };
     
     try {
@@ -71,56 +71,59 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         
         ctx.drawImage(img, 0, 0);
         
-        // Safe Cropping Logic
-        let sx = Math.floor(area.x);
-        let sy = Math.floor(area.y);
-        let sw = Math.floor(area.width);
-        let sh = Math.floor(area.height);
+        // --- Helper: Crop Logic ---
+        const getCropData = (area: Area) => {
+            let sx = Math.floor(area.x);
+            let sy = Math.floor(area.y);
+            let sw = Math.floor(area.width);
+            let sh = Math.floor(area.height);
 
-        if (sx < 0) { sw += sx; sx = 0; }
-        if (sy < 0) { sh += sy; sy = 0; }
-        if (sx + sw > canvas.width) sw = canvas.width - sx;
-        if (sy + sh > canvas.height) sh = canvas.height - sy;
+            if (sx < 0) { sw += sx; sx = 0; }
+            if (sy < 0) { sh += sy; sy = 0; }
+            if (sx + sw > canvas.width) sw = canvas.width - sx;
+            if (sy + sh > canvas.height) sh = canvas.height - sy;
+            
+            if (sw <= 0 || sh <= 0) return null;
+            return {
+                imageData: ctx.getImageData(sx, sy, sw, sh),
+                sx, sy, sw, sh
+            };
+        };
 
-        if (sw <= 0 || sh <= 0) {
-             console.warn("Invalid crop area for Student ID analysis (out of bounds)");
-             return { indices: null, debugInfo };
-        }
+        const mainCrop = getCropData(mainArea);
+        if (!mainCrop) return { indices: null, debugInfo };
 
-        const imageData = ctx.getImageData(sx, sy, sw, sh);
-        const data = imageData.data;
-        const width = imageData.width;
-        const height = imageData.height;
-
-        // Binarize helper
-        const isDark = (x: number, y: number, threshold = 160) => {
-            const idx = (y * width + x) * 4;
-            if (idx < 0 || idx >= data.length) return false;
-            const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        // Helper: Binarize check relative to a specific image data buffer
+        const isDark = (imgData: ImageData, x: number, y: number, threshold = 160) => {
+            const idx = (y * imgData.width + x) * 4;
+            if (idx < 0 || idx >= imgData.data.length) return false;
+            const gray = 0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2];
             return gray < threshold;
         };
 
+        // Helper: Projection on arbitrary image data
         const getProjection = (
+            imgData: ImageData,
             scanXStart: number, scanXEnd: number, 
             scanYStart: number, scanYEnd: number, 
             direction: 'row' | 'col'
         ) => {
-            const size = direction === 'row' ? height : width;
+            const size = direction === 'row' ? imgData.height : imgData.width;
             const profile = new Array(size).fill(0);
             
             if (direction === 'row') {
-                for (let y = 0; y < height; y++) {
+                for (let y = 0; y < imgData.height; y++) {
                     let darkCount = 0;
                     for (let x = scanXStart; x < scanXEnd; x++) {
-                        if (isDark(x, y)) darkCount++;
+                        if (isDark(imgData, x, y)) darkCount++;
                     }
                     profile[y] = darkCount;
                 }
             } else {
-                for (let x = 0; x < width; x++) {
+                for (let x = 0; x < imgData.width; x++) {
                     let darkCount = 0;
                     for (let y = scanYStart; y < scanYEnd; y++) {
-                        if (isDark(x, y)) darkCount++;
+                        if (isDark(imgData, x, y)) darkCount++;
                     }
                     profile[x] = darkCount;
                 }
@@ -128,51 +131,72 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             return profile;
         };
 
-        // --- Targeted Edge Scanning ---
-        // As per request:
-        // Rows: "Right edge has 3 vertical reference points" -> Scan rightmost 15%
-        // Cols: "Bottom edge has 10 horizontal reference points" -> Scan bottommost 15%
+        // --- 1. Detect Rows (Y-Coordinates) ---
+        let rowCenters: number[] = [];
         
-        const rightEdgeStart = Math.floor(width * 0.85);
-        const bottomEdgeStart = Math.floor(height * 0.85);
-
-        debugInfo.scanZones?.push(
-            { x: rightEdgeStart, y: 0, w: width - rightEdgeStart, h: height, label: 'Rows (Right)' },
-            { x: 0, y: bottomEdgeStart, w: width, h: height - bottomEdgeStart, label: 'Cols (Bottom)' }
-        );
-
-        // 1. Detect Rows (Right Edge)
-        const rowProfile = getProjection(rightEdgeStart, width, 0, height, 'row');
-        // Use high threshold (0.35) to find large dark circles only
-        let rowCenters = findPeaksInProfile(rowProfile, height, 0.35);
-
-        // 2. Detect Cols (Bottom Edge)
-        const colProfile = getProjection(0, width, bottomEdgeStart, height, 'col');
-        let colCenters = findPeaksInProfile(colProfile, width, 0.35);
-
-        // --- Fallback / Adjustment ---
-        // If we didn't find exactly what we expected, we can try slightly more lenient scanning or fallback to linear
-        
-        // Expected: 3 rows (Class, Num10, Num1), 10 cols (0-9)
-        if (rowCenters.length < 3) {
-             // Fallback: Linear 3 rows if absolutely nothing found
-             if (rowCenters.length === 0) {
-                 const step = height / 3;
-                 rowCenters = [step * 0.5, step * 1.5, step * 2.5];
-             }
+        if (refRightArea) {
+            // Use explicitly defined Right Reference Area
+            const refCrop = getCropData(refRightArea);
+            if (refCrop) {
+                // Scan the entire ref area
+                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'row');
+                const localPeaks = findPeaksInProfile(profile, refCrop.sh, 0.30); // Slightly more sensitive for user-defined area
+                
+                // Translate local ref coords to main area coords
+                // Absolute Y = refCrop.sy + localY
+                // Main Relative Y = Absolute Y - mainCrop.sy
+                rowCenters = localPeaks.map(y => (refCrop.sy + y) - mainCrop.sy);
+                
+                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Right' });
+            }
+        } else {
+            // Fallback: Scan rightmost 15% of Main Area
+            const scanXStart = Math.floor(mainCrop.sw * 0.85);
+            const profile = getProjection(mainCrop.imageData, scanXStart, mainCrop.sw, 0, mainCrop.sh, 'row');
+            rowCenters = findPeaksInProfile(profile, mainCrop.sh, 0.35);
+            debugInfo.scanZones?.push({ x: scanXStart, y: 0, w: mainCrop.sw - scanXStart, h: mainCrop.sh, label: 'Auto Ref Right' });
         }
-        if (colCenters.length < 10) {
-             // Fallback: Linear 10 cols
-             if (colCenters.length === 0) {
-                 const step = width / 10;
-                 for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
-             }
+
+        // --- 2. Detect Columns (X-Coordinates) ---
+        let colCenters: number[] = [];
+
+        if (refBottomArea) {
+            // Use explicitly defined Bottom Reference Area
+            const refCrop = getCropData(refBottomArea);
+            if (refCrop) {
+                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'col');
+                const localPeaks = findPeaksInProfile(profile, refCrop.sw, 0.30);
+                
+                // Translate local ref coords to main area coords
+                // Absolute X = refCrop.sx + localX
+                // Main Relative X = Absolute X - mainCrop.sx
+                colCenters = localPeaks.map(x => (refCrop.sx + x) - mainCrop.sx);
+                
+                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Bottom' });
+            }
+        } else {
+            // Fallback: Scan bottommost 15% of Main Area
+            const scanYStart = Math.floor(mainCrop.sh * 0.85);
+            const profile = getProjection(mainCrop.imageData, 0, mainCrop.sw, scanYStart, mainCrop.sh, 'col');
+            colCenters = findPeaksInProfile(profile, mainCrop.sw, 0.35);
+            debugInfo.scanZones?.push({ x: 0, y: scanYStart, w: mainCrop.sw, h: mainCrop.sh - scanYStart, label: 'Auto Ref Bottom' });
+        }
+
+        // --- Fallback / Adjustment if nothing found ---
+        if (rowCenters.length < 1) {
+             const step = mainCrop.sh / 3; // Default to 3 rows
+             rowCenters = [step * 0.5, step * 1.5, step * 2.5];
+        }
+        if (colCenters.length < 1) {
+             const step = mainCrop.sw / 10; // Default to 10 cols
+             for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
         }
 
         // Calculate Grid Boundaries for Visualization
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
         
+        // Construct boundaries (midpoints between centers)
         if (rowCenters.length > 0) {
             const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : 20;
             rowBoundaries.push(Math.max(0, rowCenters[0] - firstStep/2));
@@ -180,7 +204,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 rowBoundaries.push((rowCenters[i] + rowCenters[i+1]) / 2);
             }
             const lastStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[rowCenters.length-2]) : 20;
-            rowBoundaries.push(Math.min(height, rowCenters[rowCenters.length-1] + lastStep/2));
+            rowBoundaries.push(Math.min(mainCrop.sh, rowCenters[rowCenters.length-1] + lastStep/2));
         }
 
         if (colCenters.length > 0) {
@@ -190,14 +214,14 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 colBoundaries.push((colCenters[i] + colCenters[i+1]) / 2);
             }
             const lastStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[colCenters.length-2]) : 20;
-            colBoundaries.push(Math.min(width, colCenters[colCenters.length-1] + lastStep/2));
+            colBoundaries.push(Math.min(mainCrop.sw, colCenters[colCenters.length-1] + lastStep/2));
         }
 
         debugInfo.rows = rowCenters;
         debugInfo.cols = colCenters;
         debugInfo.rowBoundaries = rowBoundaries;
         debugInfo.colBoundaries = colBoundaries;
-        debugInfo.orientation = 'horizontal'; // Fixed for this specific mark sheet type
+        debugInfo.orientation = 'horizontal'; 
 
         const indices: number[] = [];
 
@@ -208,7 +232,8 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
 
             for (let c = 0; c < colCenters.length; c++) {
                 const centerX = colCenters[c];
-                const { filled, darkPixels } = checkFill(width, height, centerX, centerY, data, isDark);
+                // Check fill using mainCrop data
+                const { filled, darkPixels } = checkFill(mainCrop.sw, mainCrop.sh, centerX, centerY, mainCrop.imageData.data, (x, y) => isDark(mainCrop.imageData, x, y));
                 
                 // Only show point if filled (reduces visual clutter of false positives)
                 debugInfo.points.push({ x: centerX, y: centerY, filled });
@@ -220,8 +245,8 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             const runnerUp = rowScores[1];
 
             // Dynamic cell area estimation for threshold
-            const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (height / rowCenters.length);
-            const cellW = (width / colCenters.length); 
+            const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (mainCrop.sh / rowCenters.length);
+            const cellW = (mainCrop.sw / colCenters.length); 
             const cellArea = cellW * cellH;
             const minDarkness = cellArea * 0.05; // 5% fill
 
@@ -240,7 +265,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
     }
 };
 
-// Helper for pixel sampling - slightly tighter radius to avoid grid lines
+// Helper for pixel sampling
 function checkFill(width: number, height: number, centerX: number, centerY: number, data: Uint8ClampedArray, isDark: (x:number, y:number)=>boolean) {
     const sampleRadius = Math.max(2, Math.min(width, height) * 0.012); 
     let darkPixels = 0;
@@ -266,17 +291,17 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
 
     return (
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 50 }}>
-            {/* Draw Scan Zones (Debug) */}
+            {/* Draw Scan Zones (Debug) relative to main area */}
             {debugInfo.scanZones?.map((z, i) => (
-                <rect key={`zone-${i}`} x={z.x} y={z.y} width={z.w} height={z.h} fill="rgba(0, 255, 255, 0.05)" stroke="rgba(0,255,255,0.3)" strokeDasharray="2 2" />
+                <rect key={`zone-${i}`} x={z.x} y={z.y} width={z.w} height={z.h} fill="rgba(0, 255, 255, 0.05)" stroke={z.label.includes('User') ? "lime" : "cyan"} strokeDasharray="4 2" />
             ))}
 
             {/* Draw Reference Lines - derived from peaks */}
             {debugInfo.rows.map((y, i) => (
-                <line key={`row-center-${i}`} x1={width * 0.8} y1={y} x2={width} y2={y} stroke="cyan" strokeWidth="2" />
+                <line key={`row-center-${i}`} x1={0} y1={y} x2={width} y2={y} stroke="cyan" strokeWidth="1" strokeOpacity="0.5" />
             ))}
             {debugInfo.cols.map((x, i) => (
-                <line key={`col-center-${i}`} x1={x} y1={height * 0.8} x2={x} y2={height} stroke="magenta" strokeWidth="2" />
+                <line key={`col-center-${i}`} x1={x} y1={0} x2={x} y2={height} stroke="magenta" strokeWidth="1" strokeOpacity="0.5" />
             ))}
 
             {/* Draw Grid Lines (Boundaries) */}
@@ -315,13 +340,13 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
             <g transform="translate(2, 2)">
                 <rect x="0" y="0" width="160" height="46" fill="rgba(0,0,0,0.7)" rx="4" />
                 <text x="6" y="12" fill="white" fontSize="9" fontWeight="bold">
-                    マークシート検出 (基準点方式)
+                    マークシート検出
                 </text>
                 <text x="6" y="24" fill="white" fontSize="9">
                     右端(行): {debugInfo.rows.length}点 / 下端(列): {debugInfo.cols.length}点
                 </text>
                  <text x="6" y="36" fill="#ccc" fontSize="8">
-                    ※右と下の黒い基準点を認識して補正
+                    {debugInfo.scanZones?.some(z => z.label.includes('User')) ? '※ユーザー指定の基準範囲を使用' : '※自動検出モード'}
                 </text>
             </g>
         </svg>
@@ -342,6 +367,9 @@ export const StudentVerificationEditor = () => {
 
     const nameArea = useMemo(() => areas.find(a => a.type === AreaType.NAME), [areas]);
     const studentIdArea = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_MARK), [areas]);
+    const studentIdRefRight = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_RIGHT), [areas]);
+    const studentIdRefBottom = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_BOTTOM), [areas]);
+
     const createBlankSheet = (): Student => ({ id: `blank-sheet-${Date.now()}-${Math.random()}`, originalName: '（空の行）', filePath: null });
     
     const numRows = Math.max(uploadedSheets.length, studentInfoList.length);
@@ -439,10 +467,15 @@ export const StudentVerificationEditor = () => {
         let matchCount = 0;
 
         try {
-            // 1. Analyze all valid sheets to get raw indices
+            // 1. Analyze all valid sheets
             const sheetsWithIndices = await Promise.all(uploadedSheets.map(async (sheet) => {
                 if (!sheet.filePath) return { sheet, indices: null };
-                const { indices, debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
+                const { indices, debugInfo } = await analyzeStudentIdMark(
+                    sheet.filePath, 
+                    studentIdArea,
+                    studentIdRefRight, // Pass reference areas if they exist
+                    studentIdRefBottom
+                );
                 setDebugInfos(prev => ({ ...prev, [sheet.id]: debugInfo }));
                 return { sheet, indices };
             }));
@@ -528,7 +561,12 @@ export const StudentVerificationEditor = () => {
         const newDebugInfos: Record<string, DetectionDebugInfo> = {};
         for (const sheet of uploadedSheets) {
             if (sheet.filePath) {
-                const { debugInfo } = await analyzeStudentIdMark(sheet.filePath, studentIdArea);
+                const { debugInfo } = await analyzeStudentIdMark(
+                    sheet.filePath, 
+                    studentIdArea,
+                    studentIdRefRight,
+                    studentIdRefBottom
+                );
                 newDebugInfos[sheet.id] = debugInfo;
             }
         }
@@ -547,6 +585,12 @@ export const StudentVerificationEditor = () => {
                         <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                             <AlertCircleIcon className="w-3 h-3"/>
                             テンプレートで「学籍番号」エリアを設定してください
+                        </div>
+                    )}
+                    {studentIdArea && !studentIdRefRight && !studentIdRefBottom && (
+                         <div className="flex items-center gap-1 text-xs text-sky-600 bg-sky-50 px-2 py-1 rounded" title="「学籍番号基準(右/下)」エリアを設定すると、読み取り精度が向上します">
+                            <InfoIcon className="w-3 h-3"/>
+                            認識位置を調整可能
                         </div>
                     )}
                     {studentIdArea && (

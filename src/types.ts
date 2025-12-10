@@ -54,6 +54,8 @@ export enum AreaType {
     QUESTION_NUMBER = '問題番号',
     ALIGNMENT_MARK = '基準マーク',
     STUDENT_ID_MARK = '学籍番号',
+    STUDENT_ID_REF_RIGHT = '学籍番号基準(右)',
+    STUDENT_ID_REF_BOTTOM = '学籍番号基準(下)',
 }
 
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;

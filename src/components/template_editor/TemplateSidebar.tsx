@@ -13,6 +13,8 @@ export const areaTypeColors: { [key in AreaType]: { hex: string; bg: string; tex
     [AreaTypeEnum.QUESTION_NUMBER]: { hex: '#64748b', bg: 'bg-slate-200 dark:bg-slate-700', text: 'text-slate-800 dark:text-slate-300', hover: 'hover:bg-slate-300/50 dark:hover:bg-slate-600/50' },
     [AreaTypeEnum.ALIGNMENT_MARK]: { hex: '#ef4444', bg: 'bg-red-200 dark:bg-red-700', text: 'text-red-800 dark:text-red-300', hover: 'hover:bg-red-300/50 dark:hover:bg-red-600/50' },
     [AreaTypeEnum.STUDENT_ID_MARK]: { hex: '#8b5cf6', bg: 'bg-violet-200 dark:bg-violet-700', text: 'text-violet-800 dark:text-violet-300', hover: 'hover:bg-violet-300/50 dark:hover:bg-violet-600/50' },
+    [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: { hex: '#ec4899', bg: 'bg-pink-200 dark:bg-pink-700', text: 'text-pink-800 dark:text-pink-300', hover: 'hover:bg-pink-300/50 dark:hover:bg-pink-600/50' },
+    [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: { hex: '#06b6d4', bg: 'bg-cyan-200 dark:bg-cyan-700', text: 'text-cyan-800 dark:text-cyan-300', hover: 'hover:bg-cyan-300/50 dark:hover:bg-cyan-600/50' },
 };
 
 const fallbackColor = areaTypeColors[AreaTypeEnum.QUESTION_NUMBER];
