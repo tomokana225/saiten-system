@@ -201,15 +201,17 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
         
+        // Create boundaries based on centers (approximate)
         if (rowCenters.length > 0) {
             const rowStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[0]) / (rowCenters.length - 1) : height;
-            rowBoundaries.push(0); // Top
-            for(let i=0; i<rowCenters.length; i++) rowBoundaries.push(rowCenters[i] + rowStep/2);
+            // Start half a step before first center
+            const startY = rowCenters[0] - rowStep/2;
+            for(let i=0; i<=rowCenters.length; i++) rowBoundaries.push(startY + i*rowStep);
         }
         if (colCenters.length > 0) {
             const colStep = colCenters.length > 1 ? (colCenters[colCenters.length-1] - colCenters[0]) / (colCenters.length - 1) : width;
-            colBoundaries.push(0); // Left
-            for(let i=0; i<colCenters.length; i++) colBoundaries.push(colCenters[i] + colStep/2);
+            const startX = colCenters[0] - colStep/2;
+            for(let i=0; i<=colCenters.length; i++) colBoundaries.push(startX + i*colStep);
         }
 
         debugInfo.rows = rowCenters;
@@ -654,10 +656,10 @@ export const StudentVerificationEditor = () => {
                                                                 {showDebugGrid && debugInfo && studentIdArea && (
                                                                     <div style={{ 
                                                                         position: 'absolute', 
-                                                                        left: studentIdArea.x, 
-                                                                        top: studentIdArea.y, 
-                                                                        width: studentIdArea.width, 
-                                                                        height: studentIdArea.height, 
+                                                                        left: 0, 
+                                                                        top: 0, 
+                                                                        width: '100%', 
+                                                                        height: '100%', 
                                                                         pointerEvents: 'none' 
                                                                     }}>
                                                                         <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
