@@ -3,6 +3,7 @@ import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
 import { SparklesIcon, SpinnerIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
+import { AnswerSnippet } from './AnswerSnippet';
 
 const answerAndMarkSheetAreas = (areas: Area[]) => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET);
 
@@ -196,6 +197,16 @@ export const PointAllocator = () => {
                     if (!area) return null;
                     return (
                     <div key={point.id} className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+                        {template && (
+                            <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group">
+                                <AnswerSnippet
+                                    imageSrc={template.filePath}
+                                    area={area}
+                                    template={template}
+                                    pannable={true}
+                                />
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-slate-500">問題</label>
