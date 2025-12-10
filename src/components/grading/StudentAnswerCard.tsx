@@ -22,17 +22,29 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ point, detectedMark
                 const isCorrectAnswer = i === point.correctAnswerIndex;
                 const isDetectedAnswer = i === detectedMarkIndex;
                 
-                let borderColor = 'transparent';
-                // If student's detected answer is wrong, show their red choice and the green correct answer.
-                if (isDetectedAnswer && !isCorrectAnswer) {
-                    borderColor = 'rgba(239, 68, 68, 0.7)'; // red
-                } else if (isCorrectAnswer) {
-                    // Show green border on the correct answer, which will also cover the case where the student was correct.
-                    borderColor = 'rgba(34, 197, 94, 0.7)'; // green
+                let style: React.CSSProperties = {
+                    borderWidth: '0px',
+                    backgroundColor: 'transparent',
+                };
+
+                // Logic:
+                // 1. If this index is the Correct Answer -> Green
+                // 2. If this index is what the student marked AND it is NOT Correct -> Red
+                
+                if (isCorrectAnswer) {
+                    style = {
+                        border: '3px solid rgba(34, 197, 94, 0.8)', // Green
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                    };
+                } else if (isDetectedAnswer) {
+                    style = {
+                        border: '3px solid rgba(239, 68, 68, 0.8)', // Red
+                        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    };
                 }
 
                 return (
-                    <div key={i} className="flex-1 border-2" style={{ borderColor, borderWidth: '3px' }}>
+                    <div key={i} className="flex-1 transition-colors" style={style}>
                     </div>
                 );
             })}

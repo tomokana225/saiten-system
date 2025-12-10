@@ -44,13 +44,26 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const imageData = ctx.getImageData(0, 0, img.width, img.height);
             const data = imageData.data;
 
+            // 1. Calculate global average brightness for adaptive thresholding
+            let totalBrightness = 0;
+            let pixelCount = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                // Simple grayscale
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                totalBrightness += gray;
+                pixelCount++;
+            }
+            const avgBrightness = totalBrightness / pixelCount;
+            // Pixels darker than 85% of average are considered "marked". 
+            // This works better for varied lighting than a fixed 128 threshold.
+            const darknessThreshold = avgBrightness * 0.85;
+
             const options = point.markSheetOptions || 4;
             const isHorizontal = point.markSheetLayout === 'horizontal';
             const segmentWidth = isHorizontal ? img.width / options : img.width;
             const segmentHeight = isHorizontal ? img.height : img.height / options;
-            const darkness = Array(options).fill(0);
             
-            const darknessThreshold = 128; 
+            const darknessScores = Array(options).fill(0);
 
             for (let i = 0; i < options; i++) {
                 const xStart = Math.floor(isHorizontal ? i * segmentWidth : 0);
@@ -58,28 +71,47 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
                 const xEnd = Math.ceil(xStart + segmentWidth);
                 const yEnd = Math.ceil(yStart + segmentHeight);
 
-                let darkPixelCount = 0;
-                for (let y = yStart; y < yEnd; y++) {
-                    for (let x = xStart; x < xEnd; x++) {
-                        const idx = (y * img.width + x) * 4;
-                        if (idx > data.length - 4) continue;
+                // Margin to avoid border noise (15% from edges)
+                const xMargin = (xEnd - xStart) * 0.15;
+                const yMargin = (yEnd - yStart) * 0.15;
+
+                let darkPixelScore = 0;
+                for (let y = yStart + yMargin; y < yEnd - yMargin; y++) {
+                    for (let x = xStart + xMargin; x < xEnd - xMargin; x++) {
+                        const idx = (Math.floor(y) * img.width + Math.floor(x)) * 4;
+                        if (idx >= data.length) continue;
                         const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
                         if (gray < darknessThreshold) {
-                            darkPixelCount++;
+                            // Weight by how dark it is compared to threshold
+                            darkPixelScore += (darknessThreshold - gray);
                         }
                     }
                 }
-                darkness[i] = darkPixelCount;
+                darknessScores[i] = darkPixelScore;
             }
             
-            let darkestIndex = -1, maxDarkness = -1;
-            darkness.forEach((d, i) => { if (d > maxDarkness) { maxDarkness = d; darkestIndex = i; } });
+            let maxScore = -1;
+            let maxIndex = -1;
+            darknessScores.forEach((score, index) => {
+                if (score > maxScore) {
+                    maxScore = score;
+                    maxIndex = index;
+                }
+            });
             
-            const totalPixelsPerSegment = segmentWidth * segmentHeight;
-            if (maxDarkness < totalPixelsPerSegment * 0.02) {
-                resolve(-1); // No clear mark detected
+            // Heuristic check: Is the max score significant enough?
+            // Minimum required score depends on segment size, but we can assume
+            // if it's very low, it's just noise.
+            // Using a relative check: Max score should be significantly higher than average score if all were empty?
+            // Or just use a safe baseline.
+            const segmentArea = (segmentWidth * 0.7) * (segmentHeight * 0.7); // Effective ROI area
+            // If avg diff is 10 (out of 255) for 5% of pixels, that's meaningful.
+            const minScoreThreshold = segmentArea * 5; 
+
+            if (maxScore > minScoreThreshold) {
+                resolve(maxIndex);
             } else {
-                resolve(darkestIndex);
+                resolve(-1); // No clear mark detected
             }
         };
         img.onerror = () => resolve(-1);
