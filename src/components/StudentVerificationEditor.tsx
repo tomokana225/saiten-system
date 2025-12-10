@@ -17,16 +17,14 @@ interface DetectionDebugInfo {
 }
 
 // Helper to find peaks in a projection profile
-const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.2): number[] => {
+const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.15): number[] => {
     const peaks: number[] = [];
     let inPeak = false;
     let peakSum = 0;
     let peakMass = 0;
     
     const maxVal = Math.max(...profile);
-    // Dynamic threshold: at least 5 pixels, or ratio of max
-    // Increased threshold slightly to avoid noise in paper texture
-    const threshold = Math.max(5, maxVal * thresholdRatio);
+    const threshold = Math.max(3, maxVal * thresholdRatio); // Lower absolute threshold
 
     for (let i = 0; i < length; i++) {
         const val = profile[i];
@@ -45,7 +43,6 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
             }
         }
     }
-    // Check if peak ends at the edge
     if (inPeak && peakMass > 0) {
         peaks.push(peakSum / peakMass);
     }
@@ -110,7 +107,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             const profile = new Array(size).fill(0);
             
             if (direction === 'row') {
-                // Sum along X (horizontally) to project onto Y axis -> Find Rows
                 for (let y = 0; y < height; y++) {
                     let darkCount = 0;
                     for (let x = scanXStart; x < scanXEnd; x++) {
@@ -119,7 +115,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                     profile[y] = darkCount;
                 }
             } else {
-                // Sum along Y (vertically) to project onto X axis -> Find Cols
                 for (let x = 0; x < width; x++) {
                     let darkCount = 0;
                     for (let y = scanYStart; y < scanYEnd; y++) {
@@ -132,36 +127,34 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         };
 
         // --- Improved Edge Scanning for Non-Linear Grids ---
-        // Prioritize the edges (Right for rows, Bottom for cols) as requested.
         
-        // 1. Detect Rows (Prioritize Right edge)
+        // 1. Detect Rows (Prioritize Right edge heavily as requested)
+        // Only scan the rightmost 10% to capture reference marks and avoid student marks.
         const rowScans = [
-            // Right edge (Primary): 85% to 100% width
-            { label: 'Right', profile: getProjection(Math.floor(width * 0.85), width, 0, height, 'row') },
-            // Left edge (Secondary): 0% to 15% width
-            { label: 'Left', profile: getProjection(0, Math.floor(width * 0.15), 0, height, 'row') },
-            // Center (Fallback): 40% to 60% width
+            { label: 'Right', profile: getProjection(Math.floor(width * 0.90), width, 0, height, 'row') },
+            { label: 'Left', profile: getProjection(0, Math.floor(width * 0.10), 0, height, 'row') },
             { label: 'Center', profile: getProjection(Math.floor(width * 0.4), Math.floor(width * 0.6), 0, height, 'row') },
         ];
 
         let rowCenters: number[] = [];
-        let bestRowConfidence = 0;
+        let bestRowConfidence = -1;
         
         for (const scan of rowScans) {
-            // Lower threshold for edges as timing marks might be smaller
+            // Lower threshold to detect small dots
             const peaks = findPeaksInProfile(scan.profile, height, 0.15);
             
-            // Score based on finding roughly 10 rows (digits 0-9)
-            // Ideally we want 10, but Student ID could be different.
-            // We favor the scan that produces the cleanest set of peaks (closest to 10 or >= 5).
             let confidence = 0;
-            if (peaks.length === 10) confidence = 100;
-            else if (peaks.length > 5 && peaks.length < 15) confidence = 80;
-            else confidence = peaks.length; // fallback
+            if (peaks.length > 0) {
+                confidence = 10; // Base confidence
+                
+                // Massive bonus for Right edge as per user instruction
+                if (scan.label === 'Right') confidence += 200;
+                else if (scan.label === 'Left') confidence += 50;
+                
+                // Bonus for expected counts
+                if (peaks.length === 3 || peaks.length === 10) confidence += 20;
+            }
 
-            // Give bonus to Right/Left scans as they contain timing marks
-            if (scan.label === 'Right') confidence += 10;
-            
             if (confidence > bestRowConfidence) {
                 bestRowConfidence = confidence;
                 rowCenters = peaks;
@@ -169,26 +162,27 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         }
 
         // 2. Detect Cols (Prioritize Bottom edge)
+        // Only scan bottommost 10%
         const colScans = [
-            // Bottom edge (Primary): 85% to 100% height
-            { label: 'Bottom', profile: getProjection(0, width, Math.floor(height * 0.85), height, 'col') },
-            // Top edge (Secondary): 0% to 15% height
-            { label: 'Top', profile: getProjection(0, width, 0, Math.floor(height * 0.15), 'col') },
-            // Center (Fallback): 40% to 60% height
+            { label: 'Bottom', profile: getProjection(0, width, Math.floor(height * 0.90), height, 'col') },
+            { label: 'Top', profile: getProjection(0, width, 0, Math.floor(height * 0.10), 'col') },
             { label: 'Center', profile: getProjection(0, width, Math.floor(height * 0.4), Math.floor(height * 0.6), 'col') }
         ];
 
         let colCenters: number[] = [];
-        let bestColConfidence = 0;
+        let bestColConfidence = -1;
 
         for (const scan of colScans) {
             const peaks = findPeaksInProfile(scan.profile, width, 0.15);
             let confidence = 0;
-            // For cols, we usually expect the number of digits in ID (e.g. 5-8) OR 10 if horizontal layout
-            if (peaks.length >= 3 && peaks.length <= 12) confidence = 80;
-            else confidence = peaks.length;
+            if (peaks.length > 0) {
+                confidence = 10;
+                
+                if (scan.label === 'Bottom') confidence += 200;
+                else if (scan.label === 'Top') confidence += 50;
 
-            if (scan.label === 'Bottom') confidence += 10;
+                if (peaks.length === 10) confidence += 20;
+            }
 
             if (confidence > bestColConfidence) {
                 bestColConfidence = confidence;
@@ -199,62 +193,35 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         // --- Determine Orientation ---
         let orientation: 'vertical' | 'horizontal' = 'vertical';
         
-        if (width > height * 1.2) {
+        // If clearly more columns than rows, it's horizontal (e.g. 3 rows, 10 cols)
+        if (colCenters.length >= 8 && rowCenters.length < 8) {
+            orientation = 'horizontal';
+        } else if (width > height * 1.2) {
             orientation = 'horizontal';
         } else if (height > width * 1.2) {
             orientation = 'vertical';
-        } else {
-            // Square-ish: If more cols than rows, probably horizontal 0-9
-            if (colCenters.length >= 8 && rowCenters.length < 8) orientation = 'horizontal';
-            else orientation = 'vertical';
         }
 
-        // --- Validation & Fallback (Only if detection completely failed) ---
-        // If we found a reasonable number of peaks (e.g. > 4), we TRUST the non-linear spacing found.
-        // If we found very few (< 4), we revert to linear spacing fallback.
-
-        if (orientation === 'vertical') {
-            if (rowCenters.length < 5) {
-                // Fallback: Linear 10 rows
-                rowCenters.length = 0;
-                const step = height / 10;
-                for(let i=0; i<10; i++) rowCenters.push(step * i + step/2);
-            }
-            if (colCenters.length < 2) {
-                 // Fallback: Linear cols
-                 const estimatedCols = Math.max(1, Math.round(width / (height / 10)));
-                 const step = width / estimatedCols;
-                 for(let i=0; i<estimatedCols; i++) colCenters.push(step * i + step/2);
-            }
-        } else {
-            if (colCenters.length < 5) {
-                // Fallback: Linear 10 cols
-                colCenters.length = 0;
-                const step = width / 10;
-                for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
-            }
-            if (rowCenters.length < 2) {
-                 // Fallback: Linear rows
-                 const estimatedRows = Math.max(1, Math.round(height / (width / 10)));
-                 const step = height / estimatedRows;
-                 for(let i=0; i<estimatedRows; i++) rowCenters.push(step * i + step/2);
-            }
+        // --- Fallback (Linear) only if absolutely nothing found ---
+        if (rowCenters.length < 1) {
+             const step = height / 10;
+             for(let i=0; i<10; i++) rowCenters.push(step * i + step/2);
+        }
+        if (colCenters.length < 1) {
+             const step = width / 10;
+             for(let i=0; i<10; i++) colCenters.push(step * i + step/2);
         }
         
-        // Calculate Grid Boundaries for Visualization (Non-Linear)
+        // Calculate Grid Boundaries for Visualization
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
         
-        // Construct boundaries halfway between detected centers
         if (rowCenters.length > 0) {
-            // Start boundary
             const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : 20;
             rowBoundaries.push(Math.max(0, rowCenters[0] - firstStep/2));
-            
             for(let i=0; i < rowCenters.length - 1; i++) {
                 rowBoundaries.push((rowCenters[i] + rowCenters[i+1]) / 2);
             }
-            // End boundary
             const lastStep = rowCenters.length > 1 ? (rowCenters[rowCenters.length-1] - rowCenters[rowCenters.length-2]) : 20;
             rowBoundaries.push(Math.min(height, rowCenters[rowCenters.length-1] + lastStep/2));
         }
@@ -262,7 +229,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         if (colCenters.length > 0) {
             const firstStep = colCenters.length > 1 ? (colCenters[1] - colCenters[0]) : 20;
             colBoundaries.push(Math.max(0, colCenters[0] - firstStep/2));
-
             for(let i=0; i < colCenters.length - 1; i++) {
                 colBoundaries.push((colCenters[i] + colCenters[i+1]) / 2);
             }
@@ -279,7 +245,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
         const indices: number[] = [];
 
         if (orientation === 'horizontal') {
-            // Horizontal Layout: Rows are digits, Cols are values 0-9
             for (let r = 0; r < rowCenters.length; r++) {
                 const centerY = rowCenters[r];
                 const rowScores: {colIdx: number, darkness: number}[] = [];
@@ -296,12 +261,10 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 const winner = rowScores[0];
                 const runnerUp = rowScores[1];
 
-                // Dynamic cell area estimation based on boundaries
                 const cellH = (r < rowBoundaries.length - 1) ? rowBoundaries[r+1] - rowBoundaries[r] : (height / rowCenters.length);
-                const cellW = (width / colCenters.length); // approximate average
+                const cellW = (width / colCenters.length); 
                 const cellArea = cellW * cellH;
-                
-                const minDarkness = cellArea * 0.05; // 5% fill
+                const minDarkness = cellArea * 0.05;
 
                 if (winner.darkness > minDarkness && (rowScores.length < 2 || winner.darkness > runnerUp.darkness * 1.1)) {
                     indices.push(winner.colIdx);
@@ -311,7 +274,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
             }
 
         } else {
-            // Vertical Layout: Cols are digits, Rows are values 0-9
             for (let c = 0; c < colCenters.length; c++) {
                 const centerX = colCenters[c];
                 const colScores: {rowIdx: number, darkness: number}[] = [];
@@ -328,9 +290,8 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
                 const winner = colScores[0];
                 const runnerUp = colScores[1];
                 
-                // Dynamic cell area estimation
                 const cellW = (c < colBoundaries.length - 1) ? colBoundaries[c+1] - colBoundaries[c] : (width / colCenters.length);
-                const cellH = (height / rowCenters.length); // approximate
+                const cellH = (height / rowCenters.length);
                 const cellArea = cellW * cellH;
                 const minDarkness = cellArea * 0.05;
 
@@ -352,7 +313,7 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ in
 
 // Helper for pixel sampling
 function checkFill(width: number, height: number, centerX: number, centerY: number, data: Uint8ClampedArray, isDark: (x:number, y:number)=>boolean) {
-    const sampleRadius = Math.max(2, Math.min(width, height) * 0.015); // Smaller radius for precise sampling
+    const sampleRadius = Math.max(2, Math.min(width, height) * 0.015);
     let darkPixels = 0;
     let totalPixels = 0;
 
@@ -367,7 +328,7 @@ function checkFill(width: number, height: number, centerX: number, centerY: numb
             totalPixels++;
         }
     }
-    const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.30; // 30% threshold for center darkness
+    const isFilled = totalPixels > 0 && (darkPixels / totalPixels) > 0.30;
     return { filled: isFilled, darkPixels };
 }
 
@@ -390,9 +351,14 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
             {debugInfo.rows.map((y, i) => (
                 !isHorizontal && <text key={`row-lbl-${i}`} x="2" y={y + 3} fill="cyan" fontSize={Math.min(10, height/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{i}</text>
             ))}
-            {debugInfo.cols.map((x, i) => (
-                isHorizontal && <text key={`col-lbl-${i}`} x={x - 3} y="10" fill="magenta" fontSize={Math.min(10, width/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{i}</text>
-            ))}
+            {debugInfo.cols.map((x, i) => {
+                // Adjust label for 1-0 numbering if 10 columns
+                let label = i.toString();
+                if (debugInfo.cols.length === 10) {
+                    label = ((i + 1) % 10).toString();
+                }
+                return isHorizontal && <text key={`col-lbl-${i}`} x={x - 3} y="10" fill="magenta" fontSize={Math.min(10, width/15)} fontWeight="bold" style={{ textShadow: '1px 1px 1px black' }}>{label}</text>;
+            })}
             
             {/* Draw Detection Points */}
             {debugInfo.points.map((p, i) => (
@@ -410,13 +376,10 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
             <g transform="translate(2, 2)">
                 <rect x="0" y="0" width="140" height="34" fill="rgba(0,0,0,0.7)" rx="4" />
                 <text x="6" y="12" fill="white" fontSize="9" fontWeight="bold">
-                    {isHorizontal ? '横 (列=0~9)' : '縦 (行=0~9)'}
+                    {isHorizontal ? '横 (列=1~0)' : '縦 (行=0~9)'}
                 </text>
                 <text x="6" y="24" fill="white" fontSize="9">
                     検出: {debugInfo.rows.length}行 x {debugInfo.cols.length}列
-                </text>
-                 <text x="6" y="36" fill="#ccc" fontSize="8">
-                    ※不均等グリッド対応
                 </text>
             </g>
         </svg>
@@ -551,11 +514,8 @@ export const StudentVerificationEditor = () => {
                 if (indices) {
                     const matchIndex = studentInfoList.findIndex(info => {
                         // Generate candidates based on common layouts
-                        // 1. Standard 0-9: index 0 is '0', index 9 is '9' (or vice versa)
-                        //    Usually vertical: 0 at top.
-                        //    Horizontal often: 1, 2, ... 9, 0 (index 0 is '1', index 9 is '0')
                         
-                        const detectedId_TypeA = indices.map(i => i.toString()).join(''); // Direct index
+                        const detectedId_TypeA = indices.map(i => i.toString()).join(''); // Direct index (0->0)
                         const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); // 1..9,0 mapping (idx 0->1, idx 9->0)
 
                         const candidates = [detectedId_TypeA, detectedId_TypeB];
