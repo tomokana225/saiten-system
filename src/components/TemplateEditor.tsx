@@ -145,12 +145,21 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 e.preventDefault();
                 if (clipboard.length > 0) {
                     let maxQuestionNumber = 0;
-                    if (clipboard.some(a => a.type === AreaTypeEnum.MARK_SHEET)) {
-                         const markSheetAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET);
-                         const existingNumbers = markSheetAreas.map(a => a.questionNumber).filter((n): n is number => n !== undefined && isFinite(n));
+                    // Check if any pasted items are questions (Marksheet or Answer)
+                    const hasQuestion = clipboard.some(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
+                    
+                    if (hasQuestion) {
+                         const questionAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
+                         const existingNumbers = questionAreas.map(a => {
+                             if (a.questionNumber !== undefined && isFinite(a.questionNumber)) return a.questionNumber;
+                             // Fallback: try to parse "問X"
+                             const match = a.name.match(/問(\d+)/);
+                             return match ? parseInt(match[1], 10) : 0;
+                         });
                          maxQuestionNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
                     }
-                    let markSheetCounter = 0;
+
+                    let questionCounter = 0;
                     const pastedAreas: Area[] = clipboard.map((area, index) => {
                          const newArea = {
                             ...area,
@@ -159,10 +168,10 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                             x: area.x + 10,
                             y: area.y + 10,
                         };
-                        if (area.type === AreaTypeEnum.MARK_SHEET) {
-                            markSheetCounter++;
-                            newArea.questionNumber = maxQuestionNumber + markSheetCounter;
-                            newArea.name = `マークシート${newArea.questionNumber}`;
+                        if (area.type === AreaTypeEnum.MARK_SHEET || area.type === AreaTypeEnum.ANSWER) {
+                            questionCounter++;
+                            newArea.questionNumber = maxQuestionNumber + questionCounter;
+                            newArea.name = `問${newArea.questionNumber}`;
                         }
                         return newArea;
                     });
@@ -384,15 +393,35 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             if (width > MIN_AREA_SIZE && height > MIN_AREA_SIZE) {
                 let newName: string;
                 let questionNumber: number | undefined;
-                if (activeTool === AreaTypeEnum.MARK_SHEET) {
-                    const markSheetAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET);
-                    const existingNumbers = markSheetAreas.map(a => a.questionNumber).filter((n): n is number => n !== undefined && isFinite(n));
+
+                const isQuestionArea = activeTool === AreaTypeEnum.MARK_SHEET || activeTool === AreaTypeEnum.ANSWER;
+
+                if (isQuestionArea) {
+                    // Unified numbering for both MarkSheet and Answer types
+                    const questionAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
+                    const existingNumbers = questionAreas.map(a => {
+                        if (a.questionNumber !== undefined && isFinite(a.questionNumber)) return a.questionNumber;
+                        // Fallback: parse "問X"
+                        const match = a.name.match(/問(\d+)/);
+                        return match ? parseInt(match[1], 10) : 0;
+                    });
                     const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
                     questionNumber = maxNumber + 1;
-                    newName = `マークシート${questionNumber}`;
+                    newName = `問${questionNumber}`;
                 } else {
-                    newName = `${activeTool}${areas.filter(a => a.type === activeTool).length + 1}`;
+                    const typeNameMap: Record<string, string> = {
+                        [AreaTypeEnum.NAME]: '氏名',
+                        [AreaTypeEnum.SUBTOTAL]: '小計',
+                        [AreaTypeEnum.TOTAL]: '合計',
+                        [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
+                        [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
+                        [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号'
+                    };
+                    const prefix = typeNameMap[activeTool] || activeTool;
+                    const count = areas.filter(a => a.type === activeTool).length;
+                    newName = `${prefix}${count + 1}`;
                 }
+
                 const newArea: Area = {
                     id: Date.now(), name: newName, type: activeTool as AreaType,
                     x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y),

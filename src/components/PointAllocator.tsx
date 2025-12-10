@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
-import { SparklesIcon, SpinnerIcon } from './icons';
+import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { AnswerSnippet } from './AnswerSnippet';
 
@@ -15,6 +15,7 @@ export const PointAllocator = () => {
     const subtotalAreas = useMemo(() => areas.filter(a => a.type === AreaType.SUBTOTAL), [areas]);
     const questionNumberAreas = useMemo(() => areas.filter(a => a.type === AreaType.QUESTION_NUMBER), [areas]);
     const [isDetecting, setIsDetecting] = useState(false);
+    const [showImages, setShowImages] = useState(true);
 
     const [internalPoints, setInternalPoints] = useState<Point[]>(() => {
         const initialPoints = relevantAreas.map(area => {
@@ -185,10 +186,20 @@ export const PointAllocator = () => {
         <div className="w-full max-w-full mx-auto flex flex-col h-full">
             <div className="flex-shrink-0 flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">各解答欄への配点設定</h3>
-                 <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
-                    {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                    {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowImages(!showImages)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                        title={showImages ? "画像を隠す" : "画像を表示"}
+                    >
+                        {showImages ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                        <span>{showImages ? '画像を隠す' : '画像を表示'}</span>
+                    </button>
+                     <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
+                        {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                        {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
+                    </button>
+                </div>
             </div>
             <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md">
                 <div className="space-y-4">
@@ -197,7 +208,7 @@ export const PointAllocator = () => {
                     if (!area) return null;
                     return (
                     <div key={point.id} className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
-                        {template && (
+                        {showImages && template && (
                             <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group">
                                 <AnswerSnippet
                                     imageSrc={template.filePath}

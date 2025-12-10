@@ -409,17 +409,20 @@ export const StudentVerificationEditor = () => {
             for (let i = 0; i < studentInfoList.length; i++) {
                 if (newSheets[i]) {
                     finalSheets.push(newSheets[i]);
+                } else if (remainingSheets.length > 0) {
+                    finalSheets.push(remainingSheets.shift()!);
                 } else {
                     finalSheets.push(createBlankSheet()); 
                 }
             }
             
-            // Append unmatched sheets at the end
+            // Append any left over remainingSheets
             finalSheets.push(...remainingSheets);
 
             handleStudentSheetsChange(finalSheets);
-            if (!showDebugGrid) setShowDebugGrid(true); 
-            alert(`${matchCount}件の解答用紙をマッチングしました。「認識位置を表示」でズレがないか確認してください。`);
+            // Do not auto-enable debug grid so name area stays visible for verification
+            // if (!showDebugGrid) setShowDebugGrid(true); 
+            alert(`${matchCount}件の解答用紙をマッチングしました。「認識位置を表示」チェックボックスでマーク読み取り状況を確認できます。`);
 
         } catch (error) {
             console.error("Sorting error:", error);
