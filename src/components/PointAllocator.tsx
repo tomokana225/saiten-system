@@ -102,8 +102,8 @@ export const PointAllocator = () => {
                     const xStart = isHorizontal ? i * segmentWidth : 0;
                     const yStart = isHorizontal ? 0 : i * segmentHeight;
                     
-                    // Increase margin to 20% to ignore borders and focus on the center fill
-                    const roiMargin = 0.2;
+                    // Increase margin to 25% to ignore borders and focus on the center fill
+                    const roiMargin = 0.25;
                     const roiXStart = Math.floor(xStart + segmentWidth * roiMargin);
                     const roiYStart = Math.floor(yStart + segmentHeight * roiMargin);
                     const roiXEnd = Math.ceil(xStart + segmentWidth * (1 - roiMargin));
@@ -134,14 +134,15 @@ export const PointAllocator = () => {
                 const winner = scoresWithIndices[0];
                 const runnerUp = scoresWithIndices[1];
                 
-                const roiW = segmentWidth * (1 - 2 * 0.2);
-                const roiH = segmentHeight * (1 - 2 * 0.2);
+                const roiW = segmentWidth * (1 - 2 * 0.25);
+                const roiH = segmentHeight * (1 - 2 * 0.25);
                 const roiArea = roiW * roiH;
-                const minThreshold = roiArea * 255 * 0.05; // 5% darkness required
+                // Relaxed: 2% darkness required
+                const minThreshold = roiArea * 255 * 0.02; 
 
-                // Relaxed ratio from 1.4 to 1.2 to detect lighter marks
+                // Relaxed ratio from 1.2 to 1.1
                 const isConfidentWinner = winner.score > minThreshold && 
-                                          (!runnerUp || winner.score > runnerUp.score * 1.2);
+                                          (!runnerUp || winner.score > runnerUp.score * 1.1);
 
                 if (isConfidentWinner) {
                     const pointIndex = updatedPoints.findIndex(p => p.id === point.id);
