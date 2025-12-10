@@ -1,15 +1,13 @@
 import React from 'react';
-import type { StudentResult, Template, Area, Point, AllScores, LayoutSettings, Annotation } from '../../types';
+import type { StudentResult, Template, Area, Point, AllScores, LayoutSettings, Annotation, TextAnnotation } from '../../types';
 import { AreaType, ScoringStatus } from '../../types';
 
-// This component is a bit complex due to SVG rendering.
-// It renders annotations (drawings/text) on top of the answer sheet.
+// This component renders annotations (drawings/text) on top of the answer sheet for printing.
 const AnnotationOverlayForPrint: React.FC<{ annotations: Annotation[], width: number, height: number }> = ({ annotations, width, height }) => {
     if (!annotations || annotations.length === 0) {
         return null;
     }
 
-    // Unify logic with AnnotationOverlay.tsx to ensure stability. Use a 0-100 viewBox.
     const generatePenPath = (points: { x: number; y: number }[]): string => {
         if (points.length < 2) {
             return points.length === 1 ? `M ${points[0].x * 100} ${points[0].y * 100} L ${points[0].x * 100} ${points[0].y * 100}` : '';
@@ -41,31 +39,49 @@ const AnnotationOverlayForPrint: React.FC<{ annotations: Annotation[], width: nu
         return path;
     };
 
+    const shapes = annotations.filter(a => a.tool !== 'text');
+    const texts = annotations.filter(a => a.tool === 'text') as TextAnnotation[];
 
     return (
-        <svg
-            width="100%"
-            height="100%"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
-        >
-            {annotations.map(anno => {
-                switch (anno.tool) {
-                    case 'pen':
-                        return <path key={anno.id} d={generatePenPath(anno.points)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
-                    case 'wave':
-                         return <path key={anno.id} d={generateWavePath(anno.points, anno.strokeWidth)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>;
-                    case 'circle':
-                        return <ellipse key={anno.id} cx={(anno.x + anno.width / 2) * 100} cy={(anno.y + anno.height / 2) * 100} rx={anno.width / 2 * 100} ry={anno.height / 2 * 100} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" vectorEffect="non-scaling-stroke"/>;
-                    case 'text':
-                        // Font size may not scale perfectly for printing now, but it will be stable.
-                        return <text key={anno.id} x={anno.x * 100} y={anno.y * 100} fill={anno.color} fontSize={anno.fontSize} dominantBaseline="hanging" style={{ whiteSpace: 'pre-wrap' }}>{anno.text}</text>;
-                    default:
-                        return null;
-                }
-            })}
-        </svg>
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
+            >
+                {shapes.map(anno => {
+                    switch (anno.tool) {
+                        case 'pen':
+                            return <path key={anno.id} d={generatePenPath(anno.points)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+                        case 'wave':
+                             return <path key={anno.id} d={generateWavePath(anno.points, anno.strokeWidth)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>;
+                        case 'circle':
+                            return <ellipse key={anno.id} cx={(anno.x + anno.width / 2) * 100} cy={(anno.y + anno.height / 2) * 100} rx={anno.width / 2 * 100} ry={anno.height / 2 * 100} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" vectorEffect="non-scaling-stroke"/>;
+                        default:
+                            return null;
+                    }
+                })}
+            </svg>
+            {texts.map(anno => (
+                <div 
+                    key={anno.id} 
+                    style={{
+                        position: 'absolute',
+                        left: `${anno.x * 100}%`,
+                        top: `${anno.y * 100}%`,
+                        color: anno.color,
+                        fontSize: `${anno.fontSize}px`,
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.2,
+                        fontFamily: 'sans-serif',
+                    }}
+                >
+                    {anno.text}
+                </div>
+            ))}
+        </div>
     );
 };
 

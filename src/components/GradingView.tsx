@@ -31,7 +31,7 @@ const cropImage = async (imagePath: string, area: import('../types').Area): Prom
     });
 };
 
-const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<number> => {
+const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<number | number[]> => {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
@@ -93,33 +93,25 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             // The brightest option represents the paper color.
             const paperBrightness = Math.max(...roiAverages);
 
-            // 3. Find the darkest option (lowest brightness value)
-            let minBrightness = 255;
-            let minIndex = -1;
+            // 3. Find thresholds
+            const thresholdRatio = 0.80; 
+            const minDiff = 30;
 
+            const markedIndices: number[] = [];
+            
             roiAverages.forEach((brightness, index) => {
-                if (brightness < minBrightness) {
-                    minBrightness = brightness;
-                    minIndex = index;
+                const isDarkEnough = (brightness < paperBrightness * thresholdRatio) && ((paperBrightness - brightness) > minDiff);
+                if (isDarkEnough) {
+                    markedIndices.push(index);
                 }
             });
 
-            // 4. Threshold check
-            // The marked option must be significantly darker than the paper.
-            // e.g., Mark must be < 80% brightness of the paper.
-            // If paper is white (250), mark must be < 200.
-            // If paper is gray (100), mark must be < 80.
-            const thresholdRatio = 0.80; 
-            
-            // Absolute difference check (e.g. at least 30 levels darker) handles noise better on very dark images
-            const minDiff = 30;
-
-            const isDarkEnough = (minBrightness < paperBrightness * thresholdRatio) && ((paperBrightness - minBrightness) > minDiff);
-
-            if (isDarkEnough && minIndex !== -1) {
-                resolve(minIndex);
+            if (markedIndices.length === 0) {
+                resolve(-1); // No mark detected
+            } else if (markedIndices.length === 1) {
+                resolve(markedIndices[0]); // Single mark
             } else {
-                resolve(-1); // No mark detected (or nothing dark enough)
+                resolve(markedIndices); // Multiple marks
             }
         };
         img.onerror = () => resolve(-1);
@@ -215,12 +207,28 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     const studentSnippet = await cropImage(student.filePath, area);
                     if (!studentSnippet) continue;
                     
-                    const detectedMarkIndex = await analyzeMarkSheetSnippet(studentSnippet, point);
+                    const detectedMarkResult = await analyzeMarkSheetSnippet(studentSnippet, point);
                     
-                    // If -1 (no mark), default to INCORRECT with 0 score
-                    const status = (detectedMarkIndex !== -1 && detectedMarkIndex === point.correctAnswerIndex) 
-                        ? ScoringStatus.CORRECT 
-                        : ScoringStatus.INCORRECT;
+                    let status = ScoringStatus.INCORRECT;
+                    let detectedMarkIndex: number | number[] | undefined = undefined;
+
+                    // If single valid mark found
+                    if (typeof detectedMarkResult === 'number') {
+                        if (detectedMarkResult >= 0) {
+                             if (detectedMarkResult === point.correctAnswerIndex) {
+                                 status = ScoringStatus.CORRECT;
+                             }
+                             detectedMarkIndex = detectedMarkResult;
+                        } else {
+                            // -1 (no mark)
+                            status = ScoringStatus.INCORRECT;
+                            detectedMarkIndex = undefined; 
+                        }
+                    } else if (Array.isArray(detectedMarkResult)) {
+                        // Multiple marks -> Incorrect
+                        status = ScoringStatus.INCORRECT;
+                        detectedMarkIndex = detectedMarkResult;
+                    }
                         
                     const score = status === ScoringStatus.CORRECT ? point.points : 0;
                     

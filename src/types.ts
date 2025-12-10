@@ -154,7 +154,7 @@ export interface ScoreData {
     status: ScoringStatus;
     score: number | null;
     annotations?: Annotation[];
-    detectedMarkIndex?: number;
+    detectedMarkIndex?: number | number[]; // Supports multiple detected marks
     manualPanOffset?: { x: number; y: number };
 }
 

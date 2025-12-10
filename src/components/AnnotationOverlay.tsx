@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Annotation } from '../types';
+import type { Annotation, TextAnnotation } from '../types';
 
 interface AnnotationOverlayProps {
     annotations: Annotation[];
@@ -46,11 +46,13 @@ export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({ annotation
         return path;
     };
 
+    const shapes = annotations.filter(a => a.tool !== 'text');
+    const texts = annotations.filter(a => a.tool === 'text') as TextAnnotation[];
 
     return (
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
             <svg width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100">
-                {annotations.map(anno => {
+                {shapes.map(anno => {
                     switch (anno.tool) {
                         case 'pen':
                             return <path key={anno.id} d={generatePenPath(anno.points)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
@@ -58,13 +60,29 @@ export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({ annotation
                             return <path key={anno.id} d={generateWavePath(anno.points)} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>;
                         case 'circle':
                             return <ellipse key={anno.id} cx={(anno.x + anno.width / 2) * 100} cy={(anno.y + anno.height / 2) * 100} rx={anno.width / 2 * 100} ry={anno.height / 2 * 100} stroke={anno.color} strokeWidth={anno.strokeWidth} fill="none" vectorEffect="non-scaling-stroke"/>;
-                        case 'text':
-                            return <text key={anno.id} x={anno.x * 100} y={anno.y * 100} fill={anno.color} fontSize={anno.fontSize} dominantBaseline="hanging" style={{ whiteSpace: 'pre' }}>{anno.text}</text>;
                         default:
                             return null;
                     }
                 })}
             </svg>
+            {texts.map(anno => (
+                <div 
+                    key={anno.id} 
+                    style={{
+                        position: 'absolute',
+                        left: `${anno.x * 100}%`,
+                        top: `${anno.y * 100}%`,
+                        color: anno.color,
+                        fontSize: `${anno.fontSize}px`,
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.2,
+                        fontFamily: 'sans-serif',
+                        pointerEvents: 'none' // Allow clicks to pass through if needed, though editor handles editing via mode
+                    }}
+                >
+                    {anno.text}
+                </div>
+            ))}
         </div>
     );
 };

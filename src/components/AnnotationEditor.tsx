@@ -228,7 +228,14 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
                                 value={textInput.value}
                                 onChange={(e) => setTextInput(prev => prev ? {...prev, value: e.target.value} : null)}
                                 onBlur={handleTextBlur}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextBlur(); } }}
+                                onKeyDown={(e) => { 
+                                    // Prevent commit on Enter if using IME (Japanese input)
+                                    // Allow Shift+Enter for new line
+                                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { 
+                                        e.preventDefault(); 
+                                        handleTextBlur(); 
+                                    } 
+                                }}
                                 style={{
                                     position: 'absolute',
                                     left: `${textInput.x * 100}%`,
@@ -238,10 +245,14 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
                                     background: 'rgba(255, 255, 255, 0.8)',
                                     border: '1px dashed #333',
                                     outline: 'none',
-                                    resize: 'none',
+                                    resize: 'both',
                                     lineHeight: 1.2,
                                     padding: '2px',
                                     fontFamily: 'sans-serif',
+                                    minWidth: '100px',
+                                    minHeight: '1.5em',
+                                    whiteSpace: 'pre-wrap',
+                                    overflow: 'hidden'
                                 }}
                             />
                         )}

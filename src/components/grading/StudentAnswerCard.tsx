@@ -7,7 +7,7 @@ import { CircleCheckIcon, XIcon as XCircleIcon, TriangleIcon, SpinnerIcon, Penci
 
 interface MarkSheetOverlayProps {
     point: Point;
-    detectedMarkIndex: number | undefined;
+    detectedMarkIndex: number | number[] | undefined;
 }
 
 const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ point, detectedMarkIndex }) => {
@@ -20,7 +20,14 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ point, detectedMark
         <div className={`absolute inset-0 flex ${isHorizontal ? 'flex-row' : 'flex-col'} pointer-events-none`}>
             {options.map((_, i) => {
                 const isCorrectAnswer = i === point.correctAnswerIndex;
-                const isDetectedAnswer = i === detectedMarkIndex;
+                
+                let isDetectedAnswer = false;
+                if (Array.isArray(detectedMarkIndex)) {
+                    isDetectedAnswer = detectedMarkIndex.includes(i);
+                } else if (detectedMarkIndex !== undefined && detectedMarkIndex >= 0) {
+                    isDetectedAnswer = i === detectedMarkIndex;
+                }
+
                 const isIncorrectMark = isDetectedAnswer && !isCorrectAnswer;
                 
                 let style: React.CSSProperties = {

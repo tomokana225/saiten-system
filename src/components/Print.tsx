@@ -47,7 +47,13 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
 
     const printRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<'report' | 'sheets'>(initialTab);
-    const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set(results.map(r => r.id)));
+    
+    // Only select students who have a filePath (meaning they have an uploaded answer sheet) by default.
+    // This prevents printing blank sheets with 0 scores for absent students.
+    const [selectedStudents, setSelectedStudents] = useState<Set<string>>(
+        new Set(results.filter(r => r.filePath).map(r => r.id))
+    );
+    
     const [sortOrder, setSortOrder] = useState<'rank' | 'number'>('rank');
     const [reportLayoutSettings, setReportLayoutSettings] = useState<ReportLayoutSettings>({ orientation: 'portrait', reportsPerPage: 1, questionTableColumns: 1 });
     const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>(defaultLayoutSettings);
