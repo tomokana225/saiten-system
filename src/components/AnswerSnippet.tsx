@@ -12,11 +12,12 @@ interface PannableImageProps {
     onClick?: () => void;
     manualPanOffset?: { x: number; y: number };
     onPanCommit?: (newOffset: { x: number; y: number }) => void;
+    children?: React.ReactNode;
 }
 
 // Inner component that safely contains all the hooks for panning and zooming
 const PannableImage: React.FC<PannableImageProps> = ({
-    imageDataUrl, imageWidth, imageHeight, area, pannable, onClick, manualPanOffset, onPanCommit
+    imageDataUrl, imageWidth, imageHeight, area, pannable, onClick, manualPanOffset, onPanCommit, children
 }) => {
     // All hooks are safely called at the top level of this component
     const [scale, setScale] = useState(1);
@@ -201,6 +202,7 @@ const PannableImage: React.FC<PannableImageProps> = ({
                         imageRendering: 'crisp-edges',
                     }}
                 />
+                {children}
             </div>
         </div>
     );
@@ -217,6 +219,7 @@ interface AnswerSnippetProps {
     onClick?: () => void;
     manualPanOffset?: { x: number; y: number };
     onPanCommit?: (newOffset: { x: number; y: number }) => void;
+    children?: React.ReactNode;
 }
 
 // Main component, handles loading and error states before rendering the inner component
@@ -317,6 +320,8 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = (props) => {
             imageHeight={imageData.height}
             area={scaledArea!}
             pannable={props.pannable ?? false}
-        />
+        >
+            {props.children}
+        </PannableImage>
     );
 };

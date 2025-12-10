@@ -108,7 +108,6 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
 
         // --- Fallback Logic ---
         // If we didn't find exactly 10 rows or 4 cols, fallback to geometric division
-        // Assuming the marks might be missing or the crop is tight around bubbles
         let finalRowCenters = rowCenters;
         let finalColCenters = colCenters;
 
@@ -122,16 +121,8 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         if (colCenters.length !== 4) {
             // console.warn(`Detected ${colCenters.length} cols, falling back to geometric split.`);
             finalColCenters = [];
-            // If we detected timing marks, the bubbles are to the LEFT of them.
-            // If not, we assume full width.
-            // Heuristic: If we used timing marks, we assumed they were on the right.
-            // The bubbles should be in the left 80%? 
-            // If fallback, assume simple 4 cols distributed evenly.
             const colWidth = width / 4;
             for(let i=0; i<4; i++) finalColCenters.push(colWidth * i + colWidth/2);
-        } else {
-            // If we detected columns via bottom marks, use them directly. 
-            // However, the bottom marks should align with the bubble columns.
         }
 
         debugInfo.rows = finalRowCenters;
@@ -142,12 +133,14 @@ const analyzeStudentIdMark = async (imagePath: string, area: Area): Promise<{ id
         const numCols = 4; // We expect 4 digits
         const numRows = 10; // We expect 0-9
 
-        // If we have more detected centers than needed, take the ones that make sense (e.g. first 4 cols)
-        // For simplicity, we sample at the computed centers.
-
         for (let c = 0; c < numCols; c++) {
             // If we fell back to geometric, use geometric. If we have detected centers, use them.
             // If we have > 4 detected cols, usually the first 4 are the digits.
+            // If timing marks are on right, rows are usually aligned.
+            // If timing marks are on bottom, cols are usually aligned.
+            
+            // Adjust col index if using detected centers which might include extra marks?
+            // The prompt image shows bubbles are aligned with bottom marks.
             const centerX = c < finalColCenters.length ? finalColCenters[c] : (width/4 * c + width/8);
             
             const columnScores: {row: number, darkness: number}[] = [];
@@ -205,30 +198,28 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
     if (!debugInfo || debugInfo.points.length === 0) return null;
 
     return (
-        <div className="absolute inset-0 pointer-events-none z-10">
-            <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
-                {/* Draw grid lines for debugging if rows/cols detected */}
-                {debugInfo.rows.map((y, i) => (
-                    <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
-                ))}
-                {debugInfo.cols.map((x, i) => (
-                    <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
-                ))}
-                
-                {/* Draw intersection points */}
-                {debugInfo.points.map((p, i) => (
-                    <circle 
-                        key={i} 
-                        cx={p.x} 
-                        cy={p.y} 
-                        r={width * 0.015} 
-                        fill={p.filled ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.4)"} 
-                        stroke="white"
-                        strokeWidth="1"
-                    />
-                ))}
-            </svg>
-        </div>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+            {/* Draw grid lines for debugging if rows/cols detected */}
+            {debugInfo.rows.map((y, i) => (
+                <line key={`row-${i}`} x1="0" y1={y} x2={width} y2={y} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
+            ))}
+            {debugInfo.cols.map((x, i) => (
+                <line key={`col-${i}`} x1={x} y1="0" x2={x} y2={height} stroke="rgba(0, 255, 255, 0.3)" strokeWidth="1" strokeDasharray="2 2"/>
+            ))}
+            
+            {/* Draw intersection points */}
+            {debugInfo.points.map((p, i) => (
+                <circle 
+                    key={i} 
+                    cx={p.x} 
+                    cy={p.y} 
+                    r={width * 0.015} 
+                    fill={p.filled ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.4)"} 
+                    stroke="white"
+                    strokeWidth="1"
+                />
+            ))}
+        </svg>
     );
 };
 
@@ -401,12 +392,9 @@ export const StudentVerificationEditor = () => {
         }
     };
 
-    // Effect to run initial detection on load if debug grid is on, just to populate visuals?
-    // Probably too heavy. Only populate on sort or explicit check? 
-    // Let's create a "Scan" button if debug is on and no data.
     const handleRefreshDebug = async () => {
         if (!studentIdArea) return;
-        setIsSorting(true);
+        // Just refresh visual debug info for existing sheets
         const newDebugInfos: Record<string, DetectionDebugInfo> = {};
         for (const sheet of uploadedSheets) {
             if (sheet.filePath) {
@@ -415,7 +403,6 @@ export const StudentVerificationEditor = () => {
             }
         }
         setDebugInfos(newDebugInfos);
-        setIsSorting(false);
     };
 
     return (
@@ -429,7 +416,15 @@ export const StudentVerificationEditor = () => {
                     {studentIdArea && (
                         <>
                             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 cursor-pointer bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
-                                <input type="checkbox" checked={showDebugGrid} onChange={e => { setShowDebugGrid(e.target.checked); if(e.target.checked && Object.keys(debugInfos).length===0) handleRefreshDebug(); }} className="rounded text-sky-600"/>
+                                <input 
+                                    type="checkbox" 
+                                    checked={showDebugGrid} 
+                                    onChange={e => { 
+                                        setShowDebugGrid(e.target.checked); 
+                                        if(e.target.checked && Object.keys(debugInfos).length === 0) handleRefreshDebug(); 
+                                    }} 
+                                    className="rounded text-sky-600"
+                                />
                                 <EyeIcon className="w-4 h-4"/>
                                 <span>認識位置を表示</span>
                             </label>
@@ -479,18 +474,28 @@ export const StudentVerificationEditor = () => {
                                             <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0"><GripVerticalIcon className="w-6 h-6" /></div>
                                             <div className="flex-1 h-full relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
                                                 {sheet.filePath ? (
-                                                    // Decide whether to show Name or ID Area based on debug mode
                                                     <div className="relative w-full h-full">
                                                         <AnswerSnippet 
                                                             imageSrc={sheet.filePath} 
                                                             area={showDebugGrid && studentIdArea ? studentIdArea : nameArea} 
                                                             template={template} 
-                                                        />
-                                                        {showDebugGrid && debugInfo && studentIdArea && (
-                                                            <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
-                                                        )}
+                                                        >
+                                                            {showDebugGrid && debugInfo && studentIdArea && (
+                                                                <div style={{ 
+                                                                    position: 'absolute', 
+                                                                    left: studentIdArea.x, 
+                                                                    top: studentIdArea.y, 
+                                                                    width: studentIdArea.width, 
+                                                                    height: studentIdArea.height, 
+                                                                    pointerEvents: 'none' 
+                                                                }}>
+                                                                    <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
+                                                                </div>
+                                                            )}
+                                                        </AnswerSnippet>
+                                                        
                                                         {showDebugGrid && !debugInfo && (
-                                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white text-xs">未スキャン</div>
+                                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white text-xs pointer-events-none">未スキャン</div>
                                                         )}
                                                     </div>
                                                 ) : (
