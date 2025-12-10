@@ -519,6 +519,10 @@ export const StudentVerificationEditor = () => {
                             const isDraggable = !!sheet;
                             const debugInfo = sheet ? debugInfos[sheet.id] : undefined;
                             
+                            // Determine the target area to display (Name or ID Mark)
+                            // If neither exists, targetArea will be undefined.
+                            const targetArea = showDebugGrid && studentIdArea ? studentIdArea : nameArea;
+
                             return (
                                 <div 
                                     key={sheet?.id || `empty-sheet-${index}`}
@@ -538,26 +542,32 @@ export const StudentVerificationEditor = () => {
                                             <div className="flex-1 h-full relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
                                                 {sheet.filePath ? (
                                                     <div className="relative w-full h-full">
-                                                        <AnswerSnippet 
-                                                            imageSrc={sheet.filePath} 
-                                                            area={showDebugGrid && studentIdArea ? studentIdArea : nameArea} 
-                                                            template={template} 
-                                                        >
-                                                            {showDebugGrid && debugInfo && studentIdArea && (
-                                                                <div style={{ 
-                                                                    position: 'absolute', 
-                                                                    left: studentIdArea.x, 
-                                                                    top: studentIdArea.y, 
-                                                                    width: studentIdArea.width, 
-                                                                    height: studentIdArea.height, 
-                                                                    pointerEvents: 'none' 
-                                                                }}>
-                                                                    <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
-                                                                </div>
-                                                            )}
-                                                        </AnswerSnippet>
+                                                        {targetArea ? (
+                                                            <AnswerSnippet 
+                                                                imageSrc={sheet.filePath} 
+                                                                area={targetArea} 
+                                                                template={template} 
+                                                            >
+                                                                {showDebugGrid && debugInfo && studentIdArea && (
+                                                                    <div style={{ 
+                                                                        position: 'absolute', 
+                                                                        left: studentIdArea.x, 
+                                                                        top: studentIdArea.y, 
+                                                                        width: studentIdArea.width, 
+                                                                        height: studentIdArea.height, 
+                                                                        pointerEvents: 'none' 
+                                                                    }}>
+                                                                        <GridOverlay debugInfo={debugInfo} width={studentIdArea.width} height={studentIdArea.height} />
+                                                                    </div>
+                                                                )}
+                                                            </AnswerSnippet>
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full text-xs text-slate-400 p-2 text-center">
+                                                                {showDebugGrid ? '「学籍番号」' : '「氏名」'}エリアが<br/>設定されていません
+                                                            </div>
+                                                        )}
                                                         
-                                                        {showDebugGrid && !debugInfo && (
+                                                        {showDebugGrid && !debugInfo && studentIdArea && (
                                                             <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white text-xs pointer-events-none">未スキャン</div>
                                                         )}
                                                     </div>
