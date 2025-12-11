@@ -236,7 +236,7 @@ export const StudentVerificationEditor = () => {
     // --- Image Manipulation Logic ---
 
     // Reorder images for different scanning patterns
-    const handleReorderImages = (mode: 'interleaved' | 'stacked') => {
+    const handleReorderImages = (mode: 'interleaved' | 'stacked' | 'stacked-reverse') => {
         const flatImages: string[] = [];
         uploadedSheets.forEach(s => s.images.forEach(img => { if (img) flatImages.push(img); }));
         
@@ -264,11 +264,19 @@ export const StudentVerificationEditor = () => {
                 });
             }
         } else {
-            // Stacked: Student s gets images [s, s+S, s+2S...] (1-1, 2-1... then 1-2, 2-2...)
+            // Stacked: Student s gets images [s, s+S, s+2S...]
             for (let s = 0; s < S; s++) {
                 const studentImages: (string | null)[] = [];
                 for (let p = 0; p < P; p++) {
-                    const idx = p * S + s;
+                    const stackStart = p * S;
+                    let idx = stackStart + s; // Default: forward order for this stack
+
+                    // If 'stacked-reverse' mode and it's a "back" side page (assuming alternating 1st=front, 2nd=back)
+                    // We treat odd index pages (1, 3...) as reversed stacks.
+                    if (mode === 'stacked-reverse' && p % 2 !== 0) {
+                        idx = stackStart + (S - 1 - s);
+                    }
+
                     studentImages.push(idx < N ? flatImages[idx] : null);
                 }
                 
@@ -579,9 +587,16 @@ export const StudentVerificationEditor = () => {
                                 <button 
                                     onClick={() => handleReorderImages('stacked')} 
                                     className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
-                                    title="例: 全員の1枚目, 全員の2枚目..."
+                                    title="例: 全員の1枚目(正順), 全員の2枚目(正順)..."
                                 >
                                     ページごと
+                                </button>
+                                <button 
+                                    onClick={() => handleReorderImages('stacked-reverse')} 
+                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
+                                    title="例: 全員の1枚目(正順), 全員の2枚目(逆順)... (ADF両面スキャン時などに使用)"
+                                >
+                                    ページごと(裏逆)
                                 </button>
                             </div>
                         </div>
