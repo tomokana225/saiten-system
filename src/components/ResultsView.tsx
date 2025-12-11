@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { StudentResult, Area, Point, AllScores, QuestionStats } from '../types';
 import { AreaType, ScoringStatus } from '../types';
-import { FileDownIcon, PrintIcon, FileTextIcon, ListIcon, PieChartIcon } from './icons';
+import { FileDownIcon, PrintIcon, FileTextIcon, ListIcon, PieChartIcon, ArrowDown01Icon, ArrowDownWideNarrowIcon } from './icons';
 import * as xlsx from 'xlsx';
 import { useProject } from '../context/ProjectContext';
 
@@ -66,17 +66,42 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
     const { calculatedResults: results, activeProject } = useProject();
     const { areas, points, scores } = activeProject!;
     const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
+    const [sortOrder, setSortOrder] = useState<'number' | 'score'>('number');
     
     const answerPoints = useMemo(() => {
         const answerAreaIds = new Set(areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET).map(a => a.id));
         return points.filter(p => answerAreaIds.has(p.id));
     }, [areas, points]);
 
+    const sortedResults = useMemo(() => {
+        const sorted = [...results];
+        if (sortOrder === 'number') {
+            sorted.sort((a, b) => {
+                const classCompare = a.class.localeCompare(b.class);
+                if (classCompare !== 0) return classCompare;
+                const numA = parseInt(a.number, 10), numB = parseInt(b.number, 10);
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return a.number.localeCompare(b.number);
+            });
+        } else {
+            sorted.sort((a, b) => {
+                if (a.isAbsent && !b.isAbsent) return 1;
+                if (!a.isAbsent && b.isAbsent) return -1;
+                if (a.isAbsent && b.isAbsent) return 0;
+                return b.totalScore - a.totalScore;
+            });
+        }
+        return sorted;
+    }, [results, sortOrder]);
+
     const questionStats = useMemo((): QuestionStats[] => {
-        if (results.length === 0) return [];
+        // Exclude absent students from stats calculations
+        const presentResults = results.filter(r => !r.isAbsent);
+        if (presentResults.length === 0) return [];
+
         return answerPoints.map(point => {
             let correctCount = 0, partialCount = 0, incorrectCount = 0, unscoredCount = 0, totalScore = 0;
-            results.forEach(result => {
+            presentResults.forEach(result => {
                 const scoreData = scores[result.id]?.[point.id];
                 if (scoreData) {
                     totalScore += scoreData.score || 0;
@@ -90,7 +115,7 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
                     unscoredCount++;
                 }
             });
-            const totalStudents = results.length;
+            const totalStudents = presentResults.length;
             const gradedStudents = totalStudents - unscoredCount;
             return {
                 id: point.id, label: point.label, fullMarks: point.points,
@@ -105,7 +130,11 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
 
     const handleExportCSV = () => {
         const headers = ['クラス', '番号', '氏名', '合計点', '組順位', '学年順位', '偏差値', ...answerPoints.map(p => p.label)];
-        const data = results.map(result => {
+        const data = sortedResults.map(result => {
+            if (result.isAbsent) {
+                const studentScores = answerPoints.map(() => '-');
+                return [result.class, result.number, result.name, '欠席', '-', '-', '-', ...studentScores];
+            }
             const studentScores = answerPoints.map(point => scores[result.id]?.[point.id]?.score ?? '');
             return [result.class, result.number, result.name, result.totalScore, result.classRank, result.rank, result.standardScore, ...studentScores];
         });
@@ -122,13 +151,19 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
     const handleExportIndividualReports = () => {
         const wb = xlsx.utils.book_new();
         const summaryHeaders = ['クラス', '番号', '氏名', '合計点', '組順位', '学年順位', '偏差値', ...answerPoints.map(p => p.label)];
-        const summaryData = results.map(result => {
+        const summaryData = sortedResults.map(result => {
+            if (result.isAbsent) {
+                const studentScores = answerPoints.map(() => '-');
+                return [result.class, result.number, result.name, '欠席', '-', '-', '-', ...studentScores];
+            }
             const studentScores = answerPoints.map(point => scores[result.id]?.[point.id]?.score ?? '');
             return [result.class, result.number, result.name, result.totalScore, result.classRank, result.rank, result.standardScore, ...studentScores];
         });
         const summaryWs = xlsx.utils.aoa_to_sheet([summaryHeaders, ...summaryData]);
         summaryWs['!cols'] = summaryHeaders.map(header => ({ wch: Math.max(header.length, 10) }));
         xlsx.utils.book_append_sheet(wb, summaryWs, '総合結果');
+        
+        // Use numbering order for sheets export generally
         const sortedByNumber = [...results].sort((a, b) => {
             const classCompare = a.class.localeCompare(b.class);
             if (classCompare !== 0) return classCompare;
@@ -136,10 +171,13 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
             if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
             return a.number.localeCompare(b.number);
         });
+
         sortedByNumber.forEach(student => {
+            if (student.isAbsent) return; // Skip absent students for individual sheets? Or print blank? Let's skip.
+
             const studentData: (string | number)[][] = [
                 ['氏名', student.name!], ['クラス', student.class!], ['番号', student.number!], [],
-                ['合計点', student.totalScore], ['組順位', student.classRank], ['学年順位', student.rank], ['偏差値', student.standardScore], [],
+                ['合計点', student.totalScore], ['組順位', student.classRank || '-'], ['学年順位', student.rank || '-'], ['偏差値', student.standardScore], [],
                 ['問題', '得点', '満点'],
             ];
             answerPoints.forEach(point => {
@@ -175,20 +213,32 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
             <main className="flex-1 flex flex-col overflow-auto">
                 {activeTab === 'list' ? (
                     <div className="overflow-auto bg-white dark:bg-slate-800 rounded-lg shadow">
+                        <div className="p-2 border-b dark:border-slate-700 flex justify-end gap-2">
+                            <span className="text-xs text-slate-500 dark:text-slate-400 self-center mr-2">並び替え:</span>
+                            <button onClick={() => setSortOrder('number')} className={`flex items-center gap-1 px-2 py-1 text-xs rounded border ${sortOrder === 'number' ? 'bg-sky-50 dark:bg-sky-900 border-sky-300 text-sky-700 dark:text-sky-300' : 'border-slate-200 dark:border-slate-700'}`}>
+                                <ArrowDown01Icon className="w-3 h-3"/> 番号順
+                            </button>
+                            <button onClick={() => setSortOrder('score')} className={`flex items-center gap-1 px-2 py-1 text-xs rounded border ${sortOrder === 'score' ? 'bg-sky-50 dark:bg-sky-900 border-sky-300 text-sky-700 dark:text-sky-300' : 'border-slate-200 dark:border-slate-700'}`}>
+                                <ArrowDownWideNarrowIcon className="w-3 h-3"/> 成績順
+                            </button>
+                        </div>
                         <table className="w-full text-sm text-left">
                             <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-100 dark:bg-slate-700 sticky top-0">
                                 <tr>
                                     <th className="px-4 py-3">クラス</th><th className="px-4 py-3">番号</th><th className="px-4 py-3">氏名</th>
                                     <th className="px-4 py-3 text-right">合計点</th><th className="px-4 py-3 text-right">組順位</th><th className="px-4 py-3 text-right">学年順位</th><th className="px-4 py-3 text-right">偏差値</th>
-                                    {answerPoints.map(point => (<th key={point.id} className="px-4 py-3 text-right">{point.label}</th>))}
+                                    {answerPoints.map(point => (<th key={point.id} className="px-4 py-3 text-right whitespace-nowrap">{point.label}</th>))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                                {results.map(result => (
-                                    <tr key={result.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                        <td className="px-4 py-2">{result.class}</td><td className="px-4 py-2">{result.number}</td><td className="px-4 py-2 font-medium">{result.name}</td>
-                                        <td className="px-4 py-2 text-right font-bold">{result.totalScore}</td><td className="px-4 py-2 text-right">{result.classRank}</td><td className="px-4 py-2 text-right">{result.rank}</td><td className="px-4 py-2 text-right">{result.standardScore}</td>
-                                        {answerPoints.map(point => (<td key={point.id} className="px-4 py-2 text-right">{scores[result.id]?.[point.id]?.score ?? '-'}</td>))}
+                                {sortedResults.map(result => (
+                                    <tr key={result.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${result.isAbsent ? 'text-slate-400 bg-slate-50/50 dark:text-slate-500' : ''}`}>
+                                        <td className="px-4 py-2">{result.class}</td><td className="px-4 py-2">{result.number}</td><td className="px-4 py-2 font-medium">{result.name} {result.isAbsent && <span className="ml-2 text-xs bg-slate-200 dark:bg-slate-700 px-1 rounded text-slate-500">欠席</span>}</td>
+                                        <td className="px-4 py-2 text-right font-bold">{result.isAbsent ? '-' : result.totalScore}</td>
+                                        <td className="px-4 py-2 text-right">{result.isAbsent ? '-' : result.classRank}</td>
+                                        <td className="px-4 py-2 text-right">{result.isAbsent ? '-' : result.rank}</td>
+                                        <td className="px-4 py-2 text-right">{result.standardScore}</td>
+                                        {answerPoints.map(point => (<td key={point.id} className="px-4 py-2 text-right">{result.isAbsent ? '-' : (scores[result.id]?.[point.id]?.score ?? '-')}</td>))}
                                     </tr>
                                 ))}
                             </tbody>
@@ -196,7 +246,7 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
                          {results.length === 0 && <p className="text-center p-8 text-slate-500">採点データがありません。</p>}
                     </div>
                 ) : (
-                    <QuestionAnalysisView stats={questionStats} totalStudents={results.length}/>
+                    <QuestionAnalysisView stats={questionStats} totalStudents={results.filter(r => !r.isAbsent).length}/>
                 )}
             </main>
         </div>

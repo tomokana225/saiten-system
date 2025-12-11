@@ -380,7 +380,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     const calculatedResults = useMemo((): StudentResult[] => {
         if (!activeProject || activeProject.studentInfo.length === 0 || !activeProject.template) return [];
+        
         const validPointIds = new Set(activeProject.points.map(p => p.id));
+        
+        // 1. Map to preliminary results (identifying presence/absence)
         const allStudentsWithDetails = activeProject.studentInfo.map((info, index) => {
             const studentScores = activeProject.scores[info.id] || {};
             const totalScore = Object.entries(studentScores).reduce((sum, [pointIdStr, scoreData]: [string, ScoreData]) => {
@@ -389,42 +392,95 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 }
                 return sum;
             }, 0);
+            
             const subtotals: { [subtotalAreaId: number]: number } = {};
             activeProject.areas.filter(a => a.type === '小計' as AreaType).forEach(subArea => {
                 subtotals[subArea.id] = activeProject.points
                     .filter(p => p.subtotalIds?.includes(subArea.id))
                     .reduce((sum, p) => sum + (studentScores[p.id]?.score || 0), 0);
             });
-            const sheet = activeProject.uploadedSheets[index] || { id: `missing-sheet-${index}`, originalName: 'N/A', filePath: null, images: [] };
-            return { ...sheet, ...info, totalScore, subtotals };
+
+            // Determine if absent based on uploadedSheets existence and content
+            const sheet = activeProject.uploadedSheets[index];
+            const isAbsent = !sheet || !sheet.images || sheet.images.every(img => !img);
+            
+            // Safe sheet object for display purposes even if absent
+            const displaySheet = sheet || { id: `missing-sheet-${index}`, originalName: 'N/A', filePath: null, images: [] };
+
+            return { ...displaySheet, ...info, totalScore, subtotals, isAbsent };
         });
-        const allTotalScores = allStudentsWithDetails.map(s => s.totalScore);
-        const totalStudents = allTotalScores.length;
-        const sumScores = allTotalScores.reduce((sum, score) => sum + score, 0);
-        const mean = totalStudents > 0 ? sumScores / totalStudents : 0;
-        const variance = totalStudents > 0 ? allTotalScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / totalStudents : 0;
+
+        // 2. Calculate statistics ONLY for present students
+        const presentStudents = allStudentsWithDetails.filter(s => !s.isAbsent);
+        const presentScores = presentStudents.map(s => s.totalScore);
+        const totalPresent = presentScores.length;
+        
+        const sumScores = presentScores.reduce((sum, score) => sum + score, 0);
+        const mean = totalPresent > 0 ? sumScores / totalPresent : 0;
+        const variance = totalPresent > 0 ? presentScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / totalPresent : 0;
         const stdDev = Math.sqrt(variance);
-        let resultsWithRank = allStudentsWithDetails.map(student => ({
-            ...student,
-            standardScore: stdDev === 0 ? "50.0" : (((10 * (student.totalScore - mean)) / stdDev) + 50).toFixed(1),
-            rank: 0, classRank: 0
-        }));
-        resultsWithRank.sort((a, b) => b.totalScore - a.totalScore);
-        resultsWithRank.forEach((result, index) => {
-            result.rank = index > 0 && result.totalScore === resultsWithRank[index-1].totalScore ? resultsWithRank[index-1].rank : index + 1;
+
+        // 3. Assign Ranks and Standard Scores
+        let resultsWithRank = allStudentsWithDetails.map(student => {
+            let standardScore = "50.0";
+            if (!student.isAbsent) {
+                standardScore = stdDev === 0 ? "50.0" : (((10 * (student.totalScore - mean)) / stdDev) + 50).toFixed(1);
+            } else {
+                standardScore = "-";
+            }
+            
+            return {
+                ...student,
+                standardScore,
+                rank: 0 as number | null,
+                classRank: 0 as number | null
+            };
         });
-        const resultsByClass: { [className: string]: typeof resultsWithRank } = {};
-        resultsWithRank.forEach(result => {
+
+        // Sort by score DESC to assign rank
+        // We temporarily filter out absent students to calculate rank, then merge back? 
+        // Or just sort everyone, but skip absent in rank counter.
+        
+        // Strategy: Separate present/absent, rank present, merge.
+        const presentResults = resultsWithRank.filter(r => !r.isAbsent);
+        const absentResults = resultsWithRank.filter(r => r.isAbsent);
+
+        presentResults.sort((a, b) => b.totalScore - a.totalScore);
+        
+        presentResults.forEach((result, index) => {
+            result.rank = index > 0 && result.totalScore === presentResults[index-1].totalScore ? presentResults[index-1].rank : index + 1;
+        });
+
+        // Handle class rank
+        const resultsByClass: { [className: string]: typeof presentResults } = {};
+        presentResults.forEach(result => {
             if (!resultsByClass[result.class]) resultsByClass[result.class] = [];
             resultsByClass[result.class].push(result);
         });
+
         Object.values(resultsByClass).forEach(classGroup => {
             classGroup.sort((a,b) => b.totalScore - a.totalScore);
             classGroup.forEach((result, index) => {
                 result.classRank = index > 0 && result.totalScore === classGroup[index-1].totalScore ? classGroup[index-1].classRank : index + 1;
             });
         });
-        return resultsWithRank;
+
+        // Set null ranks for absent
+        absentResults.forEach(r => {
+            r.rank = null;
+            r.classRank = null;
+        });
+
+        // Combine back (order doesn't matter here as it will be sorted in view)
+        // But let's keep original roster order for stability if possible, 
+        // actually useProject returns this array, so typical usage re-sorts it anyway.
+        // We will return the full list.
+        const finalResults = [...presentResults, ...absentResults];
+        
+        // To maintain original index order (roster order) as a base, we can sort by their ID/index if needed,
+        // but since `results` are often sorted by user preference in view, simple concatenation is fine.
+        
+        return finalResults;
     }, [activeProject]);
 
     const studentsWithInfo = useMemo(() => {

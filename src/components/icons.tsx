@@ -81,3 +81,6 @@ export const PencilIcon = createIcon(<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5
 export const RotateCcwIcon = createIcon(<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>);
 export const ChevronDownIcon = createIcon(<path d="m6 9 6 6 6-6"/>);
 export const ChevronUpIcon = createIcon(<path d="m18 15-6-6-6 6"/>);
+export const HashIcon = createIcon(<><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></>);
+export const ArrowDown01Icon = createIcon(<><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><rect x="15" y="4" width="4" height="6" ry="2"/><path d="M17 20v-6h-2"/><path d="M15 20h4"/></>);
+export const ArrowDownWideNarrowIcon = createIcon(<><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/></>);

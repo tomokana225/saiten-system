@@ -198,8 +198,9 @@ export interface StudentResult extends Student, StudentInfo {
     totalScore: number;
     subtotals: { [subtotalAreaId: number]: number };
     standardScore: string;
-    rank: number;
-    classRank: number;
+    rank: number | null;
+    classRank: number | null;
+    isAbsent: boolean;
 }
 
 export interface QuestionStats {
