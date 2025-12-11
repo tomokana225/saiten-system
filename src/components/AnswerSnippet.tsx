@@ -15,11 +15,12 @@ interface PannableImageProps {
     children?: React.ReactNode;
     padding?: number;
     cropInfo?: { x: number, y: number, width: number, height: number };
+    isEnhanced?: boolean;
 }
 
 // Inner component that safely contains all the hooks for panning and zooming
 const PannableImage: React.FC<PannableImageProps> = ({
-    imageDataUrl, imageWidth, imageHeight, area, pannable, onClick, manualPanOffset, onPanCommit, children, padding = 0, cropInfo
+    imageDataUrl, imageWidth, imageHeight, area, pannable, onClick, manualPanOffset, onPanCommit, children, padding = 0, cropInfo, isEnhanced
 }) => {
     const [scale, setScale] = useState(1);
     const [panOffset, setPanOffset] = useState(manualPanOffset || { x: 0, y: 0 });
@@ -118,7 +119,10 @@ const PannableImage: React.FC<PannableImageProps> = ({
                     src={imageDataUrl} 
                     alt="Answer" 
                     draggable={false}
-                    className="max-w-full max-h-full object-contain pointer-events-none"
+                    className="max-w-full max-h-full object-contain pointer-events-none transition-[filter] duration-300"
+                    style={{
+                        filter: isEnhanced ? 'grayscale(100%) contrast(200%) brightness(90%)' : 'none'
+                    }}
                 />
                 <div style={overlayStyle}>
                     {children}
@@ -149,10 +153,11 @@ interface AnswerSnippetProps {
     manualPanOffset?: { x: number; y: number };
     onPanCommit?: (offset: { x: number; y: number }) => void;
     padding?: number;
+    isEnhanced?: boolean;
 }
 
 export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({ 
-    imageSrc, area, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0
+    imageSrc, area, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0, isEnhanced = false
 }) => {
     const [croppedImage, setCroppedImage] = useState<{ url: string, width: number, height: number, cropX: number, cropY: number } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -247,6 +252,7 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
             onPanCommit={onPanCommit}
             padding={padding}
             cropInfo={{ x: croppedImage.cropX, y: croppedImage.cropY, width: croppedImage.width, height: croppedImage.height }}
+            isEnhanced={isEnhanced}
         >
             {children}
         </PannableImage>

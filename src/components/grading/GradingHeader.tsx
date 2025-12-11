@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { GradingFilter, Area } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
-import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon } from '../icons';
+import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon } from '../icons';
 
 interface GradingHeaderProps {
     selectedArea: Area | undefined;
@@ -21,6 +21,8 @@ interface GradingHeaderProps {
     onAiGradingModeChange: (mode: 'auto' | 'strict') => void;
     answerFormat: string;
     onAnswerFormatChange: (format: string) => void;
+    isImageEnhanced: boolean;
+    onToggleImageEnhancement: () => void;
 }
 
 const filterOptions: { value: GradingFilter; label: string }[] = [
@@ -39,7 +41,8 @@ const presetAnswerFormats = [
 export const GradingHeader: React.FC<GradingHeaderProps> = ({
     selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
-    aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange
+    aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
+    isImageEnhanced, onToggleImageEnhancement
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;
@@ -90,6 +93,15 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                  </div>
 
                 <div className="flex items-center gap-4">
+                    <button 
+                        onClick={onToggleImageEnhancement}
+                        className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${isImageEnhanced ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        title="薄い文字を濃く表示します"
+                    >
+                        <PaletteIcon className="w-4 h-4" />
+                        <span>文字を濃くする</span>
+                    </button>
+                    <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
                     <button onClick={() => onBulkScore(ScoringStatus.CORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>
                     <button onClick={() => onBulkScore(ScoringStatus.INCORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">すべてを☓に</button>
                     <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title={isExpanded ? "設定を閉じる" : "設定を開く"}>

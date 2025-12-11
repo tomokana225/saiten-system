@@ -1,12 +1,12 @@
 import React from 'react';
 import type { AreaType } from '../../types';
 import { AreaType as AreaTypeEnum } from '../../types';
-import { ZoomInIcon, ZoomOutIcon, MousePointer2Icon, HandIcon } from '../icons';
+import { ZoomInIcon, ZoomOutIcon, MousePointer2Icon, HandIcon, Wand2Icon } from '../icons';
 import { areaTypeColors } from './TemplateSidebar';
 
 interface TemplateToolbarProps {
-    activeTool: AreaType | 'select' | 'pan';
-    setActiveTool: (tool: AreaType | 'select' | 'pan') => void;
+    activeTool: AreaType | 'select' | 'pan' | 'magic-wand';
+    setActiveTool: (tool: AreaType | 'select' | 'pan' | 'magic-wand') => void;
     zoom: number;
     onZoomChange: (zoom: number) => void;
 }
@@ -28,6 +28,13 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, se
                     title="パン"
                 >
                     <HandIcon className="w-5 h-5" />
+                </button>
+                <button
+                    onClick={() => setActiveTool('magic-wand')}
+                    className={`p-2 rounded-md ${activeTool === 'magic-wand' ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700'}`}
+                    title="枠内をクリックして自動認識"
+                >
+                    <Wand2Icon className="w-5 h-5" />
                 </button>
 
                 <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2"></div>

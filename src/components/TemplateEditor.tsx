@@ -46,7 +46,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [areas, setAreas] = useState<Area[]>(() => migrateAreas(initialAreas));
     const [selectedAreaIds, setSelectedAreaIds] = useState<Set<number>>(new Set());
     const [zoom, setZoom] = useState(1);
-    const [activeTool, setActiveTool] = useState<AreaType | 'select' | 'pan'>('select');
+    const [activeTool, setActiveTool] = useState<AreaType | 'select' | 'pan' | 'magic-wand'>('select');
     const [drawState, setDrawState] = useState<DrawState | null>(null);
     const [clipboard, setClipboard] = useState<Area[]>([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -277,6 +277,103 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
     };
 
+    // Auto-detection logic (Magic Wand)
+    const detectBoxFromPoint = (startX: number, startY: number): { x: number, y: number, w: number, h: number } | null => {
+        if (!imageRef.current) return null;
+        
+        // We need to use the original image data for detection, not what's drawn on canvas which is just overlays
+        const img = imageRef.current;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.naturalWidth;
+        tempCanvas.height = img.naturalHeight;
+        const ctx = tempCanvas.getContext('2d');
+        if (!ctx) return null;
+        
+        ctx.drawImage(img, 0, 0);
+        
+        // Ensure coordinates are integers and within bounds
+        const x = Math.floor(startX);
+        const y = Math.floor(startY);
+        if (x < 0 || x >= img.naturalWidth || y < 0 || y >= img.naturalHeight) return null;
+
+        const imageData = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
+        const data = imageData.data;
+        const width = imageData.width;
+        const height = imageData.height;
+
+        // BFS to find the white area
+        const visited = new Uint8Array(width * height); // 0 = unvisited, 1 = visited
+        const queue = [x, y];
+        visited[y * width + x] = 1;
+
+        let minX = x, maxX = x, minY = y, maxY = y;
+        let pixelCount = 0;
+        const MAX_PIXELS = width * height * 0.5; // Safety limit: 50% of image area
+
+        // Threshold for "dark" pixel (border). 
+        // We assume the inside is light and borders are dark.
+        const THRESHOLD = 160; 
+
+        // Helper to check brightness
+        const isLight = (px: number, py: number) => {
+            const idx = (py * width + px) * 4;
+            // Grayscale
+            const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            return gray > THRESHOLD;
+        };
+
+        // If clicked on a dark pixel (border), detection fails or tries to find nearby light pixel
+        if (!isLight(x, y)) {
+            // Simple retry: check small radius for white pixel? For now, just return null.
+            return null;
+        }
+
+        while (queue.length > 0) {
+            const cy = queue.pop()!; // Stack or queue doesn't matter much for fill, stack is DFS
+            const cx = queue.pop()!;
+
+            pixelCount++;
+            if (pixelCount > MAX_PIXELS) return null; // Abort if filling too much
+
+            if (cx < minX) minX = cx;
+            if (cx > maxX) maxX = cx;
+            if (cy < minY) minY = cy;
+            if (cy > maxY) maxY = cy;
+
+            // Neighbors (4-way)
+            const neighbors = [
+                cx + 1, cy,
+                cx - 1, cy,
+                cx, cy + 1,
+                cx, cy - 1
+            ];
+
+            for (let i = 0; i < neighbors.length; i += 2) {
+                const nx = neighbors[i];
+                const ny = neighbors[i+1];
+
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    const idx = ny * width + nx;
+                    if (visited[idx] === 0) {
+                        visited[idx] = 1;
+                        if (isLight(nx, ny)) {
+                            queue.push(nx, ny);
+                        }
+                        // If dark, it's a border, we stop expansion in this direction but don't add to queue
+                    }
+                }
+            }
+        }
+
+        // Final bounds
+        const w = maxX - minX + 1;
+        const h = maxY - minY + 1;
+
+        if (w < MIN_AREA_SIZE || h < MIN_AREA_SIZE) return null;
+
+        return { x: minX, y: minY, w, h };
+    };
+
     const handleMouseDown = (e: React.MouseEvent) => {
         // Allow panning with Pan Tool, Spacebar + Click, or Middle Click (button 1)
         const isMiddleClick = e.button === 1;
@@ -297,6 +394,38 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
 
         const pos = getRelativeCoords(e);
+
+        if (activeTool === 'magic-wand') {
+            const detected = detectBoxFromPoint(pos.x, pos.y);
+            if (detected) {
+                // Determine new question number if applicable
+                const questionAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
+                const existingNumbers = questionAreas.map(a => {
+                    if (a.questionNumber !== undefined && isFinite(a.questionNumber)) return a.questionNumber;
+                    const match = a.name.match(/問(\d+)/);
+                    return match ? parseInt(match[1], 10) : 0;
+                });
+                const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+                const questionNumber = maxNumber + 1;
+                const newName = `問${questionNumber}`;
+
+                const newArea: Area = {
+                    id: Date.now(),
+                    name: newName,
+                    type: AreaTypeEnum.ANSWER, // Default to Answer
+                    x: detected.x,
+                    y: detected.y,
+                    width: detected.w,
+                    height: detected.h,
+                    questionNumber,
+                    pageIndex: activePageIndex
+                };
+                handleAreasChange([...areas, newArea]);
+                setSelectedAreaIds(new Set([newArea.id])); // Select it immediately so user can change type
+            }
+            return;
+        }
+
         const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         if (activeTool === 'select' && clickedArea) {
             const resizeHandleData = selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
@@ -425,7 +554,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                         [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
                         [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号'
                     };
-                    const prefix = typeNameMap[activeTool] || activeTool;
+                    const prefix = typeNameMap[activeTool as string] || activeTool;
                     const count = areas.filter(a => a.type === activeTool).length;
                     newName = `${prefix}${count + 1}`;
                 }
@@ -451,7 +580,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         if (!canvas) return;
         let cursor = 'default';
         if (activeTool === 'pan' || isSpacePressed) cursor = panState?.isPanning ? 'grabbing' : 'grab';
+        else if (activeTool === 'magic-wand') cursor = 'crosshair'; // Visual indicator for wand
         else if (activeTool !== 'select') cursor = 'crosshair';
+        
         if (activeTool === 'select' && !isSpacePressed) {
             const selectedAreas = currentPageAreas.filter(a => selectedAreaIds.has(a.id));
             let handleFound = false;

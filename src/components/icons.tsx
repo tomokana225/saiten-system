@@ -84,3 +84,4 @@ export const ChevronUpIcon = createIcon(<path d="m18 15-6-6-6 6"/>);
 export const HashIcon = createIcon(<><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></>);
 export const ArrowDown01Icon = createIcon(<><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><rect x="15" y="4" width="4" height="6" ry="2"/><path d="M17 20v-6h-2"/><path d="M15 20h4"/></>);
 export const ArrowDownWideNarrowIcon = createIcon(<><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/></>);
+export const Wand2Icon = createIcon(<><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></>);
