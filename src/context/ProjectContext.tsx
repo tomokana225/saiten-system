@@ -265,20 +265,23 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsLoading(true);
         try {
             // Support multi-page PDF or multiple images
-            const allPages: { imagePath: string; width: number; height: number }[] = [];
+            const newPages: { imagePath: string; width: number; height: number }[] = [];
             
-            for (const file of files) {
+            // Sort files by name to ensure order if multiple files selected at once
+            const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            for (const file of sortedFiles) {
                 const dataUrls = await convertFileToImages(file);
                 for (const dataUrl of dataUrls) {
                     const buffer = dataUrlToArrayBuffer(dataUrl);
                     if (!buffer) continue;
                     
-                    const originalName = file.name; // Use file name + index if needed, but save-file-temp handles unique IDs
+                    const originalName = file.name; 
                     const filePath = await window.electronAPI.invoke('save-file-temp', { buffer, originalName });
                     if (!filePath) continue;
                     
                     const img = await loadImage(filePath);
-                    allPages.push({
+                    newPages.push({
                         imagePath: filePath,
                         width: img.naturalWidth,
                         height: img.naturalHeight
@@ -286,13 +289,16 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 }
             }
 
-            if (allPages.length === 0) throw new Error("有効な画像またはPDFページが見つかりませんでした。");
+            if (newPages.length === 0) throw new Error("有効な画像またはPDFページが見つかりませんでした。");
 
-            // Assuming first page sets the main ID/Name
+            // Merge with existing template pages if any
+            const existingPages = activeProject?.template?.pages || [];
+            const allPages = [...existingPages, ...newPages];
+
             const firstFile = files[0];
             const newTemplate: Template = {
-                id: firstFile.name,
-                name: firstFile.name,
+                id: activeProject?.template?.id || firstFile.name,
+                name: activeProject?.template?.name || firstFile.name,
                 filePath: allPages[0].imagePath, // Backward compat
                 width: allPages[0].width, // Backward compat
                 height: allPages[0].height, // Backward compat
@@ -300,7 +306,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             };
             
             updateActiveProject(p => ({ ...p, template: newTemplate, lastModified: Date.now() }));
-            nextStep();
+            // REMOVED nextStep() to allow user to review/add more pages
         } catch (error) {
             console.error("Error processing template:", error);
             alert("テンプレート画像の処理中にエラーが発生しました。");

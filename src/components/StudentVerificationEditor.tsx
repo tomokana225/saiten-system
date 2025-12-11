@@ -5,7 +5,7 @@ import { AnswerSnippet } from './AnswerSnippet';
 import { 
     Trash2Icon, PlusIcon, GripVerticalIcon, ArrowRightIcon, 
     SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, 
-    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon
+    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon, BoxSelectIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
 
@@ -620,6 +620,13 @@ export const StudentVerificationEditor = () => {
                                     className="w-16 accent-sky-600"
                                 />
                             </div>
+                            <button 
+                                onClick={() => setShowDebugGrid(!showDebugGrid)} 
+                                className={`p-2 rounded-md ${showDebugGrid ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-400'}`}
+                                title="認識位置を表示"
+                            >
+                                <BoxSelectIcon className="w-4 h-4"/>
+                            </button>
                             <button 
                                 onClick={() => setShowMovedHighlight(!showMovedHighlight)} 
                                 className={`p-2 rounded-md ${showMovedHighlight ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}
