@@ -5,7 +5,7 @@ import { AnswerSnippet } from './AnswerSnippet';
 import { 
     Trash2Icon, PlusIcon, GripVerticalIcon, ArrowRightIcon, 
     SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, 
-    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon
+    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
 
@@ -216,24 +216,84 @@ export const StudentVerificationEditor = () => {
     const [markThreshold, setMarkThreshold] = useState(130);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({});
     const [movedStudentIndices, setMovedStudentIndices] = useState<Set<number>>(new Set());
+    
+    // Default to template pages, but allow user override for 1-sided template with 2-sided scans
+    const [pagesPerStudentOverride, setPagesPerStudentOverride] = useState<number>(() => {
+        // Simple heuristic: if we have roughly 2x images as students, default to 2?
+        // But safe default is template pages.
+        return template?.pages?.length || 1;
+    });
 
     const studentIdArea = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_MARK), [areas]);
     const studentIdRefRight = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_RIGHT), [areas]);
     const studentIdRefBottom = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_BOTTOM), [areas]);
 
-    // Determine how many pages per student based on template
-    const pagesPerStudent = template?.pages?.length || 1;
+    const pagesPerStudent = pagesPerStudentOverride;
     const studentIdPageIdx = studentIdArea ? (studentIdArea.pageIndex || 0) : 0;
 
     const numRows = Math.max(uploadedSheets.length, studentInfoList.length);
 
     // --- Image Manipulation Logic ---
 
-    const rebalanceImages = (flatImages: (string | null)[]) => {
+    // Reorder images for different scanning patterns
+    const handleReorderImages = (mode: 'interleaved' | 'stacked') => {
+        const flatImages: string[] = [];
+        uploadedSheets.forEach(s => s.images.forEach(img => { if (img) flatImages.push(img); }));
+        
+        const P = pagesPerStudent;
+        if (P <= 1) return; // No difference for 1 page/student
+
+        const N = flatImages.length;
+        const S = Math.ceil(N / P);
+        
         const newSheets: Student[] = [];
-        for (let i = 0; i < flatImages.length; i += pagesPerStudent) {
-            const chunk = flatImages.slice(i, i + pagesPerStudent);
-            while (chunk.length < pagesPerStudent) chunk.push(null);
+
+        if (mode === 'interleaved') {
+            // Standard: Take P images for each student sequentially (1-1, 1-2, 2-1, 2-2...)
+            for (let i = 0; i < N; i += P) {
+                const chunk = flatImages.slice(i, i + P);
+                while (chunk.length < P) chunk.push(null);
+                
+                const sIdx = Math.floor(i / P);
+                const existingSheet = uploadedSheets[sIdx];
+                newSheets.push({
+                    id: existingSheet ? existingSheet.id : `reordered-${Date.now()}-${sIdx}`,
+                    originalName: existingSheet ? existingSheet.originalName : `Student ${sIdx + 1}`,
+                    filePath: chunk[0],
+                    images: chunk
+                });
+            }
+        } else {
+            // Stacked: Student s gets images [s, s+S, s+2S...] (1-1, 2-1... then 1-2, 2-2...)
+            for (let s = 0; s < S; s++) {
+                const studentImages: (string | null)[] = [];
+                for (let p = 0; p < P; p++) {
+                    const idx = p * S + s;
+                    studentImages.push(idx < N ? flatImages[idx] : null);
+                }
+                
+                const existingSheet = uploadedSheets[s];
+                newSheets.push({
+                    id: existingSheet ? existingSheet.id : `stacked-${Date.now()}-${s}`,
+                    originalName: existingSheet ? existingSheet.originalName : `Student ${s + 1}`,
+                    filePath: studentImages[0],
+                    images: studentImages
+                });
+            }
+        }
+        handleStudentSheetsChange(newSheets);
+    };
+
+    const handleChangeGrouping = (newStride: number) => {
+        setPagesPerStudentOverride(newStride);
+        // If we change stride, we usually assume interleaved re-balance from current state
+        const flatImages: (string | null)[] = [];
+        uploadedSheets.forEach(s => flatImages.push(...s.images));
+        
+        const newSheets: Student[] = [];
+        for (let i = 0; i < flatImages.length; i += newStride) {
+            const chunk = flatImages.slice(i, i + newStride);
+            while (chunk.length < newStride) chunk.push(null);
             
             const existingSheet = uploadedSheets[newSheets.length];
             newSheets.push({
@@ -256,7 +316,22 @@ export const StudentVerificationEditor = () => {
         } else {
             flatImages.splice(globalIndex, 1);
         }
-        rebalanceImages(flatImages);
+        
+        // Re-apply current grouping
+        const newSheets: Student[] = [];
+        for (let i = 0; i < flatImages.length; i += pagesPerStudent) {
+            const chunk = flatImages.slice(i, i + pagesPerStudent);
+            while (chunk.length < pagesPerStudent) chunk.push(null);
+            
+            const existingSheet = uploadedSheets[newSheets.length];
+            newSheets.push({
+                id: existingSheet ? existingSheet.id : `shifted-${Date.now()}-${i}`,
+                originalName: existingSheet ? existingSheet.originalName : `Page ${i}`,
+                filePath: chunk[0],
+                images: chunk
+            });
+        }
+        handleStudentSheetsChange(newSheets);
     };
 
     const handleSwapPages = (studentIndex: number) => {
@@ -272,7 +347,10 @@ export const StudentVerificationEditor = () => {
     const handleAppendSheets = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
         const files = Array.from(e.target.files);
-        handleStudentSheetsUpload(files); 
+        // We use the context handler but we need to ensure it respects our current grouping
+        await handleStudentSheetsUpload(files); 
+        // Post-upload rebalance if override is active and differs from template logic is hard to inject here
+        // without race conditions. We rely on user manually adjusting grouping if needed.
         e.target.value = '';
     };
 
@@ -336,12 +414,8 @@ export const StudentVerificationEditor = () => {
             const analyzedImages = await Promise.all(allImages.map(async (image) => {
                 if (!image) return { image, indices: null };
                 
-                // We use the area definition from the template. 
-                // Assumption: If user scans double-sided, the ID mark is in the same relative position 
-                // or strictly on the defined 'pageIndex'.
-                // Since we are decoupling pages, we just try to find the mark on this image using the defined area geometry.
-                // NOTE: We ignore pageIndex here and apply the geometry to *every* image to check for marks.
-                
+                // We search for ID on every image using the ID area definition.
+                // We ignore pageIndex here and apply the geometry to *every* image to check for marks.
                 const { indices, debugInfo } = await analyzeStudentIdMark(
                     image, 
                     studentIdArea,
@@ -349,10 +423,6 @@ export const StudentVerificationEditor = () => {
                     studentIdRefRight, 
                     studentIdRefBottom
                 );
-                
-                // We key debug info by image content hash or just a temp ID since structure changes
-                // For simplicity, we won't store debugInfo in state for *all* loose images during sort,
-                // but we will re-run it for display later.
                 return { image, indices };
             }));
 
@@ -397,17 +467,13 @@ export const StudentVerificationEditor = () => {
                 }
             });
 
-            // 3. Reconstruct Student objects
+            // 3. Reconstruct Student objects using current grouping
             const newSheets: Student[] = studentInfoList.map((info, index) => {
                 const assignedImages = studentImageBuckets[index] || [];
                 
-                // Pad with nulls if fewer images than required pages
                 const finalImages = [...assignedImages];
                 while (finalImages.length < pagesPerStudent) finalImages.push(null);
                 
-                // If more images than pages (e.g. duplicate scans), push extra to unmatched? 
-                // Or just keep them? Let's keep them attached to the student but UI might only show `pagesPerStudent`.
-                // For safety, let's move excess to unmatched to notify user of duplicates.
                 if (finalImages.length > pagesPerStudent) {
                     const excess = finalImages.splice(pagesPerStudent);
                     excess.forEach(img => { if(img) unmatchedImages.push(img) });
@@ -415,10 +481,6 @@ export const StudentVerificationEditor = () => {
 
                 if (assignedImages.length > 0) {
                     matchCount++;
-                    // Check if this slot was previously empty or different.
-                    // This is a rough heuristic for "moved". 
-                    // Ideally we check if the content changed. 
-                    // For now, if a student gets images via detection, mark it.
                     newMovedIndices.add(index);
                 }
 
@@ -444,7 +506,7 @@ export const StudentVerificationEditor = () => {
 
             handleStudentSheetsChange(newSheets);
             setMovedStudentIndices(newMovedIndices);
-            alert(`全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。\n(両面印刷の場合、自動で生徒ごとにまとめられました)`);
+            alert(`全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`);
 
         } catch (error) {
             console.error("Sorting error:", error);
@@ -458,7 +520,6 @@ export const StudentVerificationEditor = () => {
         if (!studentIdArea) return;
         const newDebugInfos: Record<string, DetectionDebugInfo> = {};
         for (const sheet of uploadedSheets) {
-            // Only debug the defined page index for visualization consistency
             const targetImage = sheet.images[studentIdPageIdx];
             if (targetImage) {
                 const { debugInfo } = await analyzeStudentIdMark(
@@ -479,7 +540,7 @@ export const StudentVerificationEditor = () => {
             const timeout = setTimeout(handleRefreshDebug, 500);
             return () => clearTimeout(timeout);
         }
-    }, [markThreshold, showDebugGrid]); // Added showDebugGrid to deps
+    }, [markThreshold, showDebugGrid]);
 
     return (
          <div className="w-full space-y-4 flex flex-col h-full">
@@ -489,6 +550,43 @@ export const StudentVerificationEditor = () => {
                     <p className="text-sm text-slate-500 dark:text-slate-400">左右のリストをドラッグして順序を調整し、ズレを修正してください。</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
+                        <span className="text-xs text-slate-500 font-bold whitespace-nowrap">1人あたりの枚数:</span>
+                        <div className="flex gap-1">
+                            {[1, 2, 3].map(num => (
+                                <button 
+                                    key={num} 
+                                    onClick={() => handleChangeGrouping(num)}
+                                    className={`px-2 py-0.5 text-xs rounded border ${pagesPerStudent === num ? 'bg-sky-500 text-white border-sky-500' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`}
+                                >
+                                    {num}枚
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    {pagesPerStudent > 1 && (
+                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
+                            <span className="text-xs text-slate-500 font-bold whitespace-nowrap">並び順:</span>
+                            <div className="flex gap-1">
+                                <button 
+                                    onClick={() => handleReorderImages('interleaved')} 
+                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
+                                    title="例: 1人目の1枚目, 2枚目, 2人目の1枚目, 2枚目..."
+                                >
+                                    1人ずつ
+                                </button>
+                                <button 
+                                    onClick={() => handleReorderImages('stacked')} 
+                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
+                                    title="例: 全員の1枚目, 全員の2枚目..."
+                                >
+                                    ページごと
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {!studentIdArea && (
                         <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                             <AlertCircleIcon className="w-3 h-3"/>
@@ -498,38 +596,22 @@ export const StudentVerificationEditor = () => {
                     {studentIdArea && (
                         <>
                             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
-                                <span className="text-xs text-slate-500 font-bold whitespace-nowrap">濃さ判定:</span>
+                                <span className="text-xs text-slate-500 font-bold whitespace-nowrap">濃さ:</span>
                                 <input 
                                     type="range" 
                                     min="50" max="220" 
                                     value={markThreshold} 
                                     onChange={e => setMarkThreshold(Number(e.target.value))}
-                                    className="w-24 accent-sky-600"
-                                    title={`閾値: ${markThreshold} (低いほど濃いマークのみ検出)`}
+                                    className="w-16 accent-sky-600"
                                 />
                             </div>
-                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 cursor-pointer bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
-                                <input 
-                                    type="checkbox" 
-                                    checked={showMovedHighlight} 
-                                    onChange={e => setShowMovedHighlight(e.target.checked)} 
-                                    className="rounded text-sky-600"
-                                />
-                                <span>移動を強調</span>
-                            </label>
-                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 cursor-pointer bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
-                                <input 
-                                    type="checkbox" 
-                                    checked={showDebugGrid} 
-                                    onChange={e => { 
-                                        setShowDebugGrid(e.target.checked); 
-                                        if(e.target.checked && Object.keys(debugInfos).length === 0) handleRefreshDebug(); 
-                                    }} 
-                                    className="rounded text-sky-600"
-                                />
-                                <EyeIcon className="w-4 h-4"/>
-                                <span>認識位置</span>
-                            </label>
+                            <button 
+                                onClick={() => setShowMovedHighlight(!showMovedHighlight)} 
+                                className={`p-2 rounded-md ${showMovedHighlight ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}
+                                title="移動した生徒を強調表示"
+                            >
+                                <CheckCircle2Icon className="w-4 h-4"/>
+                            </button>
                             <button 
                                 onClick={handleSortGlobal} 
                                 disabled={isSorting}
@@ -537,13 +619,13 @@ export const StudentVerificationEditor = () => {
                                 title="全画像をスキャンし、学籍番号マークに基づいて再配置・グループ化します"
                             >
                                 {isSorting ? <SpinnerIcon className="w-4 h-4"/> : <SparklesIcon className="w-4 h-4"/>}
-                                <span>{isSorting ? '読取中...' : '全自動並べ替え(両面対応)'}</span>
+                                <span>{isSorting ? '読取中...' : '全自動並べ替え'}</span>
                             </button>
                         </>
                     )}
                     <label className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
                         <PlusIcon className="w-4 h-4" />
-                        <span>解答用紙を追加 (PDF可)</span>
+                        <span>解答用紙を追加</span>
                         <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*,application/pdf" />
                     </label>
                 </div>
@@ -559,9 +641,9 @@ export const StudentVerificationEditor = () => {
                             const debugInfo = sheet ? debugInfos[sheet.id] : undefined;
                             const isMoved = showMovedHighlight && movedStudentIndices.has(studentIdx);
                             
-                            // Mock area for full page display if available
+                            // Mock area for full page display
                             const fullPageArea = (pageIdx: number): Area => {
-                                const page = template?.pages?.[pageIdx];
+                                const page = template?.pages?.[pageIdx] || template?.pages?.[0];
                                 return {
                                     id: -1, name: 'Full Page', type: AreaType.ANSWER,
                                     x: 0, y: 0, width: page?.width || 500, height: page?.height || 700,
@@ -596,7 +678,20 @@ export const StudentVerificationEditor = () => {
                                     <div className="flex-1 flex gap-2 overflow-x-auto">
                                         {Array.from({ length: pagesPerStudent }).map((_, pageIdx) => {
                                             const image = sheet?.images[pageIdx];
-                                            const targetArea = (showDebugGrid && studentIdArea && studentIdArea.pageIndex === pageIdx) ? studentIdArea : fullPageArea(pageIdx);
+                                            
+                                            // Determine the area to show
+                                            // 1. Name area on this page?
+                                            let targetArea = areas.find(a => a.type === AreaType.NAME && (a.pageIndex || 0) === pageIdx);
+                                            // 2. ID area on this page?
+                                            if (!targetArea) targetArea = areas.find(a => a.type === AreaType.STUDENT_ID_MARK && (a.pageIndex || 0) === pageIdx);
+                                            // 3. Fallback to full page
+                                            if (!targetArea) targetArea = fullPageArea(pageIdx);
+
+                                            // If debug is on and we are on ID page, force ID area
+                                            if (showDebugGrid && studentIdArea && studentIdArea.pageIndex === pageIdx) {
+                                                targetArea = studentIdArea;
+                                            }
+                                            
                                             const isDebugTarget = (showDebugGrid && studentIdArea && studentIdArea.pageIndex === pageIdx);
 
                                             return (
@@ -619,7 +714,8 @@ export const StudentVerificationEditor = () => {
                                                                     imageSrc={image} 
                                                                     area={targetArea} 
                                                                     template={template}
-                                                                    padding={isDebugTarget ? 0 : 0} // No padding for full page to fit
+                                                                    // Add more padding if it's the Name area to give context, but 0 for full page
+                                                                    padding={targetArea.type === AreaType.NAME ? 10 : 0} 
                                                                 >
                                                                     {isDebugTarget && debugInfo && (
                                                                         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
