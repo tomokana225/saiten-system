@@ -347,6 +347,12 @@ export interface LayoutSettings {
         hAlign: 'left' | 'center' | 'right';
         vAlign: 'top' | 'middle' | 'bottom';
     };
+    studentInfo: {
+        show: boolean;
+        fontSize: number;
+        color: string;
+        vOffset: number;
+    };
 }
 
 export interface ReportLayoutSettings {

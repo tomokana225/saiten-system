@@ -21,6 +21,7 @@ const defaultLayoutSettings: LayoutSettings = {
     point: { fontSize: 10, color: '#ff0000', corner: 'bottom-right', hOffset: 0, vOffset: 0 },
     subtotal: { fontSize: 28, showScore: true, color: '#0000ff', colors: {}, hAlign: 'center', vAlign: 'middle' },
     total: { fontSize: 32, showScore: true, color: '#ff0000', hAlign: 'center', vAlign: 'middle' },
+    studentInfo: { show: false, fontSize: 12, color: '#000000', vOffset: 2 },
 };
 
 const AlignmentPicker = ({ hAlign, vAlign, onAlignChange }: { hAlign: 'left' | 'center' | 'right'; vAlign: 'top' | 'middle' | 'bottom'; onAlignChange: (prop: 'hAlign' | 'vAlign', value: any) => void; }) => (
@@ -95,6 +96,30 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
         if (activeTab === 'sheets') {
              return (<div className="space-y-4">
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">並び順</label><div className="flex items-center gap-2 mt-1"><button key="rank" onClick={() => setSortOrder('rank')} className={`px-3 py-1 text-xs rounded-md flex-1 ${sortOrder === 'rank' ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>点数順</button><button key="number" onClick={() => setSortOrder('number')} className={`px-3 py-1 text-xs rounded-md flex-1 ${sortOrder === 'number' ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>番号順</button></div></div>
+                
+                <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50">
+                    <label className="font-medium text-sm text-slate-700 dark:text-slate-300">生徒情報の印字 (照合用)</label>
+                    <div className="flex items-center gap-4 mt-2">
+                        <label className="flex items-center text-xs gap-1"><input type="checkbox" checked={layoutSettings.studentInfo.show} onChange={e => handleSettingChange('studentInfo', 'show', e.target.checked)} /> 氏名欄の下に印字</label>
+                    </div>
+                    {layoutSettings.studentInfo.show && (
+                        <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-300 dark:border-slate-600">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs min-w-[3em]">サイズ:</span>
+                                <input type="number" value={layoutSettings.studentInfo.fontSize} onChange={e => handleSettingChange('studentInfo', 'fontSize', parseInt(e.target.value))} className="w-16 p-1 text-xs rounded-md bg-white dark:bg-slate-700" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs min-w-[3em]">色:</span>
+                                <input type="color" value={layoutSettings.studentInfo.color} onChange={e => handleSettingChange('studentInfo', 'color', e.target.value)} className="w-8 h-8 p-0 border-none rounded cursor-pointer bg-transparent" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs min-w-[3em]">縦位置:</span>
+                                <input type="range" min="0" max="50" value={layoutSettings.studentInfo.vOffset} onChange={e => handleSettingChange('studentInfo', 'vOffset', parseFloat(e.target.value))} className="w-full" />
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50">
                     <label className="font-medium text-sm text-slate-700 dark:text-slate-300">採点マーク (◯☓△)</label>
                     <div className="flex items-center gap-4 mt-2">

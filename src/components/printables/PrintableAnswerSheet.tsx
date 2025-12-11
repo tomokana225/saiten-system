@@ -290,6 +290,26 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
                                                         };
                                                         return <div key={area.id} style={style}>{settings.total.showScore && student.totalScore}</div>;
                                                     }
+                                                    case AreaType.NAME: {
+                                                        if (settings.studentInfo.show) {
+                                                            const infoText = `${student.class} ${student.number} ${student.name}`;
+                                                            const style: React.CSSProperties = {
+                                                                position: 'absolute',
+                                                                left: `${(area.x / page.width) * 100}%`,
+                                                                top: `${((area.y + area.height) / page.height) * 100}%`,
+                                                                width: `${(area.width / page.width) * 100}%`,
+                                                                marginTop: `${settings.studentInfo.vOffset}px`,
+                                                                textAlign: 'center',
+                                                                fontSize: `${settings.studentInfo.fontSize}px`,
+                                                                color: settings.studentInfo.color,
+                                                                whiteSpace: 'nowrap',
+                                                                pointerEvents: 'none',
+                                                                lineHeight: '1.2',
+                                                            };
+                                                            return <div key={`${area.id}-info`} style={style}>{infoText}</div>;
+                                                        }
+                                                        return null;
+                                                    }
                                                     default:
                                                         return null;
                                                 }
