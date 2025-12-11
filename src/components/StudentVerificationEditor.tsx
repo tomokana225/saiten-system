@@ -205,7 +205,7 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
 };
 
 export const StudentVerificationEditor = () => {
-    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, handleStudentSheetsUpload } = useProject();
+    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, uploadFilesRaw } = useProject();
     const { uploadedSheets, studentInfo: studentInfoList, template, areas } = activeProject!;
 
     const [draggedInfoIndex, setDraggedInfoIndex] = useState<number | null>(null);
@@ -353,13 +353,36 @@ export const StudentVerificationEditor = () => {
     };
 
     const handleAppendSheets = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
+        if (!e.target.files || e.target.files.length === 0) return;
         const files = Array.from(e.target.files);
-        // We use the context handler but we need to ensure it respects our current grouping
-        await handleStudentSheetsUpload(files); 
-        // Post-upload rebalance if override is active and differs from template logic is hard to inject here
-        // without race conditions. We rely on user manually adjusting grouping if needed.
-        e.target.value = '';
+        e.target.value = ''; // Reset input to allow selecting same file again
+
+        try {
+            const processedFiles = await uploadFilesRaw(files);
+            
+            // Create new student entries based on current page stride
+            const newSheets: Student[] = [];
+            for (let i = 0; i < processedFiles.length; i += pagesPerStudent) {
+                const chunk = processedFiles.slice(i, i + pagesPerStudent);
+                const images = chunk.map(f => f.path);
+                // Pad if necessary
+                while (images.length < pagesPerStudent) images.push(null);
+                
+                newSheets.push({
+                    id: `appended-${Date.now()}-${i}`,
+                    originalName: chunk[0].name,
+                    filePath: images[0],
+                    images: images
+                });
+            }
+
+            // Append to existing
+            const updatedSheets = [...uploadedSheets, ...newSheets];
+            handleStudentSheetsChange(updatedSheets);
+        } catch (err) {
+            console.error(err);
+            alert('ファイルの追加に失敗しました。');
+        }
     };
 
     // --- Info Operations ---
