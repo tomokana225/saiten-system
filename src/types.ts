@@ -61,12 +61,21 @@ export enum AreaType {
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;
 
 // Core data structures
+export interface TemplatePage {
+    imagePath: string;
+    width: number;
+    height: number;
+}
+
 export interface Template {
     id: string;
     name: string;
-    filePath: string;
-    width: number;
-    height: number;
+    // Deprecated single file properties (kept for migration)
+    filePath?: string;
+    width?: number;
+    height?: number;
+    // New multi-page support
+    pages: TemplatePage[];
     alignmentMarkIdealCorners?: {
         tl: { x: number, y: number },
         tr: { x: number, y: number },
@@ -83,6 +92,7 @@ export interface Area {
     y: number;
     width: number;
     height: number;
+    pageIndex: number; // New: Which page this area belongs to (0-based)
     questionNumber?: number;
 }
 
@@ -96,7 +106,8 @@ export interface StudentInfo {
 export interface Student {
     id: string;
     originalName: string;
-    filePath: string | null;
+    filePath: string | null; // Deprecated, use images[0]
+    images: (string | null)[]; // New: Supports multiple pages. Index corresponds to Template.pages index.
 }
 
 export interface Roster {

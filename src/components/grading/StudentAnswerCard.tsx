@@ -84,6 +84,10 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
 }) => {
     const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
 
+    // Determine correct image based on page index
+    const pageIndex = area.pageIndex || 0;
+    const imageSrc = student.images[pageIndex] || null;
+
     const handleStatusChange = (newStatus: ScoringStatus) => {
         let newScore: number | null = null;
         switch (newStatus) {
@@ -127,7 +131,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
             {/* Aspect ratio set to match area, with fallback min-height */}
             <div className="relative w-full bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px' }}>
                 <AnswerSnippet 
-                    imageSrc={student.filePath}
+                    imageSrc={imageSrc}
                     area={area}
                     template={template}
                     pannable={isFocused}

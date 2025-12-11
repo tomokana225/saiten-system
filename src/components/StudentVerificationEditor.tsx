@@ -18,6 +18,10 @@ interface DetectionDebugInfo {
     rois?: { x: number, y: number, w: number, h: number }[]; // Added ROIs for visualization
 }
 
+// ... (Detection helper functions kept as is) ...
+// For brevity, assuming the analyzeStudentIdMark logic uses imagePath directly.
+// We need to make sure we pass the correct image path (Front page usually) to it.
+
 // Helper to find peaks in a projection profile
 const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.35): number[] => {
     const peaks: number[] = [];
@@ -94,7 +98,6 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThres
         if (!mainCrop) return { indices: null, debugInfo };
 
         // Helper: Binarize check relative to a specific image data buffer
-        // Note: markThreshold is passed in (default typically around 130-160)
         const isDark = (imgData: ImageData, x: number, y: number, threshold = markThreshold) => {
             const idx = (y * imgData.width + x) * 4;
             if (idx < 0 || idx >= imgData.data.length) return false;
@@ -362,7 +365,7 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
 };
 
 export const StudentVerificationEditor = () => {
-    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange } = useProject();
+    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, handleStudentSheetsUpload } = useProject();
     const { uploadedSheets, studentInfo: studentInfoList, template, areas } = activeProject!;
 
     const [draggedSheetIndex, setDraggedSheetIndex] = useState<number | null>(null);
@@ -379,7 +382,11 @@ export const StudentVerificationEditor = () => {
     const studentIdRefRight = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_RIGHT), [areas]);
     const studentIdRefBottom = useMemo(() => areas.find(a => a.type === AreaType.STUDENT_ID_REF_BOTTOM), [areas]);
 
-    const createBlankSheet = (): Student => ({ id: `blank-sheet-${Date.now()}-${Math.random()}`, originalName: '（空の行）', filePath: null });
+    // Usually name/id mark is on the first page
+    const studentIdPageIdx = studentIdArea ? studentIdArea.pageIndex : 0;
+    const nameAreaPageIdx = nameArea ? nameArea.pageIndex : 0;
+
+    const createBlankSheet = (): Student => ({ id: `blank-sheet-${Date.now()}-${Math.random()}`, originalName: '（空の行）', filePath: null, images: [] });
     
     const numRows = Math.max(uploadedSheets.length, studentInfoList.length);
 
@@ -388,12 +395,8 @@ export const StudentVerificationEditor = () => {
     const handleAppendSheets = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
         const files = Array.from(e.target.files);
-        const newSheetData = await Promise.all(files.map(async (file: File) => {
-            const buffer = await fileToArrayBuffer(file);
-            const filePath = await window.electronAPI.invoke('save-file-temp', { buffer, originalName: file.name });
-            return { id: `${file.name}-${file.lastModified}`, originalName: file.name, filePath };
-        }));
-        handleStudentSheetsChange([...uploadedSheets, ...newSheetData]);
+        // Use the context function to handle multi-page logic correctly
+        handleStudentSheetsUpload(files); 
         e.target.value = '';
     };
 
@@ -469,7 +472,7 @@ export const StudentVerificationEditor = () => {
             alert('テンプレート編集画面で「学籍番号」エリアを設定してください。');
             return;
         }
-        if (uploadedSheets.filter(s => s.filePath).length === 0) return;
+        if (uploadedSheets.filter(s => s.images.length > 0).length === 0) return;
 
         setIsSorting(true);
         setDebugInfos({}); 
@@ -478,9 +481,10 @@ export const StudentVerificationEditor = () => {
         try {
             // 1. Analyze all valid sheets
             const sheetsWithIndices = await Promise.all(uploadedSheets.map(async (sheet) => {
-                if (!sheet.filePath) return { sheet, indices: null };
+                const targetImage = sheet.images[studentIdPageIdx];
+                if (!targetImage) return { sheet, indices: null };
                 const { indices, debugInfo } = await analyzeStudentIdMark(
-                    sheet.filePath, 
+                    targetImage, 
                     studentIdArea,
                     markThreshold,
                     studentIdRefRight, 
@@ -570,9 +574,10 @@ export const StudentVerificationEditor = () => {
         if (!studentIdArea) return;
         const newDebugInfos: Record<string, DetectionDebugInfo> = {};
         for (const sheet of uploadedSheets) {
-            if (sheet.filePath) {
+            const targetImage = sheet.images[studentIdPageIdx];
+            if (targetImage) {
                 const { debugInfo } = await analyzeStudentIdMark(
-                    sheet.filePath, 
+                    targetImage, 
                     studentIdArea,
                     markThreshold,
                     studentIdRefRight,
@@ -651,8 +656,8 @@ export const StudentVerificationEditor = () => {
                     )}
                     <label className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
                         <PlusIcon className="w-4 h-4" />
-                        <span>解答用紙を追加</span>
-                        <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*" />
+                        <span>解答用紙を追加 (PDF可)</span>
+                        <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*,application/pdf" />
                     </label>
                 </div>
             </div>
@@ -668,6 +673,7 @@ export const StudentVerificationEditor = () => {
                             const debugInfo = sheet ? debugInfos[sheet.id] : undefined;
                             
                             const targetArea = showDebugGrid && studentIdArea ? studentIdArea : nameArea;
+                            const targetImage = sheet ? (showDebugGrid && studentIdArea ? sheet.images[studentIdPageIdx] : sheet.images[nameAreaPageIdx]) : null;
 
                             return (
                                 <div 
@@ -684,13 +690,16 @@ export const StudentVerificationEditor = () => {
                                 >
                                     {sheet ? (
                                         <>
-                                            <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0"><GripVerticalIcon className="w-6 h-6" /></div>
+                                            <div className="text-slate-400 dark:text-slate-500 w-6 flex-shrink-0 flex flex-col items-center">
+                                                <GripVerticalIcon className="w-6 h-6" />
+                                                <span className="text-[10px]">{sheet.images.filter(i=>i).length}枚</span>
+                                            </div>
                                             <div className="flex-1 h-full relative overflow-hidden rounded bg-slate-100 dark:bg-slate-900">
-                                                {sheet.filePath ? (
+                                                {targetImage ? (
                                                     <div className="relative w-full h-full">
                                                         {targetArea ? (
                                                             <AnswerSnippet 
-                                                                imageSrc={sheet.filePath} 
+                                                                imageSrc={targetImage} 
                                                                 area={targetArea} 
                                                                 template={template} 
                                                             >
@@ -718,7 +727,7 @@ export const StudentVerificationEditor = () => {
                                                         )}
                                                     </div>
                                                 ) : (
-                                                    <div className="flex items-center justify-center h-full text-xs text-slate-400">空の行</div>
+                                                    <div className="flex items-center justify-center h-full text-xs text-slate-400">画像なし</div>
                                                 )}
                                             </div>
                                             <div className="flex flex-col gap-1">

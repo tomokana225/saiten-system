@@ -121,171 +121,185 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
             'bottom-left': { justifyContent: 'flex-start', alignItems: 'flex-end' },
         };
 
-        const isPageLandscape = template.width > template.height;
-        const pageWidth = isPageLandscape ? 297 : 210;
-        const pageHeight = isPageLandscape ? 210 : 297;
-        const padding = 5; // padding in mm per side
-        const availableWidth = pageWidth - (padding * 2);
-        const availableHeight = pageHeight - (padding * 2);
-
-        const pageAspectRatio = availableWidth / availableHeight;
-        const templateAspectRatio = template.width / template.height;
-
-        let imageContainerWidth, imageContainerHeight;
-        if (templateAspectRatio > pageAspectRatio) {
-            // Limited by width
-            imageContainerWidth = availableWidth;
-            imageContainerHeight = availableWidth / templateAspectRatio;
-        } else {
-            // Limited by height
-            imageContainerHeight = availableHeight;
-            imageContainerWidth = availableHeight * templateAspectRatio;
-        }
-
-        const pageStyle: React.CSSProperties = {
-            width: `${pageWidth}mm`,
-            height: `${pageHeight}mm`,
-            margin: 'auto',
-            padding: `${padding}mm`,
-            boxSizing: 'border-box',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            position: 'relative',
-            overflow: 'hidden',
-        };
-
-        const imageContainerStyle: React.CSSProperties = {
-            position: 'relative',
-            width: `${imageContainerWidth}mm`,
-            height: `${imageContainerHeight}mm`,
-        };
+        const templatePages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
 
         return (
             <div ref={ref} className="printable-area printable-content bg-white text-black">
-                {results.map((student, index) => (
-                    <div
-                        key={student.id}
-                        className="page-break-after"
-                        style={{ ...pageStyle, pageBreakAfter: index < results.length - 1 ? 'always' : 'auto' }}
-                    >
-                        <div style={imageContainerStyle}>
-                            <img src={student.filePath || template.filePath} alt={`Answer sheet for ${student.name}`} className="absolute top-0 left-0 w-full h-full" />
-                            <div className="absolute top-0 left-0 w-full h-full">
-                                {areas.map(area => {
-                                    const getBaseStyleForArea = (targetArea: Area): React.CSSProperties => ({
-                                        position: 'absolute',
-                                        left: `${(targetArea.x / template.width) * 100}%`,
-                                        top: `${(targetArea.y / template.height) * 100}%`,
-                                        width: `${(targetArea.width / template.width) * 100}%`,
-                                        height: `${(targetArea.height / template.height) * 100}%`,
-                                        display: 'flex',
-                                        fontWeight: 'bold',
-                                        padding: '0.2em 0.5em',
-                                        boxSizing: 'border-box',
-                                        WebkitPrintColorAdjust: 'exact',
-                                        printColorAdjust: 'exact',
-                                    });
-                                    
-                                    const scoreData = scores[student.id]?.[area.id];
+                {results.map((student, studentIndex) => (
+                    <React.Fragment key={student.id}>
+                        {templatePages.map((page, pageIndex) => {
+                            // Dimensions
+                            const isPageLandscape = page.width > page.height;
+                            const pageWidth = isPageLandscape ? 297 : 210;
+                            const pageHeight = isPageLandscape ? 210 : 297;
+                            const padding = 5; // padding in mm per side
+                            const availableWidth = pageWidth - (padding * 2);
+                            const availableHeight = pageHeight - (padding * 2);
 
-                                    switch (area.type) {
-                                        case AreaType.ANSWER:
-                                        case AreaType.MARK_SHEET: {
-                                            const point = getPointForArea(area);
-                                            const studentScore = scoreData?.score;
-                                            
-                                            if (!point || studentScore === null || studentScore === undefined) return null;
+                            const pageAspectRatio = availableWidth / availableHeight;
+                            const templateAspectRatio = page.width / page.height;
 
-                                            // Render score in corner
-                                            const pointStyle: React.CSSProperties = {
-                                                ...getBaseStyleForArea(area),
-                                                ...cornerAlignMap[settings.point.corner],
-                                                fontSize: `${settings.point.fontSize}px`,
-                                                color: getPointColor(point),
-                                                transform: `translate(${settings.point.hOffset || 0}%, ${settings.point.vOffset || 0}%)`,
-                                            };
+                            let imageContainerWidth, imageContainerHeight;
+                            if (templateAspectRatio > pageAspectRatio) {
+                                imageContainerWidth = availableWidth;
+                                imageContainerHeight = availableWidth / templateAspectRatio;
+                            } else {
+                                imageContainerHeight = availableHeight;
+                                imageContainerWidth = availableHeight * templateAspectRatio;
+                            }
 
-                                            // Render scoring mark (circle, cross)
-                                            let mark = null;
-                                            if (settings.mark.show && scoreData) {
-                                                let markChar = '';
-                                                let markColor = '';
-                                                if (scoreData.status === ScoringStatus.CORRECT) { markChar = '◯'; markColor = settings.mark.correctColor; }
-                                                else if (scoreData.status === ScoringStatus.INCORRECT) { markChar = '☓'; markColor = settings.mark.incorrectColor; }
-                                                else if (scoreData.status === ScoringStatus.PARTIAL) { markChar = '△'; markColor = settings.mark.partialColor; }
+                            const pageStyle: React.CSSProperties = {
+                                width: `${pageWidth}mm`,
+                                height: `${pageHeight}mm`,
+                                margin: 'auto',
+                                padding: `${padding}mm`,
+                                boxSizing: 'border-box',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                position: 'relative',
+                                overflow: 'hidden',
+                            };
 
-                                                if (markChar) {
-                                                    const isQuestionNumberMode = settings.mark.positioningMode === 'question_number_area';
-                                                    const targetArea = isQuestionNumberMode && point.questionNumberAreaId
-                                                        ? areas.find(a => a.id === point.questionNumberAreaId) || area
-                                                        : area;
-                                                    
-                                                    // Determine horizontal offset:
-                                                    // If Question Number mode, default to -45% (shift left).
-                                                    // Otherwise use 0 as base.
-                                                    // Add user's manual offset.
-                                                    const baseHOffset = isQuestionNumberMode ? -45 : 0;
-                                                    const finalHOffset = baseHOffset + settings.mark.hOffset;
+                            const imageContainerStyle: React.CSSProperties = {
+                                position: 'relative',
+                                width: `${imageContainerWidth}mm`,
+                                height: `${imageContainerHeight}mm`,
+                            };
 
-                                                    const markStyle: React.CSSProperties = {
-                                                        ...getBaseStyleForArea(targetArea),
-                                                        padding: 0, // Ensure no padding for accurate centering
-                                                        // Always center align content within the box so transform is relative to center
-                                                        justifyContent: 'center', 
-                                                        alignItems: 'center',
-                                                        fontSize: `${settings.mark.fontSize}px`,
-                                                        color: markColor,
-                                                        opacity: settings.mark.opacity,
-                                                        // Apply transform
-                                                        transform: `translate(${finalHOffset}%, ${settings.mark.vOffset}%)`,
-                                                        whiteSpace: 'nowrap', // Prevent wrapping
-                                                        pointerEvents: 'none', // Ensure it doesn't block clicks if interactive (though this is print view)
-                                                    };
-                                                    mark = <div style={markStyle}>{markChar}</div>;
+                            // Use student image for this page, fallback to template blank page
+                            const imageSrc = student.images[pageIndex] || page.imagePath;
+                            
+                            // Filter areas that belong to this page
+                            const pageAreas = areas.filter(a => (a.pageIndex || 0) === pageIndex);
+
+                            return (
+                                <div
+                                    key={`${student.id}-page-${pageIndex}`}
+                                    className="page-break-after"
+                                    style={{ 
+                                        ...pageStyle, 
+                                        pageBreakAfter: (studentIndex === results.length - 1 && pageIndex === templatePages.length - 1) ? 'auto' : 'always' 
+                                    }}
+                                >
+                                    <div style={imageContainerStyle}>
+                                        <img src={imageSrc} alt={`Answer sheet for ${student.name} p${pageIndex+1}`} className="absolute top-0 left-0 w-full h-full" />
+                                        <div className="absolute top-0 left-0 w-full h-full">
+                                            {pageAreas.map(area => {
+                                                const getBaseStyleForArea = (targetArea: Area): React.CSSProperties => ({
+                                                    position: 'absolute',
+                                                    left: `${(targetArea.x / page.width) * 100}%`,
+                                                    top: `${(targetArea.y / page.height) * 100}%`,
+                                                    width: `${(targetArea.width / page.width) * 100}%`,
+                                                    height: `${(targetArea.height / page.height) * 100}%`,
+                                                    display: 'flex',
+                                                    fontWeight: 'bold',
+                                                    padding: '0.2em 0.5em',
+                                                    boxSizing: 'border-box',
+                                                    WebkitPrintColorAdjust: 'exact',
+                                                    printColorAdjust: 'exact',
+                                                });
+                                                
+                                                const scoreData = scores[student.id]?.[area.id];
+
+                                                switch (area.type) {
+                                                    case AreaType.ANSWER:
+                                                    case AreaType.MARK_SHEET: {
+                                                        const point = getPointForArea(area);
+                                                        const studentScore = scoreData?.score;
+                                                        
+                                                        if (!point || studentScore === null || studentScore === undefined) return null;
+
+                                                        const pointStyle: React.CSSProperties = {
+                                                            ...getBaseStyleForArea(area),
+                                                            ...cornerAlignMap[settings.point.corner],
+                                                            fontSize: `${settings.point.fontSize}px`,
+                                                            color: getPointColor(point),
+                                                            transform: `translate(${settings.point.hOffset || 0}%, ${settings.point.vOffset || 0}%)`,
+                                                        };
+
+                                                        let mark = null;
+                                                        if (settings.mark.show && scoreData) {
+                                                            let markChar = '';
+                                                            let markColor = '';
+                                                            if (scoreData.status === ScoringStatus.CORRECT) { markChar = '◯'; markColor = settings.mark.correctColor; }
+                                                            else if (scoreData.status === ScoringStatus.INCORRECT) { markChar = '☓'; markColor = settings.mark.incorrectColor; }
+                                                            else if (scoreData.status === ScoringStatus.PARTIAL) { markChar = '△'; markColor = settings.mark.partialColor; }
+
+                                                            if (markChar) {
+                                                                const isQuestionNumberMode = settings.mark.positioningMode === 'question_number_area';
+                                                                const targetArea = isQuestionNumberMode && point.questionNumberAreaId
+                                                                    ? areas.find(a => a.id === point.questionNumberAreaId) || area
+                                                                    : area;
+                                                                
+                                                                // Check if target area is on current page. 
+                                                                // If question number is on another page, we might fallback to answer area or skip mark?
+                                                                // For now, fallback to area if target not on current page.
+                                                                const targetPageIdx = targetArea.pageIndex || 0;
+                                                                const effectiveTargetArea = targetPageIdx === pageIndex ? targetArea : area;
+
+                                                                const baseHOffset = isQuestionNumberMode ? -45 : 0;
+                                                                const finalHOffset = baseHOffset + settings.mark.hOffset;
+
+                                                                const markStyle: React.CSSProperties = {
+                                                                    ...getBaseStyleForArea(effectiveTargetArea),
+                                                                    padding: 0,
+                                                                    justifyContent: 'center', 
+                                                                    alignItems: 'center',
+                                                                    fontSize: `${settings.mark.fontSize}px`,
+                                                                    color: markColor,
+                                                                    opacity: settings.mark.opacity,
+                                                                    transform: `translate(${finalHOffset}%, ${settings.mark.vOffset}%)`,
+                                                                    whiteSpace: 'nowrap',
+                                                                    pointerEvents: 'none',
+                                                                };
+                                                                mark = <div style={markStyle}>{markChar}</div>;
+                                                            }
+                                                        }
+                                                        
+                                                        const annotations = scores[student.id]?.[area.id]?.annotations;
+
+                                                        return (
+                                                            <React.Fragment key={`${area.id}-details`}>
+                                                                {mark}
+                                                                <div style={pointStyle}>{studentScore}</div>
+                                                                {annotations && <div style={getBaseStyleForArea(area)}><AnnotationOverlayForPrint annotations={annotations} width={area.width} height={area.height}/></div>}
+                                                            </React.Fragment>
+                                                        );
+                                                    }
+                                                    case AreaType.SUBTOTAL: {
+                                                        const subtotalScore = student.subtotals[area.id];
+                                                        if (subtotalScore === undefined) return null;
+                                                        
+                                                        const style: React.CSSProperties = {
+                                                            ...getBaseStyleForArea(area),
+                                                            justifyContent: hAlignMap[settings.subtotal.hAlign],
+                                                            alignItems: vAlignMap[settings.subtotal.vAlign],
+                                                            fontSize: `${settings.subtotal.fontSize}px`,
+                                                            color: getSubtotalColor(area.id),
+                                                        };
+                                                        return <div key={area.id} style={style}>{settings.subtotal.showScore && subtotalScore}</div>;
+                                                    }
+                                                    case AreaType.TOTAL: {
+                                                        const style: React.CSSProperties = {
+                                                            ...getBaseStyleForArea(area),
+                                                            justifyContent: hAlignMap[settings.total.hAlign],
+                                                            alignItems: vAlignMap[settings.total.vAlign],
+                                                            fontSize: `${settings.total.fontSize}px`,
+                                                            color: settings.total.color,
+                                                        };
+                                                        return <div key={area.id} style={style}>{settings.total.showScore && student.totalScore}</div>;
+                                                    }
+                                                    default:
+                                                        return null;
                                                 }
-                                            }
-                                            
-                                            const annotations = scores[student.id]?.[area.id]?.annotations;
-
-                                            return (
-                                                <React.Fragment key={`${area.id}-details`}>
-                                                    {mark}
-                                                    <div style={pointStyle}>{studentScore}</div>
-                                                    {annotations && <div style={getBaseStyleForArea(area)}><AnnotationOverlayForPrint annotations={annotations} width={area.width} height={area.height}/></div>}
-                                                </React.Fragment>
-                                            );
-                                        }
-                                        case AreaType.SUBTOTAL: {
-                                            const subtotalScore = student.subtotals[area.id];
-                                            if (subtotalScore === undefined) return null;
-                                            
-                                            const style: React.CSSProperties = {
-                                                ...getBaseStyleForArea(area),
-                                                justifyContent: hAlignMap[settings.subtotal.hAlign],
-                                                alignItems: vAlignMap[settings.subtotal.vAlign],
-                                                fontSize: `${settings.subtotal.fontSize}px`,
-                                                color: getSubtotalColor(area.id),
-                                            };
-                                            return <div key={area.id} style={style}>{settings.subtotal.showScore && subtotalScore}</div>;
-                                        }
-                                        case AreaType.TOTAL: {
-                                            const style: React.CSSProperties = {
-                                                ...getBaseStyleForArea(area),
-                                                justifyContent: hAlignMap[settings.total.hAlign],
-                                                alignItems: vAlignMap[settings.total.vAlign],
-                                                fontSize: `${settings.total.fontSize}px`,
-                                                color: settings.total.color,
-                                            };
-                                            return <div key={area.id} style={style}>{settings.total.showScore && student.totalScore}</div>;
-                                        }
-                                        default:
-                                            return null;
-                                    }
-                                })}
-                            </div>
-                        </div>
-                    </div>
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </React.Fragment>
                 ))}
             </div>
         );

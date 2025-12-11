@@ -58,6 +58,10 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
     const textInputRef = useRef<HTMLTextAreaElement>(null);
     const [textInput, setTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
 
+    // Determine correct image based on page index
+    const pageIndex = area.pageIndex || 0;
+    const imageSrc = student.images[pageIndex] || null;
+
     const addAnnotationAndCommit = (annotation: Annotation) => {
         const newAnnotations = [...liveAnnotations, annotation];
         setLiveAnnotations(newAnnotations);
@@ -220,7 +224,7 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
                     <div ref={drawingSurfaceRef} className="flex-1 relative bg-slate-200 dark:bg-slate-900 rounded-lg flex items-center justify-center overflow-hidden"
                         onMouseDown={handleMouseDown}
                     >
-                        <AnswerSnippet imageSrc={student.filePath} area={area} template={template} />
+                        <AnswerSnippet imageSrc={imageSrc} area={area} template={template} />
                         <AnnotationOverlay annotations={liveAnnotations} />
                         {textInput && (
                             <textarea

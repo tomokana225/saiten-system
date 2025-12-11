@@ -182,10 +182,15 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         if(isGradingAllMode) setIsGradingAll(true);
         else setIsGrading(true);
         
-        const studentsToGrade = studentsWithInfo.filter(s => s.filePath);
+        // Filter out students who don't have images
+        const studentsToGrade = studentsWithInfo.filter(s => s.images && s.images.length > 0);
+        
         const totalGradingTasks = studentsToGrade.length * areaIds.length;
         let completedTasks = 0;
         setProgress({ current: 0, total: totalGradingTasks, message: '準備中...' });
+
+        // Ensure template has pages
+        const templatePages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
 
         for (const areaId of areaIds) {
             const area = areas.find(a => a.id === areaId);
@@ -196,6 +201,9 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                  continue;
             }
 
+            const pageIndex = area.pageIndex || 0;
+            const masterImage = templatePages[pageIndex]?.imagePath;
+
             setProgress(p => ({ ...p, message: `問題「${point.label}」を採点中...` }));
 
             // Branch logic for different area types
@@ -203,8 +211,10 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                 // Local Image Analysis for Mark Sheets
                 const updates: { studentId: string; areaId: number; scoreData: ScoreData }[] = [];
                 for (const student of studentsToGrade) {
-                    if (!student.filePath) continue;
-                    const studentSnippet = await cropImage(student.filePath, area);
+                    const studentImage = student.images[pageIndex];
+                    if (!studentImage) continue;
+                    
+                    const studentSnippet = await cropImage(studentImage, area);
                     if (!studentSnippet) continue;
                     
                     const detectedMarkResult = await analyzeMarkSheetSnippet(studentSnippet, point);
@@ -247,21 +257,32 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                 });
 
             } else { // AI Grading for Descriptive Answers
-                const masterSnippet = await cropImage(template.filePath, area);
+                if (!masterImage) {
+                     completedTasks += studentsToGrade.length;
+                     setProgress(p => ({ ...p, current: completedTasks }));
+                     continue;
+                }
+                
+                const masterSnippet = await cropImage(masterImage, area);
                 if (!masterSnippet) {
                     completedTasks += studentsToGrade.length;
                     setProgress(p => ({ ...p, current: completedTasks }));
                     continue;
                 }
                 const studentSnippets = await Promise.all(
-                    studentsToGrade.map(async (student) => ({
-                        studentId: student.id,
-                        base64: await cropImage(student.filePath!, area)
-                    }))
+                    studentsToGrade.map(async (student) => {
+                        const studentImage = student.images[pageIndex];
+                        return {
+                            studentId: student.id,
+                            base64: studentImage ? await cropImage(studentImage, area) : null
+                        };
+                    })
                 );
+                
+                const validSnippets = studentSnippets.filter(s => s.base64 !== null) as { studentId: string, base64: string }[];
 
-                for (let i = 0; i < studentSnippets.length; i += aiSettings.batchSize) {
-                    const batch = studentSnippets.slice(i, i + aiSettings.batchSize);
+                for (let i = 0; i < validSnippets.length; i += aiSettings.batchSize) {
+                    const batch = validSnippets.slice(i, i + aiSettings.batchSize);
                     const result = await callGeminiAPIBatch(apiKey, masterSnippet, batch, point, aiGradingMode, answerFormat, aiSettings.gradingMode);
                     if (result.results) {
                         handleScoresChange(prevScores => {

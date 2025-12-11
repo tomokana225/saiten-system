@@ -170,8 +170,6 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
 
         const crop = async () => {
             try {
-                // Fetch image details via IPC to avoid large base64 transfer overhead if not needed, 
-                // but here we need pixel data for cropping.
                 const result = await window.electronAPI.invoke('get-image-details', imageSrc);
                 if (!result.success || !result.details?.url) {
                     throw new Error('Failed to load image');

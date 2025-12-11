@@ -60,10 +60,10 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ areas, setArea
                 const markSize = Math.min(template.width, template.height) * 0.05;
 
                 const markAreas: Area[] = [
-                    { id: Date.now(), name: '基準マーク TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize },
-                    { id: Date.now()+1, name: '基準マーク TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize },
-                    { id: Date.now()+2, name: '基準マーク BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize },
-                    { id: Date.now()+3, name: '基準マーク BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize },
+                    { id: Date.now(), name: '基準マーク TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+1, name: '基準マーク TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+2, name: '基準マーク BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+3, name: '基準マーク BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
                 ];
 
                 setAreas([...newAreas, ...markAreas]);

@@ -61,115 +61,129 @@ export const PointAllocator = () => {
         if (!template) return;
         setIsDetecting(true);
         try {
-            const result = await window.electronAPI.invoke('get-image-details', template.filePath);
-            if (!result.success || !result.details?.url) {
-                throw new Error(result.error || 'Failed to get template image for auto-detection.');
-            }
-            const dataUrl = result.details.url;
-            const img = new Image();
-            img.src = dataUrl;
-            await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
-            const mainCanvas = document.createElement('canvas');
-            mainCanvas.width = img.naturalWidth;
-            mainCanvas.height = img.naturalHeight;
-            const mainCtx = mainCanvas.getContext('2d', { willReadFrequently: true });
-            if (!mainCtx) throw new Error('Could not get canvas context');
-            mainCtx.drawImage(img, 0, 0);
+            // NOTE: Only detects on the FIRST page for now, or we need to iterate all relevant pages.
+            // Simplified: iterating points and loading corresponding page.
+            
             const markSheetPoints = internalPoints.filter(p => {
                 const area = areas.find(a => a.id === p.id);
                 return area?.type === AreaType.MARK_SHEET;
             });
+
             if (markSheetPoints.length === 0) {
                 alert('マークシート形式の問題がありません。');
                 setIsDetecting(false);
                 return;
             }
+
             const updatedPoints = [...internalPoints];
             let detectedCount = 0;
-            for (const point of markSheetPoints) {
-                const area = areas.find(a => a.id === point.id)!;
-                
-                // Safe Cropping Logic
-                let sx = Math.floor(area.x);
-                let sy = Math.floor(area.y);
-                let sw = Math.floor(area.width);
-                let sh = Math.floor(area.height);
+            
+            // Group by page to minimize image loading
+            const pointsByPage: Record<number, Point[]> = {};
+            markSheetPoints.forEach(p => {
+                const area = areas.find(a => a.id === p.id);
+                const pIdx = area?.pageIndex || 0;
+                if (!pointsByPage[pIdx]) pointsByPage[pIdx] = [];
+                pointsByPage[pIdx].push(p);
+            });
 
-                if (sx < 0) { sw += sx; sx = 0; }
-                if (sy < 0) { sh += sy; sy = 0; }
-                if (sx + sw > mainCanvas.width) sw = mainCanvas.width - sx;
-                if (sy + sh > mainCanvas.height) sh = mainCanvas.height - sy;
+            const templatePages = template.pages || (template.filePath ? [{ imagePath: template.filePath }] : []);
 
-                if (sw <= 0 || sh <= 0) continue;
+            for (const [pageIdxStr, pointsOnPage] of Object.entries(pointsByPage)) {
+                const pageIdx = parseInt(pageIdxStr, 10);
+                const pageImage = templatePages[pageIdx]?.imagePath;
+                if (!pageImage) continue;
 
-                const imageData = mainCtx.getImageData(sx, sy, sw, sh);
-                const data = imageData.data;
-                const options = point.markSheetOptions || 4;
-                const isHorizontal = point.markSheetLayout === 'horizontal';
-                
-                // --- Simple Grid Logic (Can be improved with edge scanning like StudentVerificationEditor if needed) ---
-                // For Answer Key setting, we assume the template is clean, so simple equal division usually works.
-                // However, robustness is good.
-                
-                const segmentWidth = isHorizontal ? sw / options : sw;
-                const segmentHeight = isHorizontal ? sh : sh / options;
-                
-                const darknessScores = Array(options).fill(0);
+                const result = await window.electronAPI.invoke('get-image-details', pageImage);
+                if (!result.success || !result.details?.url) continue;
 
-                for (let i = 0; i < options; i++) {
-                    const xStart = isHorizontal ? i * segmentWidth : 0;
-                    const yStart = isHorizontal ? 0 : i * segmentHeight;
+                const img = new Image();
+                img.src = result.details.url;
+                await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+                
+                const mainCanvas = document.createElement('canvas');
+                mainCanvas.width = img.naturalWidth;
+                mainCanvas.height = img.naturalHeight;
+                const mainCtx = mainCanvas.getContext('2d', { willReadFrequently: true });
+                if (!mainCtx) continue;
+                mainCtx.drawImage(img, 0, 0);
+
+                for (const point of pointsOnPage) {
+                    const area = areas.find(a => a.id === point.id)!;
                     
-                    // Increase margin to 25% to ignore borders and focus on the center fill
-                    const roiMargin = 0.25;
-                    const roiXStart = Math.floor(xStart + segmentWidth * roiMargin);
-                    const roiYStart = Math.floor(yStart + segmentHeight * roiMargin);
-                    const roiXEnd = Math.ceil(xStart + segmentWidth * (1 - roiMargin));
-                    const roiYEnd = Math.ceil(yStart + segmentHeight * (1 - roiMargin));
-                    let invertedGraySum = 0;
-                    
-                    for (let y = roiYStart; y < roiYEnd; y++) {
-                        for (let x = roiXStart; x < roiXEnd; x++) {
-                            if (x < 0 || x >= sw || y < 0 || y >= sh) continue;
+                    let sx = Math.floor(area.x);
+                    let sy = Math.floor(area.y);
+                    let sw = Math.floor(area.width);
+                    let sh = Math.floor(area.height);
 
-                            const idx = (y * sw + x) * 4;
-                            const r = data[idx];
-                            const g = data[idx + 1];
-                            const b = data[idx + 2];
-                            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                            invertedGraySum += (255 - gray);
+                    if (sx < 0) { sw += sx; sx = 0; }
+                    if (sy < 0) { sh += sy; sy = 0; }
+                    if (sx + sw > mainCanvas.width) sw = mainCanvas.width - sx;
+                    if (sy + sh > mainCanvas.height) sh = mainCanvas.height - sy;
+
+                    if (sw <= 0 || sh <= 0) continue;
+
+                    const imageData = mainCtx.getImageData(sx, sy, sw, sh);
+                    const data = imageData.data;
+                    const options = point.markSheetOptions || 4;
+                    const isHorizontal = point.markSheetLayout === 'horizontal';
+                    
+                    const segmentWidth = isHorizontal ? sw / options : sw;
+                    const segmentHeight = isHorizontal ? sh : sh / options;
+                    
+                    const darknessScores = Array(options).fill(0);
+
+                    for (let i = 0; i < options; i++) {
+                        const xStart = isHorizontal ? i * segmentWidth : 0;
+                        const yStart = isHorizontal ? 0 : i * segmentHeight;
+                        
+                        const roiMargin = 0.25;
+                        const roiXStart = Math.floor(xStart + segmentWidth * roiMargin);
+                        const roiYStart = Math.floor(yStart + segmentHeight * roiMargin);
+                        const roiXEnd = Math.ceil(xStart + segmentWidth * (1 - roiMargin));
+                        const roiYEnd = Math.ceil(yStart + segmentHeight * (1 - roiMargin));
+                        let invertedGraySum = 0;
+                        
+                        for (let y = roiYStart; y < roiYEnd; y++) {
+                            for (let x = roiXStart; x < roiXEnd; x++) {
+                                if (x < 0 || x >= sw || y < 0 || y >= sh) continue;
+                                const idx = (y * sw + x) * 4;
+                                const r = data[idx];
+                                const g = data[idx + 1];
+                                const b = data[idx + 2];
+                                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                                invertedGraySum += (255 - gray);
+                            }
                         }
+                        darknessScores[i] = invertedGraySum;
                     }
-                    darknessScores[i] = invertedGraySum;
-                }
 
-                if (darknessScores.every(score => score === 0)) continue;
+                    if (darknessScores.every(score => score === 0)) continue;
 
-                const scoresWithIndices = darknessScores.map((score, index) => ({ score, index }));
-                scoresWithIndices.sort((a, b) => b.score - a.score);
+                    const scoresWithIndices = darknessScores.map((score, index) => ({ score, index }));
+                    scoresWithIndices.sort((a, b) => b.score - a.score);
 
-                const winner = scoresWithIndices[0];
-                const runnerUp = scoresWithIndices[1];
-                
-                const roiW = segmentWidth * (1 - 2 * 0.25);
-                const roiH = segmentHeight * (1 - 2 * 0.25);
-                const roiArea = roiW * roiH;
-                
-                // Relaxed: 1.5% darkness required
-                const minThreshold = roiArea * 255 * 0.015; 
+                    const winner = scoresWithIndices[0];
+                    const runnerUp = scoresWithIndices[1];
+                    
+                    const roiW = segmentWidth * (1 - 2 * 0.25);
+                    const roiH = segmentHeight * (1 - 2 * 0.25);
+                    const roiArea = roiW * roiH;
+                    
+                    const minThreshold = roiArea * 255 * 0.015; 
+                    const isConfidentWinner = winner.score > minThreshold && 
+                                            (!runnerUp || winner.score > runnerUp.score * 1.05);
 
-                // Even more relaxed ratio from 1.1 to 1.05 to detect fainter marks
-                const isConfidentWinner = winner.score > minThreshold && 
-                                          (!runnerUp || winner.score > runnerUp.score * 1.05);
-
-                if (isConfidentWinner) {
-                    const pointIndex = updatedPoints.findIndex(p => p.id === point.id);
-                    if (pointIndex !== -1) {
-                        updatedPoints[pointIndex] = { ...updatedPoints[pointIndex], correctAnswerIndex: winner.index };
-                        detectedCount++;
+                    if (isConfidentWinner) {
+                        const pointIndex = updatedPoints.findIndex(p => p.id === point.id);
+                        if (pointIndex !== -1) {
+                            updatedPoints[pointIndex] = { ...updatedPoints[pointIndex], correctAnswerIndex: winner.index };
+                            detectedCount++;
+                        }
                     }
                 }
             }
+
             setInternalPoints(updatedPoints);
             alert(`${markSheetPoints.length}件のマークシート問題のうち、${detectedCount}件の正解を認識しました。`);
         } catch (error) {
@@ -236,12 +250,16 @@ export const PointAllocator = () => {
                 {internalPoints.map((point) => {
                     const area = relevantAreas.find(a => a.id === point.id);
                     if (!area) return null;
+                    
+                    const pageIndex = area.pageIndex || 0;
+                    const imageSrc = template?.pages?.[pageIndex]?.imagePath || template?.filePath;
+
                     return (
                     <div key={point.id} className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
                         {showImages && template && (
                             <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group">
                                 <AnswerSnippet
-                                    imageSrc={template.filePath}
+                                    imageSrc={imageSrc}
                                     area={area}
                                     template={template}
                                     pannable={true}
@@ -252,7 +270,7 @@ export const PointAllocator = () => {
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-slate-500">問題</label>
                                 <input type="text" value={point.label} onChange={(e) => handlePointPropChange(point.id, 'label', e.target.value)} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2" />
-                                <span className="text-xs px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-700">{area.type}</span>
+                                <span className="text-xs px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-700">{area.type} {pageIndex > 0 ? `(p.${pageIndex+1})` : ''}</span>
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-slate-500">配点</label>

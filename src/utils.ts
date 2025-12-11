@@ -1,5 +1,11 @@
 // This file contains utility functions used across the application,
 // including file handling and advanced image processing.
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker
+if (typeof window !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://aistudiocdn.com/pdfjs-dist@4.0.379/build/pdf.worker.mjs';
+}
 
 /**
  * Reads a File object and converts it into an ArrayBuffer.
@@ -27,6 +33,44 @@ export const loadImage = (src: string): Promise<HTMLImageElement> => {
         img.onerror = reject;
         img.src = src;
     });
+};
+
+/**
+ * Converts a File (Image or PDF) into an array of image data URLs.
+ * If image, returns [dataUrl]. If PDF, returns [page1DataUrl, page2DataUrl...].
+ */
+export const convertFileToImages = async (file: File): Promise<string[]> => {
+    if (file.type === 'application/pdf') {
+        const arrayBuffer = await fileToArrayBuffer(file);
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        const images: string[] = [];
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 2.0 }); // High quality scale
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({
+                canvasContext: context!,
+                viewport: viewport
+            }).promise;
+
+            images.push(canvas.toDataURL('image/jpeg', 0.85));
+        }
+        return images;
+    } else {
+        // Assume image
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve([reader.result as string]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
 };
 
 /**

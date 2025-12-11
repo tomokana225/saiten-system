@@ -10,7 +10,6 @@ interface StudentAnswerGridProps {
     areas: Area[];
     points: Point[];
     scores: AllScores;
-    // FIX: Changed `ScoreData` to `Partial<ScoreData>` to allow for partial updates to a student's score data.
     onScoreChange: (studentId: string, areaId: number, newScoreData: Partial<ScoreData>) => void;
     onStartAnnotation: (studentId: string, areaId: number) => void;
     onPanCommit: (studentId: string, areaId: number, offset: { x: number, y: number }) => void;
@@ -30,6 +29,13 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
     const selectedArea = useMemo(() => areas.find(a => a.id === selectedAreaId), [areas, selectedAreaId]);
     const selectedPoint = useMemo(() => points.find(p => p.id === selectedAreaId), [points, selectedAreaId]);
 
+    // Determine which page's image to use for the "Model Answer" snippet
+    const masterImageSrc = useMemo(() => {
+        if (!selectedArea || !template) return null;
+        const pageIndex = selectedArea.pageIndex || 0;
+        return template.pages?.[pageIndex]?.imagePath || template.filePath;
+    }, [selectedArea, template]);
+
     return (
         <div className="flex-1 overflow-y-auto space-y-4 p-1">
             <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
@@ -37,8 +43,8 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
                     <h4 className="text-sm font-semibold mb-1 text-center text-slate-600 dark:text-slate-400">模範解答</h4>
                     {template && selectedArea ? (
                         <AnswerSnippet
-                            imageSrc={template.filePath}
-                            imageWidth={template.width}
+                            imageSrc={masterImageSrc}
+                            imageWidth={template.width} // Note: This might need to be page width if pages differ
                             imageHeight={template.height}
                             area={selectedArea}
                             template={template}

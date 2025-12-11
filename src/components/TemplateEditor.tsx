@@ -24,20 +24,24 @@ const MIN_AREA_SIZE = 10;
 
 const migrateAreas = (areasToMigrate: Area[]): Area[] => {
     return areasToMigrate.map(area => {
-        if (area.type === AreaTypeEnum.MARK_SHEET && area.questionNumber === undefined) {
-            const match = area.name.match(/\d+/);
-            return {
-                ...area,
-                questionNumber: match ? parseInt(match[0], 10) : undefined
-            };
+        const migratedArea = { ...area };
+        if (migratedArea.pageIndex === undefined) migratedArea.pageIndex = 0;
+        if (migratedArea.type === AreaTypeEnum.MARK_SHEET && migratedArea.questionNumber === undefined) {
+            const match = migratedArea.name.match(/\d+/);
+            migratedArea.questionNumber = match ? parseInt(match[0], 10) : undefined;
         }
-        return area;
+        return migratedArea;
     });
 };
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
     const { template, areas: initialAreas } = activeProject!;
+
+    // Ensure we have a valid page structure even for legacy templates
+    const pages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
+    const [activePageIndex, setActivePageIndex] = useState(0);
+    const activePage = pages[activePageIndex];
 
     const [areas, setAreas] = useState<Area[]>(() => migrateAreas(initialAreas));
     const [selectedAreaIds, setSelectedAreaIds] = useState<Set<number>>(new Set());
@@ -65,6 +69,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         zoomRef.current = zoom;
     }, [zoom]);
     
+    // Filter areas for drawing on the current page
+    const currentPageAreas = areas.filter(a => (a.pageIndex === undefined ? 0 : a.pageIndex) === activePageIndex);
+
     const getResizeHandle = useCallback((area: Area, x: number, y: number) => {
         const handleSize = RESIZE_HANDLE_SIZE / zoom;
         const handles = [
@@ -90,13 +97,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         const draw = () => {
             const canvas = canvasRef.current;
             const ctx = canvas?.getContext('2d');
-            if (!ctx || !canvas) return;
+            if (!ctx || !canvas || !activePage) return;
 
-            canvas.width = template.width;
-            canvas.height = template.height;
+            canvas.width = activePage.width;
+            canvas.height = activePage.height;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            areas.forEach(area => {
+            currentPageAreas.forEach(area => {
                 ctx.strokeStyle = areaTypeColors[area.type]?.hex || '#000000';
                 ctx.lineWidth = selectedAreaIds.has(area.id) ? 4 : 2;
                 ctx.strokeRect(area.x, area.y, area.width, area.height);
@@ -115,7 +122,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             });
         };
         draw();
-    }, [areas, selectedAreaIds, template.width, template.height]);
+    }, [currentPageAreas, selectedAreaIds, activePage]);
     
      useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -167,6 +174,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                             name: `${area.name} (コピー)`,
                             x: area.x + 10,
                             y: area.y + 10,
+                            pageIndex: activePageIndex // Paste onto current page
                         };
                         if (area.type === AreaTypeEnum.MARK_SHEET || area.type === AreaTypeEnum.ANSWER) {
                             questionCounter++;
@@ -191,7 +199,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [selectedAreaIds, areas, handleAreasChange, clipboard]);
+    }, [selectedAreaIds, areas, handleAreasChange, clipboard, activePageIndex]);
 
     // Use native event listener for 'wheel' to properly prevent default browser zooming
     useEffect(() => {
@@ -289,7 +297,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
 
         const pos = getRelativeCoords(e);
-        const clickedArea = areas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
+        const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         if (activeTool === 'select' && clickedArea) {
             const resizeHandleData = selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
             if (resizeHandleData) {
@@ -367,9 +375,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 const height = Math.abs(pos.y - startPoint.y);
                 const canvas = canvasRef.current;
                 const ctx = canvas?.getContext('2d');
-                if (ctx && canvas) {
+                if (ctx && canvas && activePage) {
                     ctx.clearRect(0,0,canvas.width, canvas.height);
-                    areas.forEach(area => {
+                    currentPageAreas.forEach(area => {
                         ctx.strokeStyle = areaTypeColors[area.type]?.hex || '#000000';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(area.x, area.y, area.width, area.height);
@@ -426,6 +434,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     id: Date.now(), name: newName, type: activeTool as AreaType,
                     x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y),
                     width, height, questionNumber,
+                    pageIndex: activePageIndex // Set page index
                 };
                 handleAreasChange([...areas, newArea]);
             }
@@ -444,7 +453,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         if (activeTool === 'pan' || isSpacePressed) cursor = panState?.isPanning ? 'grabbing' : 'grab';
         else if (activeTool !== 'select') cursor = 'crosshair';
         if (activeTool === 'select' && !isSpacePressed) {
-            const selectedAreas = areas.filter(a => selectedAreaIds.has(a.id));
+            const selectedAreas = currentPageAreas.filter(a => selectedAreaIds.has(a.id));
             let handleFound = false;
             for (const area of selectedAreas) {
                 const handle = getResizeHandle(area, pos.x, pos.y);
@@ -455,12 +464,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 }
             }
             if (!handleFound) {
-                const hoveredArea = areas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
+                const hoveredArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
                 if (hoveredArea) cursor = 'move';
             }
         }
         canvas.style.cursor = cursor;
-    }, [activeTool, areas, selectedAreaIds, drawState, getResizeHandle, panState, isSpacePressed]);
+    }, [activeTool, currentPageAreas, selectedAreaIds, drawState, getResizeHandle, panState, isSpacePressed]);
+
+    if (!activePage) return <div className="p-4">No template loaded</div>;
 
     return (
         <div className="w-full h-full flex gap-4">
@@ -477,19 +488,35 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     setActiveTool={setActiveTool}
                     zoom={zoom} onZoomChange={setZoom} 
                 />
+                
+                {/* Page Navigation Tabs */}
+                {pages.length > 1 && (
+                    <div className="flex bg-slate-200 dark:bg-slate-700 rounded-t-lg overflow-hidden">
+                        {pages.map((_, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => setActivePageIndex(idx)}
+                                className={`px-4 py-2 text-sm font-medium ${activePageIndex === idx ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 border-t-2 border-sky-500' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                            >
+                                {idx + 1}ページ目
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 <div 
                     ref={containerRef}
-                    className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg cursor-default"
+                    className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-b-lg rounded-tr-lg cursor-default"
                 >
                     <div
                         className="relative"
-                        style={{ width: template.width * zoom, height: template.height * zoom, margin: 'auto' }}
+                        style={{ width: activePage.width * zoom, height: activePage.height * zoom, margin: 'auto' }}
                     >
                         <div
                             className="absolute top-0 left-0"
-                            style={{ width: template.width, height: template.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+                            style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}
                         >
-                            <img ref={imageRef} src={template.filePath} alt="Test Template" style={{ display: 'block', width: template.width, height: template.height }}/>
+                            <img ref={imageRef} src={activePage.imagePath} alt={`Page ${activePageIndex + 1}`} style={{ display: 'block', width: activePage.width, height: activePage.height }}/>
                             <canvas 
                                 ref={canvasRef} 
                                 className="absolute top-0 left-0"
