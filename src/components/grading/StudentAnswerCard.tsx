@@ -87,8 +87,10 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     // Determine correct image based on page index
     const pageIndex = area.pageIndex || 0;
     const imageSrc = student.images[pageIndex] || null;
+    const hasImage = !!imageSrc;
 
     const handleStatusChange = (newStatus: ScoringStatus) => {
+        if (!hasImage) return; // Prevent change if no image
         let newScore: number | null = null;
         switch (newStatus) {
             case ScoringStatus.CORRECT:
@@ -108,12 +110,14 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     };
     
     const handlePartialInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!hasImage) return;
         const val = e.target.value;
         const newScore = val === '' ? 0 : Math.min(Math.max(0, parseInt(val, 10)), point.points);
         onScoreChange(student.id, area.id, { status: ScoringStatus.PARTIAL, score: newScore });
     };
 
     const handleAnswerClick = () => {
+        if (!hasImage) return;
         if (currentStatus === ScoringStatus.CORRECT) {
             handleStatusChange(ScoringStatus.INCORRECT);
         } else {
@@ -130,7 +134,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
             <div className="flex justify-between items-center">
                 <h5 className="font-semibold text-xs truncate">{student.class}-{student.number} {student.name}</h5>
                 <div className="flex items-center gap-1">
-                    {currentStatus === ScoringStatus.PARTIAL ? (
+                    {currentStatus === ScoringStatus.PARTIAL && hasImage ? (
                         <div className="flex items-center">
                             <input 
                                 type="number" 
@@ -144,7 +148,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                             <span className="text-xs text-slate-500 ml-1">/ {point.points}</span>
                         </div>
                     ) : (
-                        <p className={`font-bold text-sm ${isFocused && partialScoreInput ? 'text-sky-500' : ''}`}>
+                        <p className={`font-bold text-sm ${isFocused && partialScoreInput ? 'text-sky-500' : ''} ${!hasImage ? 'text-slate-400' : ''}`}>
                             {displayScore} / {point.points}
                         </p>
                     )}
@@ -169,17 +173,46 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
             </div>
 
             <div className="flex items-center justify-around gap-1">
-                <button onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.CORRECT); }} title="正解 (J)" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}>
+                <button 
+                    disabled={!hasImage}
+                    onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.CORRECT); }} 
+                    title="正解 (J)" 
+                    className={`p-1 rounded-full transition-colors ${
+                        !hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : 
+                        currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'
+                    }`}
+                >
                     <CircleCheckIcon className="w-5 h-5" />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.INCORRECT); }} title="不正解 (F)" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'}`}>
+                <button 
+                    disabled={!hasImage}
+                    onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.INCORRECT); }} 
+                    title="不正解 (F)" 
+                    className={`p-1 rounded-full transition-colors ${
+                        !hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' :
+                        currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'
+                    }`}
+                >
                     <XCircleIcon className="w-5 h-5" />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.PARTIAL); }} title="部分点" className={`p-1 rounded-full transition-colors ${currentStatus === ScoringStatus.PARTIAL ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' : 'text-slate-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'}`}>
+                <button 
+                    disabled={!hasImage}
+                    onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.PARTIAL); }} 
+                    title="部分点" 
+                    className={`p-1 rounded-full transition-colors ${
+                        !hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' :
+                        currentStatus === ScoringStatus.PARTIAL ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' : 'text-slate-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'
+                    }`}
+                >
                     <TriangleIcon className="w-5 h-5" />
                 </button>
                 <div className="border-l h-5 border-slate-200 dark:border-slate-600 mx-1"></div>
-                <button onClick={(e) => { e.stopPropagation(); onStartAnnotation(student.id, area.id); }} title="添削" className="p-1 rounded-full text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-900/50">
+                <button 
+                    disabled={!hasImage}
+                    onClick={(e) => { e.stopPropagation(); onStartAnnotation(student.id, area.id); }} 
+                    title="添削" 
+                    className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-900/50'}`}
+                >
                     <PencilIcon className="w-5 h-5"/>
                 </button>
             </div>

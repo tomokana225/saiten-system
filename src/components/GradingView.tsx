@@ -342,50 +342,117 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (annotatingStudent || (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
             if (!focusedStudentId || !selectedAreaId) return;
+            
+            const area = areas.find(a => a.id === selectedAreaId);
+            const pageIndex = area?.pageIndex || 0;
+
+            const isStudentValid = (idx: number) => {
+                if (idx < 0 || idx >= filteredStudents.length) return false;
+                const s = filteredStudents[idx];
+                return s && s.images && !!s.images[pageIndex];
+            };
+
+            const findNextValid = (startIndex: number): number => {
+                for (let i = startIndex; i < filteredStudents.length; i++) {
+                    if (isStudentValid(i)) return i;
+                }
+                return -1;
+            };
+
+            const findPrevValid = (startIndex: number): number => {
+                for (let i = startIndex; i >= 0; i--) {
+                    if (isStudentValid(i)) return i;
+                }
+                return -1;
+            };
+
             const currentIndex = filteredStudents.findIndex(s => s.id === focusedStudentId);
             if (currentIndex === -1) return;
+            
             let nextIndex = -1;
             switch (e.key) {
-                case 'ArrowRight': nextIndex = (currentIndex + 1) % filteredStudents.length; break;
-                case 'ArrowLeft': nextIndex = (currentIndex - 1 + filteredStudents.length) % filteredStudents.length; break;
-                case 'ArrowDown': nextIndex = Math.min(currentIndex + columnCount, filteredStudents.length - 1); break;
-                case 'ArrowUp': nextIndex = Math.max(currentIndex - columnCount, 0); break;
+                case 'ArrowRight': 
+                    nextIndex = findNextValid(currentIndex + 1);
+                    if (nextIndex === -1 && currentIndex < filteredStudents.length - 1) {
+                        // If no more valid students, stay or wrap? Currently just stops at last valid.
+                    } else if (nextIndex === -1) {
+                        nextIndex = currentIndex;
+                    }
+                    break;
+                case 'ArrowLeft': 
+                    nextIndex = findPrevValid(currentIndex - 1);
+                    if (nextIndex === -1) nextIndex = currentIndex;
+                    break;
+                case 'ArrowDown': {
+                    const targetIndex = currentIndex + columnCount;
+                    if (targetIndex < filteredStudents.length) {
+                        if (isStudentValid(targetIndex)) {
+                            nextIndex = targetIndex;
+                        } else {
+                            // If target slot is invalid, search forward from there
+                            nextIndex = findNextValid(targetIndex);
+                        }
+                    } else {
+                        nextIndex = currentIndex; // Stay if out of bounds
+                    }
+                    break;
+                }
+                case 'ArrowUp': {
+                    const targetIndex = currentIndex - columnCount;
+                    if (targetIndex >= 0) {
+                        if (isStudentValid(targetIndex)) {
+                            nextIndex = targetIndex;
+                        } else {
+                            // If target slot is invalid, search backward from there
+                            nextIndex = findPrevValid(targetIndex);
+                        }
+                    } else {
+                        nextIndex = currentIndex;
+                    }
+                    break;
+                }
                 case 'j': case 'J': 
                     updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.CORRECT, score: points.find(p => p.id === selectedAreaId)?.points || 0 });
-                    if (currentIndex + 1 < filteredStudents.length) {
-                        nextIndex = currentIndex + 1;
-                    }
+                    nextIndex = findNextValid(currentIndex + 1);
                     break;
                 case 'f': case 'F': 
                     updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.INCORRECT, score: 0 });
-                    if (currentIndex + 1 < filteredStudents.length) {
-                        nextIndex = currentIndex + 1;
-                    }
+                    nextIndex = findNextValid(currentIndex + 1);
                     break;
                 case 'a': case 'A': e.preventDefault(); setAnnotatingStudent({ studentId: focusedStudentId, areaId: selectedAreaId }); break;
-                case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
+                case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': {
                     e.preventDefault();
-                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL });
-                    setPartialScoreInput(prev => prev + e.key);
+                    const newInput = partialScoreInput + e.key;
+                    const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
+                    const newScore = Math.min(parseInt(newInput, 10), maxPoints);
+                    
+                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: newScore });
+                    setPartialScoreInput(newInput);
                     break;
-                case 'Backspace':
+                }
+                case 'Backspace': {
                     e.preventDefault();
-                    if(partialScoreInput) setPartialScoreInput(prev => prev.slice(0, -1));
+                    const croppedInput = partialScoreInput.slice(0, -1);
+                    setPartialScoreInput(croppedInput);
+                    
+                    const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
+                    if (croppedInput === '') {
+                        updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: null });
+                    } else {
+                        const newScore = Math.min(parseInt(croppedInput, 10), maxPoints);
+                        updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: newScore });
+                    }
                     break;
+                }
                 case 'Enter':
                     if (partialScoreInput) {
-                        const score = parseInt(partialScoreInput, 10);
-                        const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
-                        updateScore(focusedStudentId, selectedAreaId, { score: Math.min(score, maxPoints) });
                         setPartialScoreInput('');
-                        if (currentIndex + 1 < filteredStudents.length) {
-                            nextIndex = currentIndex + 1;
-                        }
+                        nextIndex = findNextValid(currentIndex + 1);
                     }
                     break;
                 default: return;
             }
-            if (nextIndex !== -1 && nextIndex < filteredStudents.length) {
+            if (nextIndex !== -1 && nextIndex !== currentIndex && nextIndex < filteredStudents.length) {
                 e.preventDefault();
                 const nextStudentId = filteredStudents[nextIndex].id;
                 setFocusedStudentId(nextStudentId);
@@ -394,7 +461,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [focusedStudentId, selectedAreaId, filteredStudents, columnCount, updateScore, partialScoreInput, points, annotatingStudent]);
+    }, [focusedStudentId, selectedAreaId, filteredStudents, columnCount, updateScore, partialScoreInput, points, annotatingStudent, areas]);
 
     useEffect(() => { setPartialScoreInput(''); }, [focusedStudentId]);
 
