@@ -114,7 +114,7 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         });
         
         const referencePoints = selectedProjects[0].points;
-        const answerPoints = referencePoints.filter(p => selectedProjects[0].areas.some(a => a.id === p.id && a.type === AreaType.ANSWER));
+        const answerPoints = referencePoints.filter(p => selectedProjects[0].areas.some(a => a.id === p.id && (a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET)));
 
         const allStudentsWithDetails = combinedStudents.map(student => {
             const studentScores = combinedScores[student.id] || {};

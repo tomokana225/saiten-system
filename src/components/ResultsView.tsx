@@ -68,7 +68,7 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
     const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
     
     const answerPoints = useMemo(() => {
-        const answerAreaIds = new Set(areas.filter(a => a.type === AreaType.ANSWER).map(a => a.id));
+        const answerAreaIds = new Set(areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET).map(a => a.id));
         return points.filter(p => answerAreaIds.has(p.id));
     }, [areas, points]);
 
