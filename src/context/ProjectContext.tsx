@@ -55,6 +55,7 @@ interface ProjectContextType {
     goToStep: (step: AppStep) => void;
     handleTemplateUpload: (files: File[]) => Promise<void>;
     handleStudentSheetsUpload: (files: File[]) => Promise<void>;
+    uploadFilesRaw: (files: File[]) => Promise<{ path: string; name: string }[]>; // New method
     handleAreasChange: (areas: Area[]) => void;
     handleTemplateChange: (templateUpdates: Partial<Template>) => void;
     handleStudentInfoChange: (studentInfo: StudentInfo[]) => void;
@@ -314,15 +315,11 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setIsLoading(false);
         }
     };
-    
-    const handleStudentSheetsUpload = async (files: File[]) => {
-        if (files.length === 0 || !activeProject?.template) return;
+
+    const uploadFilesRaw = async (files: File[]): Promise<{ path: string; name: string }[]> => {
         setIsLoading(true);
         try {
-            // Flatten all pages from all uploads
-            const allSheetImages: { path: string; name: string }[] = [];
-            
-            // Sort files by name to ensure order (e.g. 001.jpg, 002.jpg)
+            const processedImages: { path: string; name: string }[] = [];
             const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
             for (const file of sortedFiles) {
@@ -331,11 +328,25 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     const buffer = dataUrlToArrayBuffer(dataUrl);
                     if (!buffer) continue;
                     const filePath = await window.electronAPI.invoke('save-file-temp', { buffer, originalName: file.name });
-                    if(filePath) {
-                        allSheetImages.push({ path: filePath, name: file.name });
+                    if (filePath) {
+                        processedImages.push({ path: filePath, name: file.name });
                     }
                 }
             }
+            return processedImages;
+        } catch (error) {
+            console.error("Raw upload failed:", error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    const handleStudentSheetsUpload = async (files: File[]) => {
+        if (files.length === 0 || !activeProject?.template) return;
+        // Logic moved to use the new raw uploader, but keeping this convenience method for standard behavior
+        try {
+            const allSheetImages = await uploadFilesRaw(files);
 
             // Group images by template page count
             const pagesPerStudent = activeProject.template.pages.length;
@@ -364,8 +375,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } catch (error) {
             console.error("Error processing student sheets:", error);
              alert("解答用紙の処理中にエラーが発生しました。");
-        } finally {
-            setIsLoading(false);
         }
     };
     
@@ -493,7 +502,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setProjects, setRosters, setSheetLayouts, setActiveProjectId, setCurrentStep, setPreviousStep, setIsLoading,
         updateActiveProject, handleProjectCreate, handleProjectSelect, handleProjectDelete, handleProjectImport,
         handleProjectExportWithOptions, nextStep, prevStep, goToStep, handleTemplateUpload,
-        handleStudentSheetsUpload, handleAreasChange, handleTemplateChange, handleStudentInfoChange,
+        handleStudentSheetsUpload, uploadFilesRaw, handleAreasChange, handleTemplateChange, handleStudentInfoChange,
         handleStudentSheetsChange, handlePointsChange, handleScoresChange
     };
 
