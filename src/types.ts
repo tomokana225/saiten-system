@@ -360,4 +360,9 @@ export interface ReportLayoutSettings {
     orientation: 'portrait' | 'landscape';
     reportsPerPage: 1 | 2 | 4;
     questionTableColumns: 1 | 2 | 3;
+    showStandardScoreGraph: boolean;
+    showScoreTable: boolean;
+    showPerformanceGraph: boolean;
+    showTeacherComment: boolean;
+    showQuestionCorrectRate: boolean;
 }

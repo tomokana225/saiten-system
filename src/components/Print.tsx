@@ -56,7 +56,16 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
     );
     
     const [sortOrder, setSortOrder] = useState<'rank' | 'number'>('rank');
-    const [reportLayoutSettings, setReportLayoutSettings] = useState<ReportLayoutSettings>({ orientation: 'portrait', reportsPerPage: 1, questionTableColumns: 1 });
+    const [reportLayoutSettings, setReportLayoutSettings] = useState<ReportLayoutSettings>({ 
+        orientation: 'portrait', 
+        reportsPerPage: 1, 
+        questionTableColumns: 1,
+        showStandardScoreGraph: true,
+        showScoreTable: true,
+        showPerformanceGraph: true,
+        showTeacherComment: true,
+        showQuestionCorrectRate: true,
+    });
     const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>(defaultLayoutSettings);
     
     const subtotalAreas = useMemo(() => areas.filter(a => a.type === AreaType.SUBTOTAL), [areas]);
@@ -90,7 +99,23 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">並び順</label><div className="flex items-center gap-2 mt-1"><button key="rank" onClick={() => setSortOrder('rank')} className={`px-3 py-1 text-xs rounded-md flex-1 ${sortOrder === 'rank' ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>点数順</button><button key="number" onClick={() => setSortOrder('number')} className={`px-3 py-1 text-xs rounded-md flex-1 ${sortOrder === 'number' ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>番号順</button></div></div>
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">用紙の向き</label><div className="flex items-center gap-2 mt-1">{([ 'portrait', 'landscape' ] as const).map(o => (<button key={o} onClick={() => setReportLayoutSettings(s => ({ ...s, orientation: o }))} className={`px-3 py-1 text-xs rounded-md flex-1 ${reportLayoutSettings.orientation === o ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>{o === 'portrait' ? '縦' : '横'}</button>))}</div></div>
                 <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">1枚あたりの人数</label><div className="flex items-center gap-2 mt-1">{([1, 2, 4] as const).map(num => (<button key={num} onClick={() => setReportLayoutSettings(s => ({ ...s, reportsPerPage: num }))} className={`px-3 py-1 text-xs rounded-md flex-1 ${reportLayoutSettings.reportsPerPage === num ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>{num}人</button>))}</div></div>
-                <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">問題別得点表の列数</label><div className="flex items-center gap-2 mt-1">{([1, 2, 3] as const).map(num => (<button key={num} onClick={() => setReportLayoutSettings(s => ({ ...s, questionTableColumns: num }))} className={`px-3 py-1 text-xs rounded-md flex-1 ${reportLayoutSettings.questionTableColumns === num ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>{num}列</button>))}</div></div>
+                
+                <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50">
+                    <label className="font-medium text-sm text-slate-700 dark:text-slate-300">表示項目</label>
+                    <div className="space-y-2 mt-2">
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={reportLayoutSettings.showScoreTable} onChange={e => setReportLayoutSettings(s => ({ ...s, showScoreTable: e.target.checked }))} className="rounded" /> 得点明細表</label>
+                        {reportLayoutSettings.showScoreTable && (
+                            <div className="ml-4 pl-2 border-l border-slate-300">
+                                <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">列数</label>
+                                <div className="flex items-center gap-1 mb-2">{([1, 2, 3] as const).map(num => (<button key={num} onClick={() => setReportLayoutSettings(s => ({ ...s, questionTableColumns: num }))} className={`px-2 py-0.5 text-xs rounded-md flex-1 ${reportLayoutSettings.questionTableColumns === num ? 'bg-sky-500 text-white' : 'bg-slate-50 dark:bg-slate-700'}`}>{num}列</button>))}</div>
+                                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={reportLayoutSettings.showQuestionCorrectRate} onChange={e => setReportLayoutSettings(s => ({ ...s, showQuestionCorrectRate: e.target.checked }))} className="rounded" /> 各問題の正答率グラフ</label>
+                            </div>
+                        )}
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={reportLayoutSettings.showStandardScoreGraph} onChange={e => setReportLayoutSettings(s => ({ ...s, showStandardScoreGraph: e.target.checked }))} className="rounded" /> 偏差値分布グラフ</label>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={reportLayoutSettings.showPerformanceGraph} onChange={e => setReportLayoutSettings(s => ({ ...s, showPerformanceGraph: e.target.checked }))} className="rounded" /> 問題別達成度グラフ</label>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={reportLayoutSettings.showTeacherComment} onChange={e => setReportLayoutSettings(s => ({ ...s, showTeacherComment: e.target.checked }))} className="rounded" /> コメント欄</label>
+                    </div>
+                </div>
             </div>);
         }
         if (activeTab === 'sheets') {
@@ -178,7 +203,7 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
             </header>
             <main className="flex-1 flex overflow-hidden">
                 <div className="flex-1 bg-slate-300 dark:bg-slate-950/80 overflow-auto p-4">
-                    {sortedAndFilteredResults.length > 0 ? (<>{activeTab === 'report' && <PrintableIndividualReport ref={printRef} results={sortedAndFilteredResults} points={points} scores={scores} questionStats={questionStats} settings={reportLayoutSettings} />}{activeTab === 'sheets' && <PrintableAnswerSheet ref={printRef} results={sortedAndFilteredResults} template={template!} areas={areas} points={points} scores={scores} settings={layoutSettings} />}</>) : <div className="flex items-center justify-center h-full text-white"><p>印刷対象の生徒がいません。オプションで選択してください。</p></div>}
+                    {sortedAndFilteredResults.length > 0 ? (<>{activeTab === 'report' && <PrintableIndividualReport ref={printRef} results={sortedAndFilteredResults} allResults={results} points={points} scores={scores} questionStats={questionStats} settings={reportLayoutSettings} />}{activeTab === 'sheets' && <PrintableAnswerSheet ref={printRef} results={sortedAndFilteredResults} template={template!} areas={areas} points={points} scores={scores} settings={layoutSettings} />}</>) : <div className="flex items-center justify-center h-full text-white"><p>印刷対象の生徒がいません。オプションで選択してください。</p></div>}
                 </div>
                 <aside className="w-80 bg-slate-100 dark:bg-slate-900 p-4 space-y-4 overflow-y-auto print-preview-controls">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">印刷オプション</h3>{renderSettings()}
