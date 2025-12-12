@@ -1,5 +1,5 @@
 {
-  "name": "batch-test-grader",
+  "name": "saiten-system",
   "compatibility_date": "2024-11-27",
   "assets": {
     "directory": "./dist"
