@@ -104,9 +104,27 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             currentPageAreas.forEach(area => {
-                ctx.strokeStyle = areaTypeColors[area.type]?.hex || '#000000';
-                ctx.lineWidth = selectedAreaIds.has(area.id) ? 4 : 2;
+                const color = areaTypeColors[area.type]?.hex || '#000000';
+                ctx.strokeStyle = color;
+                // Thicker lines: 3px for normal, 6px for selected
+                ctx.lineWidth = selectedAreaIds.has(area.id) ? 6 : 3;
                 ctx.strokeRect(area.x, area.y, area.width, area.height);
+
+                // Draw label (Question Number / Classification) inside
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.25; // Faint text
+                
+                // Determine appropriate font size relative to box size
+                const fontSize = Math.max(14, Math.min(area.height * 0.5, 120));
+                
+                if (area.width > 20 && area.height > 20) {
+                    ctx.font = `bold ${fontSize}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(area.name, area.x + area.width / 2, area.y + area.height / 2);
+                }
+                ctx.restore();
 
                 if (selectedAreaIds.has(area.id)) {
                     ctx.fillStyle = '#0ea5e9';
