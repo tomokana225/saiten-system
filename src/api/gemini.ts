@@ -3,7 +3,7 @@
 import { ScoringStatus, Type, Point } from '../types';
 
 // Used for TemplateEditor area detection
-export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-1.5-flash') => {
+export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-2.0-flash-exp') => {
     // Define the schema for a single detected area
     const areaSchema = {
         type: Type.OBJECT,
@@ -64,7 +64,7 @@ export const callGeminiAPIBatch = async (
     aiGradingMode?: 'auto' | 'strict', 
     answerFormat?: string,
     gradingSpeedMode?: 'quality' | 'speed',
-    model: string = 'gemini-1.5-flash' // Default to 1.5 Flash for better quota
+    model: string = 'gemini-2.0-flash-exp' // Default to 2.0 Flash Exp for better quota
 ) => {
     
     const maxPoints = point.points;

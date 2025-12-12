@@ -102,16 +102,16 @@ export const SettingsView = ({ theme, setTheme, apiKey, onApiKeyChange, apiKeySt
                             使用モデル
                         </label>
                         <select
-                            value={aiSettings.aiModel || 'gemini-1.5-flash'}
+                            value={aiSettings.aiModel || 'gemini-2.0-flash-exp'}
                             onChange={(e) => onAiSettingsChange(prev => ({ ...prev, aiModel: e.target.value }))}
                             className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700"
                         >
-                            <option value="gemini-1.5-flash">Gemini 1.5 Flash (推奨: 高速・無料枠大)</option>
-                            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp (実験的)</option>
+                            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp (推奨: 高速・無料枠大)</option>
+                            <option value="gemini-1.5-flash-002">Gemini 1.5 Flash (安定版)</option>
                             <option value="gemini-2.5-flash">Gemini 2.5 Flash (最新・無料枠少)</option>
                         </select>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                            「制限超過 (429)」エラーが出る場合は、制限の緩い 1.5 Flash を使用してください。
+                            「制限超過 (429)」エラーが出る場合は、制限の緩い 2.0 Flash Exp を使用してください。
                         </p>
                     </div>
                     <div className="space-y-2">
