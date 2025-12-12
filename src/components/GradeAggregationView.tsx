@@ -255,28 +255,28 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
                         {aggregatedResults.length > 0 ? (
                             activeTab === 'list' ? (
                                 <div className="overflow-auto bg-white dark:bg-slate-800 rounded-lg shadow">
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-100 dark:bg-slate-700 sticky top-0">
+                                    <table className="w-full text-sm text-left border-collapse">
+                                        <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-100 dark:bg-slate-700 sticky top-0 z-10 shadow-sm">
                                             <tr>
-                                                <th className="px-4 py-3">学年順位</th>
-                                                <th className="px-4 py-3">クラス</th>
-                                                <th className="px-4 py-3">番号</th>
-                                                <th className="px-4 py-3">氏名</th>
-                                                <th className="px-4 py-3 text-right">合計点</th>
-                                                <th className="px-4 py-3 text-right">組順位</th>
-                                                <th className="px-4 py-3 text-right">偏差値</th>
+                                                <th className="px-4 py-3 whitespace-nowrap">学年順位</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-16">クラス</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-16">番号</th>
+                                                <th className="px-4 py-3 whitespace-nowrap min-w-[12rem]">氏名</th>
+                                                <th className="px-4 py-3 text-right whitespace-nowrap">合計点</th>
+                                                <th className="px-4 py-3 text-right whitespace-nowrap">組順位</th>
+                                                <th className="px-4 py-3 text-right whitespace-nowrap">偏差値</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                                             {aggregatedResults.map(result => (
                                                 <tr key={result.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                    <td className="px-4 py-2 text-center font-bold">{result.rank}</td>
-                                                    <td className="px-4 py-2">{result.class}</td>
-                                                    <td className="px-4 py-2">{result.number}</td>
-                                                    <td className="px-4 py-2 font-medium">{result.name}</td>
-                                                    <td className="px-4 py-2 text-right font-bold">{result.totalScore}</td>
-                                                    <td className="px-4 py-2 text-right">{result.classRank}</td>
-                                                    <td className="px-4 py-2 text-right">{result.standardScore}</td>
+                                                    <td className="px-4 py-2 text-center font-bold whitespace-nowrap">{result.rank}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{result.class}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{result.number}</td>
+                                                    <td className="px-4 py-2 font-medium whitespace-nowrap">{result.name}</td>
+                                                    <td className="px-4 py-2 text-right font-bold whitespace-nowrap">{result.totalScore}</td>
+                                                    <td className="px-4 py-2 text-right whitespace-nowrap">{result.classRank}</td>
+                                                    <td className="px-4 py-2 text-right whitespace-nowrap">{result.standardScore}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
