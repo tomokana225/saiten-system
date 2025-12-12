@@ -76,45 +76,70 @@ const DetailedDistributionGraph = ({ allScores, myScore, width = 200, height = 8
     );
 };
 
-const PerformanceGraph = ({ points, studentScores, questionStats, height = 100, fontSize = 8 }: { points: Point[], studentScores: any, questionStats: QuestionStats[], height?: number, fontSize?: number }) => {
-    if (points.length === 0) return null;
+const ScoreDistributionGraph = ({ allScores, myScore, maxScore, width = 200, height = 80, fontSize = 10 }: { allScores: number[], myScore: number, maxScore: number, width?: number, height?: number, fontSize?: number }) => {
+    // Determine bin size
+    let binSize = 10;
+    if (maxScore <= 20) binSize = 2;
+    else if (maxScore <= 50) binSize = 5;
+
+    const numBins = Math.ceil((maxScore + 1) / binSize);
+    const counts = new Array(numBins).fill(0);
+
+    allScores.forEach(s => {
+        const binIdx = Math.min(Math.floor(s / binSize), numBins - 1);
+        if (binIdx >= 0) counts[binIdx]++;
+    });
+
+    const maxCount = Math.max(...counts, 1);
+    const barWidth = width / counts.length;
+    const myBinIdx = Math.min(Math.floor(myScore / binSize), numBins - 1);
+
+    // Generate axis labels (0, 50%, 100%)
+    const axisLabels = [0, Math.round(maxScore / 2), maxScore];
 
     return (
-        <div className="w-full h-full flex items-end gap-[1px] pt-2" style={{ height: `${height}px` }}>
-            {points.map((point, i) => {
-                const stat = questionStats.find(s => s.id === point.id);
-                const avgRate = stat ? stat.averageScore / stat.fullMarks : 0;
-                const myScore = studentScores?.[point.id]?.score ?? 0;
-                const myRate = point.points > 0 ? myScore / point.points : 0;
-                
-                const isAboveAvg = myRate >= avgRate;
-                const barColor = isAboveAvg ? '#4ade80' : '#facc15'; // Green or Yellow
-
-                return (
-                    <div key={point.id} className="flex-1 flex flex-col items-center group relative h-full min-w-[4px]">
-                        <div className="w-full relative flex-1 bg-slate-100 rounded-t-[1px] overflow-hidden flex items-end">
-                            {/* Average Line/Block (Shadow) */}
-                            <div 
-                                className="absolute bottom-0 w-full bg-slate-300/50 border-t border-slate-400 border-dashed"
-                                style={{ height: `${avgRate * 100}%` }}
+        <div className="flex flex-col items-center w-full h-full">
+            <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+                {/* Bars */}
+                {counts.map((count, i) => {
+                    const barHeight = (count / maxCount) * (height - fontSize - 4);
+                    const x = i * barWidth;
+                    const y = height - (fontSize + 4) - barHeight;
+                    const isMyBin = i === myBinIdx;
+                    return (
+                        <g key={i}>
+                            <rect 
+                                x={x + 1} 
+                                y={y} 
+                                width={Math.max(0, barWidth - 2)} 
+                                height={barHeight} 
+                                fill={isMyBin ? "#ef4444" : "#e2e8f0"} 
+                                rx="2"
                             />
-                            {/* Student Bar */}
-                            <div 
-                                className="w-full transition-all relative"
-                                style={{ height: `${myRate * 100}%`, backgroundColor: barColor }}
-                            >
-                                {/* Only show tooltip on hover or if space permits */}
-                                <span className="hidden group-hover:block absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] text-slate-600 font-bold bg-white px-1 rounded shadow z-10 whitespace-nowrap">
-                                    {Math.round(myRate*100)}%
-                                </span>
-                            </div>
-                        </div>
-                        <div className="text-slate-500 truncate w-full text-center mt-[1px] leading-none" style={{ fontSize: fontSize }} title={point.label}>
-                            {i + 1}
-                        </div>
-                    </div>
-                );
-            })}
+                            {count > 0 && (
+                                <text x={x + barWidth/2} y={y - 2} fontSize={Math.max(8, fontSize - 2)} textAnchor="middle" fill="#64748b">{count}</text>
+                            )}
+                        </g>
+                    );
+                })}
+                
+                {/* X Axis Line */}
+                <line x1={0} y1={height - fontSize - 2} x2={width} y2={height - fontSize - 2} stroke="#cbd5e1" strokeWidth="1" />
+                
+                {/* X Axis Labels */}
+                {axisLabels.map((val, idx) => {
+                    // Position roughly at start, middle, end
+                    let textAnchor: "middle" | "start" | "end" = "middle";
+                    if (idx === 0) textAnchor = "start";
+                    if (idx === axisLabels.length - 1) textAnchor = "end";
+                    
+                    const x = (val / maxScore) * width;
+                    return (
+                        <text key={val} x={x} y={height} fontSize={fontSize} fill="#94a3b8" textAnchor={textAnchor}>{val}</text>
+                    );
+                })}
+            </svg>
+            <div className={`font-bold text-slate-500 mt-1 text-center w-full truncate`} style={{ fontSize: fontSize }}>得点分布 <span className="text-red-500 text-[0.9em]">(赤:あなた)</span></div>
         </div>
     );
 };
@@ -131,6 +156,8 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
         
         const validResults = useMemo(() => allResults.filter(r => !r.isAbsent), [allResults]);
         const allStandardScores = useMemo(() => validResults.map(r => r.standardScore), [validResults]);
+        const allTotalScores = useMemo(() => validResults.map(r => r.totalScore), [validResults]);
+        const fullMarks = useMemo(() => questionStats.reduce((sum, q) => sum + q.fullMarks, 0), [questionStats]);
 
         // Calculate Grade Average
         const gradeAverage = useMemo(() => {
@@ -407,13 +434,10 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                                                     </div>
                                                 )}
 
-                                                {/* Performance Graph */}
+                                                {/* Score Distribution Graph (Replaces Performance Graph) */}
                                                 {settings.showPerformanceGraph && (settings.reportsPerPage === 1 || settings.orientation === 'landscape') && (
-                                                    <div className="flex-1 min-h-0 border border-slate-200 rounded p-1 bg-white flex flex-col">
-                                                        <div className={`${s.cardTitle} font-bold text-slate-500 text-center flex-shrink-0 mb-1`}>問題別達成度 (棒:あなた/影:平均)</div>
-                                                        <div className="flex-1 min-h-0">
-                                                            <PerformanceGraph points={points} studentScores={studentScores} questionStats={questionStats} height={undefined} fontSize={s.graphFontSize} />
-                                                        </div>
+                                                    <div className="bg-white rounded p-1 border border-slate-200 flex flex-col items-center justify-center flex-shrink-0" style={{ height: s.graphHeight + 10 }}>
+                                                        <ScoreDistributionGraph allScores={allTotalScores} myScore={result.totalScore} maxScore={fullMarks} width={s.graphWidth} height={s.graphHeight} fontSize={s.graphFontSize} />
                                                     </div>
                                                 )}
 
