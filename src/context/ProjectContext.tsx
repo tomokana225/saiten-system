@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AppStep, ScoringStatus } from '../types';
 import type { GradingProject, Template, Area, StudentInfo, Student, Point, AllScores, StudentResult, Roster, SheetLayout, ExportImportOptions, ScoreData, AreaType } from '../types';
@@ -107,6 +108,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                             }
                         }
                     }
+                    // Migration: Ensure aiSettings has model
+                    if (proj.aiSettings && !proj.aiSettings.aiModel) {
+                        proj.aiSettings.aiModel = 'gemini-1.5-flash';
+                    }
 
                     // Restore files from dataUrl if present (legacy mechanism)
                     // ... (omitted similar logic as before for brevity but maintaining robustness)
@@ -187,7 +192,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
             id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
-            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5 },
+            // Use gemini-1.5-flash as default for better quota
+            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, aiModel: 'gemini-1.5-flash' },
             lastModified: Date.now(),
         };
         setProjects(prev => ({...prev, [newId]: newProject}));
@@ -225,6 +231,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     name: importedData.name + ' (インポート)',
                     lastModified: Date.now(),
                 };
+                // Ensure model exists if importing old project
+                if (newProject.aiSettings && !newProject.aiSettings.aiModel) {
+                    newProject.aiSettings.aiModel = 'gemini-1.5-flash';
+                }
                 setProjects(prev => ({ ...prev, [newProject.id]: newProject }));
                 alert(`プロジェクト「${newProject.name}」をインポートしました。`);
             } catch (error) {

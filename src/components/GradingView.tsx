@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { AllScores, ScoreData, GradingFilter, Annotation, Point } from '../types';
 import { AreaType, ScoringStatus } from '../types';
@@ -284,7 +285,16 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
 
                 for (let i = 0; i < validSnippets.length; i += aiSettings.batchSize) {
                     const batch = validSnippets.slice(i, i + aiSettings.batchSize);
-                    const result = await callGeminiAPIBatch(apiKey, masterSnippet, batch, point, aiGradingMode, answerFormat, aiSettings.gradingMode);
+                    const result = await callGeminiAPIBatch(
+                        apiKey, 
+                        masterSnippet, 
+                        batch, 
+                        point, 
+                        aiGradingMode, 
+                        answerFormat, 
+                        aiSettings.gradingMode,
+                        aiSettings.aiModel || 'gemini-1.5-flash' // Pass configured model
+                    );
                     if (result.results) {
                         handleScoresChange(prevScores => {
                             const newScores = { ...prevScores };

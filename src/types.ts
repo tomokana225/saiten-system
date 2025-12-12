@@ -1,3 +1,4 @@
+
 import {
   GenerateContentResponse,
   GenerateContentParameters,
@@ -178,6 +179,7 @@ export interface AISettings {
     delayBetweenBatches: number;
     gradingMode: 'quality' | 'speed';
     markSheetSensitivity: number;
+    aiModel: string; // Added model selection
 }
 
 export interface GradingProject {

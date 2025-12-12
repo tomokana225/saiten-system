@@ -1,8 +1,9 @@
+
 // FIX: Corrected import path for types from `./types` to `../types`.
 import { ScoringStatus, Type, Point } from '../types';
 
 // Used for TemplateEditor area detection
-export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64: string, mimeType = 'image/png') => {
+export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-1.5-flash') => {
     // Define the schema for a single detected area
     const areaSchema = {
         type: Type.OBJECT,
@@ -30,7 +31,7 @@ export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64:
     try {
         const result = await window.electronAPI.invoke('gemini-generate-content', {
             apiKey,
-            model: 'gemini-2.5-flash', // This model is suitable for multimodal prompts
+            model: model, // Using passed model or default
             contents: {
                 parts: [
                     { text: prompt },
@@ -62,7 +63,8 @@ export const callGeminiAPIBatch = async (
     point: Point,
     aiGradingMode?: 'auto' | 'strict', 
     answerFormat?: string,
-    gradingSpeedMode?: 'quality' | 'speed'
+    gradingSpeedMode?: 'quality' | 'speed',
+    model: string = 'gemini-1.5-flash' // Default to 1.5 Flash for better quota
 ) => {
     
     const maxPoints = point.points;
@@ -129,7 +131,7 @@ export const callGeminiAPIBatch = async (
     try {
         const result = await window.electronAPI.invoke('gemini-generate-content', {
             apiKey,
-            model: 'gemini-2.5-flash',
+            model: model, // Pass passed model
             contents,
             config,
         });

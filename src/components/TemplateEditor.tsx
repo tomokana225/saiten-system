@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import type { Template, Area, AreaType } from '../types';
 import { AreaType as AreaTypeEnum } from '../types';
@@ -36,7 +37,7 @@ const migrateAreas = (areasToMigrate: Area[]): Area[] => {
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
-    const { template, areas: initialAreas } = activeProject!;
+    const { template, areas: initialAreas, aiSettings } = activeProject!;
 
     // Ensure we have a valid page structure even for legacy templates
     const pages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
