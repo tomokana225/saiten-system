@@ -7,7 +7,6 @@ import { GradingHeader } from './grading/GradingHeader';
 import { StudentAnswerGrid } from './grading/StudentAnswerGrid';
 import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
-import { createWorker } from 'tesseract.js';
 
 const cropImage = async (imagePath: string, area: import('../types').Area): Promise<string> => {
     const result = await window.electronAPI.invoke('get-image-details', imagePath);
@@ -25,101 +24,9 @@ const cropImage = async (imagePath: string, area: import('../types').Area): Prom
             const ctx = canvas.getContext('2d');
             if (!ctx) return reject(new Error('Could not get canvas context'));
             ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
-            resolve(canvas.toDataURL('image/png')); // Return full data URL
+            resolve(canvas.toDataURL('image/png').split(',')[1]);
         };
         img.onerror = (err) => reject(err);
-        img.src = dataUrl;
-    });
-};
-
-const preprocessImageForOCR = (dataUrl: string, isHandwriting: boolean): Promise<string> => {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            if (!ctx) { resolve(dataUrl); return; }
-
-            // 1. Scale Up
-            // Handwriting needs more resolution.
-            const scale = isHandwriting ? 3.0 : 2.0;
-            const padding = 20; // Add padding to avoid edge artifacts
-            
-            canvas.width = img.width * scale + (padding * 2);
-            canvas.height = img.height * scale + (padding * 2);
-            
-            // Fill white background first
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw image centered
-            ctx.drawImage(img, padding, padding, img.width * scale, img.height * scale);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            const width = canvas.width;
-            const height = canvas.height;
-
-            // 2. Binarization (Thresholding)
-            // For handwriting, we want to capture faint lines, so threshold is higher (more things become black).
-            const threshold = isHandwriting ? 180 : 160; 
-            
-            // Grayscale & Threshold buffer
-            const binaryData = new Uint8Array(width * height);
-
-            for (let i = 0; i < data.length; i += 4) {
-                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                const val = gray < threshold ? 0 : 255;
-                
-                // Store binary result (0=black, 1=white) for processing
-                binaryData[i / 4] = val === 0 ? 1 : 0; // 1 means "is pixel" (black)
-
-                data[i] = val;     // R
-                data[i + 1] = val; // G
-                data[i + 2] = val; // B
-                // Alpha remains same
-            }
-
-            // 3. Dilation (Thickening) - Only for Handwriting
-            // This is crucial for Tesseract to read thin pen strokes.
-            if (isHandwriting) {
-                const dilatedData = new Uint8Array(width * height);
-                // Simple 3x3 kernel dilation
-                // If any neighbor is black, pixel becomes black
-                for (let y = 1; y < height - 1; y++) {
-                    for (let x = 1; x < width - 1; x++) {
-                        const idx = y * width + x;
-                        if (binaryData[idx] === 1) {
-                            dilatedData[idx] = 1;
-                            continue;
-                        }
-                        // Check neighbors
-                        if (
-                            binaryData[idx - 1] || binaryData[idx + 1] || // Left, Right
-                            binaryData[idx - width] || binaryData[idx + width] || // Top, Bottom
-                            binaryData[idx - width - 1] || binaryData[idx - width + 1] ||
-                            binaryData[idx + width - 1] || binaryData[idx + width + 1]
-                        ) {
-                            dilatedData[idx] = 1;
-                        }
-                    }
-                }
-
-                // Apply dilated buffer back to canvas data
-                for (let i = 0; i < dilatedData.length; i++) {
-                    if (dilatedData[i] === 1) {
-                        const idx = i * 4;
-                        data[idx] = 0;
-                        data[idx+1] = 0;
-                        data[idx+2] = 0;
-                    }
-                }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;
     });
 };
@@ -208,7 +115,7 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             }
         };
         img.onerror = () => resolve(-1);
-        img.src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+        img.src = `data:image/png;base64,${base64}`;
     });
 };
 
@@ -237,8 +144,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
     const [aiGradingMode, setAiGradingMode] = useState<'auto' | 'strict'>('auto');
     const [answerFormat, setAnswerFormat] = useState('');
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
-    const [ocrLanguage, setOcrLanguage] = useState<'eng' | 'jpn'>('eng');
-    const [isHandwritingMode, setIsHandwritingMode] = useState(true); // Default to handwriting optimized
 
     const answerAreas = useMemo(() => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET), [areas]);
 
@@ -267,6 +172,8 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         return studentsWithInfo.filter(s => (scores[s.id]?.[selectedAreaId!]?.status || ScoringStatus.UNSCORED) === filter);
     }, [studentsWithInfo, filter, scores, selectedAreaId]);
 
+    // Removed auto-focus logic to prevent scroll interference. 
+    // Users must click to focus and enable image panning.
     useEffect(() => {
         setFocusedStudentId(null);
     }, [selectedAreaId, filter]);
@@ -283,6 +190,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         let completedTasks = 0;
         setProgress({ current: 0, total: totalGradingTasks, message: '準備中...' });
 
+        // Ensure template has pages
         const templatePages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
 
         for (const areaId of areaIds) {
@@ -299,6 +207,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
 
             setProgress(p => ({ ...p, message: `問題「${point.label}」を採点中...` }));
 
+            // Branch logic for different area types
             if (area.type === AreaType.MARK_SHEET) {
                 // Local Image Analysis for Mark Sheets
                 const updates: { studentId: string; areaId: number; scoreData: ScoreData }[] = [];
@@ -314,6 +223,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     let status = ScoringStatus.INCORRECT;
                     let detectedMarkIndex: number | number[] | undefined = undefined;
 
+                    // If single valid mark found
                     if (typeof detectedMarkResult === 'number') {
                         if (detectedMarkResult >= 0) {
                              if (detectedMarkResult === point.correctAnswerIndex) {
@@ -321,16 +231,20 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                              }
                              detectedMarkIndex = detectedMarkResult;
                         } else {
+                            // -1 (no mark)
                             status = ScoringStatus.INCORRECT;
                             detectedMarkIndex = undefined; 
                         }
                     } else if (Array.isArray(detectedMarkResult)) {
+                        // Multiple marks -> Incorrect
                         status = ScoringStatus.INCORRECT;
                         detectedMarkIndex = detectedMarkResult;
                     }
                         
                     const score = status === ScoringStatus.CORRECT ? point.points : 0;
+                    
                     updates.push({ studentId: student.id, areaId, scoreData: { status, score, detectedMarkIndex }});
+                    
                     completedTasks++;
                     setProgress(p => ({ ...p, current: completedTasks }));
                 }
@@ -343,23 +257,25 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     return newScores;
                 });
 
-            } else { // AI Grading
+            } else { // AI Grading for Descriptive Answers
                 if (!masterImage) {
                      completedTasks += studentsToGrade.length;
                      setProgress(p => ({ ...p, current: completedTasks }));
                      continue;
                 }
-                const masterSnippetDataUrl = await cropImage(masterImage, area);
-                const masterSnippet = masterSnippetDataUrl.split(',')[1];
-
+                
+                const masterSnippet = await cropImage(masterImage, area);
+                if (!masterSnippet) {
+                    completedTasks += studentsToGrade.length;
+                    setProgress(p => ({ ...p, current: completedTasks }));
+                    continue;
+                }
                 const studentSnippets = await Promise.all(
                     studentsToGrade.map(async (student) => {
                         const studentImage = student.images[pageIndex];
-                        if (!studentImage) return { studentId: student.id, base64: null };
-                        const url = await cropImage(studentImage, area);
                         return {
                             studentId: student.id,
-                            base64: url.split(',')[1]
+                            base64: studentImage ? await cropImage(studentImage, area) : null
                         };
                     })
                 );
@@ -379,6 +295,8 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                             });
                             return newScores;
                         });
+                    } else {
+                        console.error("AI grading batch failed:", result.error);
                     }
                     completedTasks += batch.length;
                     setProgress(p => ({ ...p, current: completedTasks }));
@@ -388,107 +306,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         if(isGradingAllMode) setIsGradingAll(false);
         else setIsGrading(false);
         setProgress({ current: 0, total: 0, message: '' });
-    };
-
-    const handleStartLocalOCR = async () => {
-        if (!selectedAreaId) return;
-        setIsGrading(true);
-        const area = areas.find(a => a.id === selectedAreaId);
-        const point = points.find(p => p.id === selectedAreaId);
-        if (!area || !point) { setIsGrading(false); return; }
-
-        const studentsToGrade = studentsWithInfo.filter(s => s.images && s.images.length > 0);
-        const total = studentsToGrade.length;
-        setProgress({ current: 0, total, message: 'OCRエンジンを初期化中...' });
-
-        try {
-            const worker = await createWorker(ocrLanguage);
-            
-            // Set whitelist/charsets
-            // Note: Handwriting accuracy is significantly improved by limiting possibilities.
-            if (ocrLanguage === 'eng') {
-                // For numbers or specific English answers, whitelist is crucial
-                const whitelist = answerFormat 
-                    ? answerFormat.split('').filter((v,i,a)=>a.indexOf(v)===i).join('') + '0123456789.-' // Add digits just in case
-                    : '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-';
-                
-                await worker.setParameters({
-                    tessedit_char_whitelist: whitelist,
-                });
-            } else if (ocrLanguage === 'jpn') {
-                // If answer format is Katakana, try to restrict? 
-                // Tesseract whitelist for multibyte is tricky, better to rely on post-processing or strict format check.
-            }
-
-            setProgress({ current: 0, total, message: '文字認識中...' });
-            const updates: { studentId: string; areaId: number; scoreData: ScoreData }[] = [];
-
-            for (let i = 0; i < studentsToGrade.length; i++) {
-                const student = studentsToGrade[i];
-                const pageIndex = area.pageIndex || 0;
-                const studentImage = student.images[pageIndex];
-                
-                if (studentImage) {
-                    // Crop and Preprocess with optional Dilation for handwriting
-                    const snippetUrl = await cropImage(studentImage, area);
-                    const processedUrl = await preprocessImageForOCR(snippetUrl, isHandwritingMode);
-                    
-                    const ret = await worker.recognize(processedUrl);
-                    // Remove whitespace
-                    const text = ret.data.text.trim().replace(/\s+/g, '');
-                    
-                    // Logic:
-                    // 1. If Answer Format is provided, Strict Matching.
-                    // 2. If not, we just log it? Current logic requires answerFormat for auto-grading score.
-                    
-                    let status = ScoringStatus.UNSCORED;
-                    let score = null;
-
-                    if (answerFormat) {
-                        const cleanAnswer = answerFormat.trim().replace(/\s+/g, '');
-                        // Case insensitive for English
-                        if (text.toLowerCase() === cleanAnswer.toLowerCase()) {
-                            status = ScoringStatus.CORRECT;
-                            score = point.points;
-                        } else {
-                            status = ScoringStatus.INCORRECT;
-                            score = 0;
-                        }
-                    }
-                    
-                    // Only update if we have a grading decision or at least found text (maybe partial?)
-                    // For now, if strict mode matches, update. If not match, mark incorrect.
-                    if (answerFormat && status !== ScoringStatus.UNSCORED) {
-                        updates.push({ studentId: student.id, areaId: area.id, scoreData: { status, score } });
-                    }
-                }
-                setProgress({ current: i + 1, total, message: `文字認識中... (${i+1}/${total})` });
-            }
-
-            await worker.terminate();
-            
-            handleScoresChange(prevScores => {
-                const newScores = { ...prevScores };
-                updates.forEach(({studentId, areaId, scoreData}) => {
-                    if (!newScores[studentId]) newScores[studentId] = {};
-                    newScores[studentId][areaId] = scoreData;
-                });
-                return newScores;
-            });
-            
-            if (updates.length === 0 && !answerFormat) {
-                alert('OCRは完了しましたが、正解が設定されていないため採点は行われませんでした。「正解」欄に入力してください。');
-            } else {
-                alert(`OCR完了: ${updates.length}件を採点しました。\n(注意: OCRの精度は完璧ではありません。必ず目視で確認してください)`);
-            }
-
-        } catch (e) {
-            console.error(e);
-            alert('OCR処理中にエラーが発生しました。');
-        } finally {
-            setIsGrading(false);
-            setProgress({ current: 0, total: 0, message: '' });
-        }
     };
 
     const handleStartAIGrading = () => { if (selectedAreaId) handleStartGrading([selectedAreaId]); };
@@ -666,33 +483,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         <div className="flex h-full gap-4">
             <QuestionSidebar answerAreas={answerAreas} points={points} scores={scores} students={studentsWithInfo} selectedAreaId={selectedAreaId} onSelectArea={setSelectedAreaId} isDisabled={isGrading || isGradingAll} />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <GradingHeader 
-                    selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
-                    onStartAIGrading={handleStartAIGrading} 
-                    onStartMarkSheetGrading={handleStartMarkSheetGrading} 
-                    onStartAIGradingAll={handleStartAIGradingAll} 
-                    isGrading={isGrading} 
-                    isGradingAll={isGradingAll} 
-                    progress={progress} 
-                    filter={filter} 
-                    onFilterChange={setFilter} 
-                    apiKey={apiKey} 
-                    columnCount={columnCount} 
-                    onColumnCountChange={setColumnCount} 
-                    onBulkScore={handleBulkScore} 
-                    aiGradingMode={aiGradingMode} 
-                    onAiGradingModeChange={setAiGradingMode} 
-                    answerFormat={answerFormat} 
-                    onAnswerFormatChange={setAnswerFormat} 
-                    isImageEnhanced={isImageEnhanced} 
-                    onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} 
-                    // Add OCR props
-                    onStartLocalOCR={handleStartLocalOCR}
-                    ocrLanguage={ocrLanguage}
-                    onOcrLanguageChange={setOcrLanguage}
-                    isHandwritingMode={isHandwritingMode}
-                    onToggleHandwritingMode={() => setIsHandwritingMode(!isHandwritingMode)}
-                />
+                <GradingHeader selectedArea={answerAreas.find(a => a.id === selectedAreaId)} onStartAIGrading={handleStartAIGrading} onStartMarkSheetGrading={handleStartMarkSheetGrading} onStartAIGradingAll={handleStartAIGradingAll} isGrading={isGrading} isGradingAll={isGradingAll} progress={progress} filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={handleBulkScore} aiGradingMode={aiGradingMode} onAiGradingModeChange={setAiGradingMode} answerFormat={answerFormat} onAnswerFormatChange={setAnswerFormat} isImageEnhanced={isImageEnhanced} onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} />
                 <StudentAnswerGrid students={filteredStudents} selectedAreaId={selectedAreaId} template={template} areas={areas} points={points} scores={scores} onScoreChange={updateScore} onStartAnnotation={(studentId, areaId) => setAnnotatingStudent({ studentId, areaId })} onPanCommit={handlePanCommit} gradingStatus={{}} columnCount={columnCount} focusedStudentId={focusedStudentId} onStudentFocus={setFocusedStudentId} partialScoreInput={partialScoreInput} correctedImages={correctedImages} isImageEnhanced={isImageEnhanced} />
             </main>
             {annotatingStudentData && (
