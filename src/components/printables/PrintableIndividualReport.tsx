@@ -37,7 +37,7 @@ const DetailedDistributionGraph = ({ allScores, myScore, width = 200, height = 8
 
     return (
         <div className="flex flex-col items-center w-full h-full">
-            <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="overflow-visible">
+            <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
                 {/* Bars */}
                 {counts.map((count, i) => {
                     const barHeight = (count / maxCount) * (height - fontSize - 4); // Reserve space for labels
@@ -129,7 +129,26 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
 
         const resultChunks = chunk(results, settings.reportsPerPage);
         
-        const allStandardScores = useMemo(() => allResults.filter(r => !r.isAbsent).map(r => r.standardScore), [allResults]);
+        const validResults = useMemo(() => allResults.filter(r => !r.isAbsent), [allResults]);
+        const allStandardScores = useMemo(() => validResults.map(r => r.standardScore), [validResults]);
+
+        // Calculate Grade Average
+        const gradeAverage = useMemo(() => {
+            if (validResults.length === 0) return '-';
+            const sum = validResults.reduce((acc, r) => acc + r.totalScore, 0);
+            return (sum / validResults.length).toFixed(1);
+        }, [validResults]);
+
+        // Calculate Class Averages
+        const classAverages = useMemo(() => {
+            const totals: Record<string, { sum: number; count: number }> = {};
+            validResults.forEach(r => {
+                if (!totals[r.class]) totals[r.class] = { sum: 0, count: 0 };
+                totals[r.class].sum += r.totalScore;
+                totals[r.class].count++;
+            });
+            return Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, (v.sum / v.count).toFixed(1)]));
+        }, [validResults]);
 
         // Determine layout density based on reports per page
         const density = settings.reportsPerPage === 4 ? 'high' : settings.reportsPerPage === 2 ? 'medium' : 'low';
@@ -157,7 +176,12 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                     graphFontSize: 8,
                     commentHeight: 'min-h-[30px]',
                     commentTitle: 'text-[8px]',
-                    footerText: 'text-[8px]'
+                    footerText: 'text-[8px]',
+                    overflow: 'overflow-hidden',
+                    mainOverflow: 'overflow-hidden',
+                    avgInfoSize: 'text-[8px]',
+                    graphWidth: 100,
+                    mainHeight: 'h-full',
                 };
             } else if (density === 'medium') {
                 return {
@@ -181,7 +205,12 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                     graphFontSize: 9,
                     commentHeight: 'min-h-[60px]',
                     commentTitle: 'text-[10px]',
-                    footerText: 'text-[9px]'
+                    footerText: 'text-[9px]',
+                    overflow: 'overflow-hidden',
+                    mainOverflow: 'overflow-hidden',
+                    avgInfoSize: 'text-[9px]',
+                    graphWidth: 150,
+                    mainHeight: 'h-full',
                 };
             }
             // Low density (1 per page)
@@ -206,7 +235,12 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                 graphFontSize: 10,
                 commentHeight: 'min-h-[80px]',
                 commentTitle: 'text-xs',
-                footerText: 'text-[10px]'
+                footerText: 'text-[10px]',
+                overflow: 'overflow-visible',
+                mainOverflow: 'overflow-visible',
+                avgInfoSize: 'text-xs',
+                graphWidth: 250,
+                mainHeight: 'h-full',
             };
         }, [density]);
 
@@ -222,13 +256,16 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                 padding: s.padding,
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden',
+                overflow: s.overflow,
                 backgroundColor: 'white',
                 position: 'relative',
                 border: 'none', // Reset borders
             };
 
-            if (settings.reportsPerPage === 1) return { ...baseStyle, width: '100%', height: '100%' };
+            if (settings.reportsPerPage === 1) {
+                // Use minHeight to allow growth for single page reports
+                return { ...baseStyle, width: '100%', minHeight: '100%', height: 'auto' };
+            }
             
             const isLandscape = settings.orientation === 'landscape';
             
@@ -271,6 +308,8 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                                 points.slice(c * itemsPerCol, (c + 1) * itemsPerCol)
                             );
 
+                            const classAvg = classAverages[result.class] || '-';
+
                             return (
                                 <div key={result.id} style={getContainerStyle(idx)}>
                                     {/* Header */}
@@ -283,31 +322,35 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
 
                                     {/* Summary Cards */}
                                     <div className={`grid grid-cols-4 ${s.cardGridGap} ${s.cardMb} flex-shrink-0`}>
-                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center`}>
+                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center flex flex-col justify-center`}>
                                             <div className={`${s.cardTitle} text-slate-500 font-bold mb-0.5`}>合計点</div>
                                             <div className={`${s.cardValue} font-bold text-slate-800 leading-tight`}>{result.totalScore} <span className="text-[0.5em] font-normal text-slate-400">/ {questionStats.reduce((sum, q)=>sum+q.fullMarks, 0)}</span></div>
+                                            <div className={`mt-0.5 flex justify-center gap-2 ${s.avgInfoSize} text-slate-500 leading-none`}>
+                                                <span title="学年平均">平均:{gradeAverage}</span>
+                                                <span title="組平均">(組:{classAvg})</span>
+                                            </div>
                                         </div>
-                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center`}>
+                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center flex flex-col justify-center`}>
                                             <div className={`${s.cardTitle} text-slate-500 font-bold mb-0.5`}>組順位</div>
                                             <div className={`${s.cardValue} font-bold text-slate-800 leading-tight`}>{result.classRank ?? '-'} <span className="text-[0.5em] font-normal">位</span></div>
                                         </div>
-                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center`}>
+                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center flex flex-col justify-center`}>
                                             <div className={`${s.cardTitle} text-slate-500 font-bold mb-0.5`}>学年順位</div>
                                             <div className={`${s.cardValue} font-bold text-slate-800 leading-tight`}>{result.rank ?? '-'} <span className="text-[0.5em] font-normal">位</span></div>
                                         </div>
-                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center relative overflow-hidden ${parseFloat(result.standardScore) >= 60 ? 'bg-green-50 border-green-200' : ''}`}>
+                                        <div className={`bg-slate-50 border border-slate-200 rounded ${s.cardPadding} text-center relative overflow-hidden flex flex-col justify-center ${parseFloat(result.standardScore) >= 60 ? 'bg-green-50 border-green-200' : ''}`}>
                                             <div className={`${s.cardTitle} text-slate-500 font-bold mb-0.5`}>偏差値</div>
                                             <div className={`${s.cardValue} font-bold text-slate-800 leading-tight`}>{result.standardScore}</div>
                                         </div>
                                     </div>
 
                                     {/* Main Content Area */}
-                                    <div className={`flex-1 flex ${s.mainGap} overflow-hidden min-h-0`}>
+                                    <div className={`flex-1 flex ${s.mainGap} ${s.mainOverflow} min-h-0`}>
                                         {/* Left: Detailed Scores */}
                                         {settings.showScoreTable && (
-                                            <div className={`flex-1 flex ${s.colGap} overflow-hidden`}>
+                                            <div className={`flex-1 flex ${s.colGap} ${s.mainOverflow}`}>
                                                 {pointColumns.map((colPoints, cIdx) => (
-                                                    <div key={cIdx} className="flex-1 flex flex-col h-full overflow-hidden border border-slate-200 rounded-sm">
+                                                    <div key={cIdx} className={`flex-1 flex flex-col ${s.mainHeight} overflow-hidden border border-slate-200 rounded-sm`}>
                                                         <table className="w-full border-collapse">
                                                             <thead className="sticky top-0 z-10">
                                                                 <tr className={`${s.tableHeaderBg} text-slate-600 ${s.tableHeadText}`}>
@@ -360,7 +403,7 @@ export const PrintableIndividualReport = React.forwardRef<HTMLDivElement, Printa
                                                 {/* Deviation Graph */}
                                                 {settings.showStandardScoreGraph && (
                                                     <div className="bg-white rounded p-1 border border-slate-200 flex flex-col items-center justify-center flex-shrink-0" style={{ height: s.graphHeight + 10 }}>
-                                                        <DetailedDistributionGraph allScores={allStandardScores} myScore={result.standardScore} width={100} height={s.graphHeight} fontSize={s.graphFontSize} />
+                                                        <DetailedDistributionGraph allScores={allStandardScores} myScore={result.standardScore} width={s.graphWidth} height={s.graphHeight} fontSize={s.graphFontSize} />
                                                     </div>
                                                 )}
 
