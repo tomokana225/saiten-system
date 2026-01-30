@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { AllScores, ScoreData, GradingFilter, Annotation, Point } from '../types';
+import type { AllScores, ScoreData, GradingFilter, Annotation, Point, Template } from '../types';
 import { AreaType, ScoringStatus } from '../types';
 import { callGeminiAPIBatch } from '../api/gemini';
 import { QuestionSidebar } from './grading/QuestionSidebar';
@@ -8,14 +8,46 @@ import { GradingHeader } from './grading/GradingHeader';
 import { StudentAnswerGrid } from './grading/StudentAnswerGrid';
 import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
+import { perspectiveTransform, findAlignmentMarks, detectContentBox } from '../utils';
 
-const cropImage = async (imagePath: string, area: import('../types').Area): Promise<string> => {
+const cropImage = async (imagePath: string, area: import('../types').Area, template?: Template): Promise<string> => {
     const result = await window.electronAPI.invoke('get-image-details', imagePath);
     if (!result.success || !result.details?.url) {
         console.error("Failed to get image data URL for cropping:", result.error);
         return '';
     }
-    const dataUrl = result.details.url;
+    let dataUrl = result.details.url;
+
+    // --- Perspective Correction Logic ---
+    if (template && template.alignmentMarkIdealCorners) {
+        // We only perform correction if the template has defined ideal alignment marks
+        const img = new Image();
+        img.src = dataUrl;
+        await img.decode();
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const detectedMarks = findAlignmentMarks(imageData);
+
+            if (detectedMarks) {
+                // Perform corrections
+                dataUrl = perspectiveTransform(
+                    img,
+                    detectedMarks,
+                    template.alignmentMarkIdealCorners,
+                    template.width,
+                    template.height
+                );
+            }
+        }
+    }
+    // ------------------------------------
+
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
@@ -24,6 +56,8 @@ const cropImage = async (imagePath: string, area: import('../types').Area): Prom
             canvas.height = area.height;
             const ctx = canvas.getContext('2d');
             if (!ctx) return reject(new Error('Could not get canvas context'));
+            
+            // Draw the cropped area from the (potentially corrected) source image
             ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
             resolve(canvas.toDataURL('image/png').split(',')[1]);
         };
@@ -42,23 +76,42 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) return resolve(-1);
             ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, img.width, img.height);
-            const data = imageData.data;
+            
+            let imageData = ctx.getImageData(0, 0, img.width, img.height);
+            let workWidth = img.width;
+            let workHeight = img.height;
+            let offsetX = 0;
+            let offsetY = 0;
 
+            // --- High Precision Detection Logic ---
+            // Try to find the actual content box (the black frame around options) inside the cropped snippet
+            // This handles slight misalignments even after perspective correction
+            const contentBox = detectContentBox(imageData);
+            if (contentBox && contentBox.w > 10 && contentBox.h > 10) {
+                // If a valid box is found, we focus our analysis grid strictly within this box
+                workWidth = contentBox.w;
+                workHeight = contentBox.h;
+                offsetX = contentBox.x;
+                offsetY = contentBox.y;
+            }
+            // -------------------------------------
+
+            const data = imageData.data;
             const options = point.markSheetOptions || 4;
             const isHorizontal = point.markSheetLayout === 'horizontal';
-            const segmentWidth = isHorizontal ? img.width / options : img.width;
-            const segmentHeight = isHorizontal ? img.height : img.height / options;
+            
+            // Calculate segments based on the Detected Content Box
+            const segmentWidth = isHorizontal ? workWidth / options : workWidth;
+            const segmentHeight = isHorizontal ? workHeight : workHeight / options;
             
             const roiAverages: number[] = [];
 
             // 1. Calculate average brightness for the CENTER ROI of each option
             for (let i = 0; i < options; i++) {
-                const xStart = Math.floor(isHorizontal ? i * segmentWidth : 0);
-                const yStart = Math.floor(isHorizontal ? 0 : i * segmentHeight);
+                const xStart = Math.floor(offsetX + (isHorizontal ? i * segmentWidth : 0));
+                const yStart = Math.floor(offsetY + (isHorizontal ? 0 : i * segmentHeight));
                 
                 // Define ROI: Center 50% of the segment to avoid borders and noise
-                // "1ブロックの中の中心に四角を作って"
                 const roiMarginX = segmentWidth * 0.25; 
                 const roiMarginY = segmentHeight * 0.25;
                 
@@ -72,7 +125,7 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
 
                 for (let y = roiY; y < roiY + roiH; y++) {
                     for (let x = roiX; x < roiX + roiW; x++) {
-                        // Boundary check
+                        // Boundary check against the full canvas
                         if (x < 0 || x >= img.width || y < 0 || y >= img.height) continue;
 
                         const idx = (y * img.width + x) * 4;
@@ -216,7 +269,8 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     const studentImage = student.images[pageIndex];
                     if (!studentImage) continue;
                     
-                    const studentSnippet = await cropImage(studentImage, area);
+                    // Pass template for perspective correction if available
+                    const studentSnippet = await cropImage(studentImage, area, template);
                     if (!studentSnippet) continue;
                     
                     const detectedMarkResult = await analyzeMarkSheetSnippet(studentSnippet, point);
@@ -265,6 +319,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                      continue;
                 }
                 
+                // Crop master image (usually no need for perspective correction on master)
                 const masterSnippet = await cropImage(masterImage, area);
                 if (!masterSnippet) {
                     completedTasks += studentsToGrade.length;
@@ -276,7 +331,8 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                         const studentImage = student.images[pageIndex];
                         return {
                             studentId: student.id,
-                            base64: studentImage ? await cropImage(studentImage, area) : null
+                            // Pass template for perspective correction
+                            base64: studentImage ? await cropImage(studentImage, area, template) : null
                         };
                     })
                 );

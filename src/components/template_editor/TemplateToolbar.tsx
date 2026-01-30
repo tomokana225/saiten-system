@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { AreaType } from '../../types';
 import { AreaType as AreaTypeEnum } from '../../types';
@@ -9,9 +10,22 @@ interface TemplateToolbarProps {
     setActiveTool: (tool: AreaType | 'select' | 'pan' | 'magic-wand') => void;
     zoom: number;
     onZoomChange: (zoom: number) => void;
+    wandTargetType: AreaType;
+    setWandTargetType: (type: AreaType) => void;
 }
 
-export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, setActiveTool, zoom, onZoomChange }) => {
+const typeNameMap: Record<string, string> = {
+    [AreaTypeEnum.ANSWER]: '解答',
+    [AreaTypeEnum.MARK_SHEET]: 'マークシート',
+    [AreaTypeEnum.NAME]: '氏名',
+    [AreaTypeEnum.SUBTOTAL]: '小計',
+    [AreaTypeEnum.TOTAL]: '合計',
+    [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
+    [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
+    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号'
+};
+
+export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, setActiveTool, zoom, onZoomChange, wandTargetType, setWandTargetType }) => {
     return (
         <div className="flex-shrink-0 flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
             <div className="flex items-center gap-2">
@@ -29,31 +43,49 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, se
                 >
                     <HandIcon className="w-5 h-5" />
                 </button>
-                <button
-                    onClick={() => setActiveTool('magic-wand')}
-                    className={`p-2 rounded-md ${activeTool === 'magic-wand' ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700'}`}
-                    title="枠内をクリックして自動認識"
-                >
-                    <Wand2Icon className="w-5 h-5" />
-                </button>
+                <div className="flex items-center bg-white dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600">
+                    <button
+                        onClick={() => setActiveTool('magic-wand')}
+                        className={`p-2 rounded-l-md ${activeTool === 'magic-wand' ? 'bg-sky-500 text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-600'}`}
+                        title="自動認識ツール: 枠内をクリックして領域を作成"
+                    >
+                        <Wand2Icon className="w-5 h-5" />
+                    </button>
+                    {activeTool === 'magic-wand' && (
+                        <div className="flex items-center px-2 py-1 border-l border-slate-200 dark:border-slate-600 bg-sky-50 dark:bg-sky-900/30 rounded-r-md">
+                            <span className="text-xs font-bold text-sky-700 dark:text-sky-300 mr-2 whitespace-nowrap">作成タイプ:</span>
+                            <select 
+                                value={wandTargetType} 
+                                onChange={(e) => setWandTargetType(e.target.value as AreaType)}
+                                className="text-xs p-1 rounded border-none bg-transparent font-medium text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer"
+                            >
+                                {Object.values(AreaTypeEnum).map(t => (
+                                    <option key={t} value={t}>{typeNameMap[t] || t}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
 
                 <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2"></div>
 
-                <span className="text-sm font-medium mr-2">領域作成:</span>
-                {Object.values(AreaTypeEnum).map(type => (
-                    <button
-                        key={type}
-                        onClick={() => setActiveTool(type)}
-                        style={{
-                            borderColor: areaTypeColors[type].hex,
-                            color: activeTool === type ? 'white' : areaTypeColors[type].hex,
-                            backgroundColor: activeTool === type ? areaTypeColors[type].hex : ''
-                        }}
-                        className={`px-2 py-1 text-xs rounded-md border-2 ${activeTool !== type ? 'bg-white dark:bg-slate-700' : ''}`}
-                    >
-                        {type}
-                    </button>
-                ))}
+                <span className="text-sm font-medium mr-2">手動描画:</span>
+                <div className="flex gap-1 overflow-x-auto max-w-[40vw] scrollbar-hide">
+                    {Object.values(AreaTypeEnum).map(type => (
+                        <button
+                            key={type}
+                            onClick={() => setActiveTool(type)}
+                            style={{
+                                borderColor: areaTypeColors[type].hex,
+                                color: activeTool === type ? 'white' : areaTypeColors[type].hex,
+                                backgroundColor: activeTool === type ? areaTypeColors[type].hex : ''
+                            }}
+                            className={`px-2 py-1 text-xs rounded-md border-2 whitespace-nowrap ${activeTool !== type ? 'bg-white dark:bg-slate-700' : ''}`}
+                        >
+                            {typeNameMap[type] || type}
+                        </button>
+                    ))}
+                </div>
             </div>
             <div className="flex items-center gap-2">
                 <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ZoomOutIcon className="w-5 h-5"/></button>

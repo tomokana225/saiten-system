@@ -21,9 +21,6 @@ interface DetectionDebugInfo {
     rois?: { x: number, y: number, w: number, h: number }[];
 }
 
-// ... (Detection helper functions kept as is - analyzeStudentIdMark, findPeaksInProfile, checkFill, GridOverlay) ...
-// Ensure these functions exist in the file scope as they were in the previous version.
-
 const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: number = 0.35): number[] => {
     const peaks: number[] = [];
     let inPeak = false;
@@ -354,7 +351,7 @@ export const StudentVerificationEditor = () => {
 
     const handleAppendSheets = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
-        const files = Array.from(e.target.files);
+        const files = Array.from(e.target.files) as File[];
         e.target.value = ''; // Reset input to allow selecting same file again
 
         try {

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
-import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon } from './icons';
+import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, SettingsIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { AnswerSnippet } from './AnswerSnippet';
 
@@ -16,6 +17,10 @@ export const PointAllocator = () => {
     const questionNumberAreas = useMemo(() => areas.filter(a => a.type === AreaType.QUESTION_NUMBER), [areas]);
     const [isDetecting, setIsDetecting] = useState(false);
     const [showImages, setShowImages] = useState(true);
+
+    // Bulk settings state
+    const [bulkPoints, setBulkPoints] = useState<number | ''>(10);
+    const [bulkOptions, setBulkOptions] = useState<number | ''>(4);
 
     const [internalPoints, setInternalPoints] = useState<Point[]>(() => {
         const initialPoints = relevantAreas.map(area => {
@@ -57,6 +62,28 @@ export const PointAllocator = () => {
         handlePointsChange(internalPoints);
     }, [internalPoints, handlePointsChange]);
     
+    const handleApplyBulkSettings = () => {
+        const pVal = typeof bulkPoints === 'number' ? bulkPoints : undefined;
+        const oVal = typeof bulkOptions === 'number' ? bulkOptions : undefined;
+
+        if (pVal === undefined && oVal === undefined) return;
+
+        setInternalPoints(prev => prev.map(p => {
+            const area = areas.find(a => a.id === p.id);
+            if (area?.type === AreaType.MARK_SHEET) {
+                return {
+                    ...p,
+                    points: pVal !== undefined ? pVal : p.points,
+                    markSheetOptions: oVal !== undefined ? oVal : p.markSheetOptions,
+                    // If options changed, reset correct answer index if out of bounds
+                    correctAnswerIndex: (oVal !== undefined && (p.correctAnswerIndex ?? 0) >= oVal) ? 0 : p.correctAnswerIndex
+                };
+            }
+            return p;
+        }));
+        alert('マークシートの一括設定を適用しました。');
+    };
+
     const handleAutoDetectAnswers = async () => {
         if (!template) return;
         setIsDetecting(true);
@@ -228,23 +255,66 @@ export const PointAllocator = () => {
 
     return (
         <div className="w-full max-w-full mx-auto flex flex-col h-full">
-            <div className="flex-shrink-0 flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">各解答欄への配点設定</h3>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setShowImages(!showImages)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                        title={showImages ? "画像を隠す" : "画像を表示"}
-                    >
-                        {showImages ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                        <span>{showImages ? '画像を隠す' : '画像を表示'}</span>
-                    </button>
-                     <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
-                        {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                        {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
-                    </button>
+            <div className="flex-shrink-0 mb-4 space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">各解答欄への配点設定</h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowImages(!showImages)}
+                            className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                            title={showImages ? "画像を隠す" : "画像を表示"}
+                        >
+                            {showImages ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                            <span>{showImages ? '画像を隠す' : '画像を表示'}</span>
+                        </button>
+                         <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
+                            {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                            {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Bulk Settings Panel */}
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-lg shadow-sm">
+                    <div className="flex items-center gap-2 mb-2 text-slate-700 dark:text-slate-200 font-semibold text-sm">
+                        <SettingsIcon className="w-4 h-4" />
+                        <span>マークシート一括設定</span>
+                    </div>
+                    <div className="flex items-end gap-4">
+                        <div>
+                            <label className="block text-xs text-slate-500 mb-1">選択肢の数</label>
+                            <input 
+                                type="number" 
+                                min="2" 
+                                max="10" 
+                                value={bulkOptions} 
+                                onChange={e => setBulkOptions(e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                className="w-20 p-1.5 border rounded text-sm bg-slate-50 dark:bg-slate-900 dark:border-slate-600"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-slate-500 mb-1">配点</label>
+                            <input 
+                                type="number" 
+                                min="0" 
+                                value={bulkPoints} 
+                                onChange={e => setBulkPoints(e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                className="w-20 p-1.5 border rounded text-sm bg-slate-50 dark:bg-slate-900 dark:border-slate-600"
+                            />
+                        </div>
+                        <button 
+                            onClick={handleApplyBulkSettings} 
+                            className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500"
+                        >
+                            すべてのマークシートに適用
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">
+                        ※この操作を行うと、全ての「マークシート」タイプの問題の設定が上書きされます。
+                    </p>
                 </div>
             </div>
+
             <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md">
                 <div className="space-y-4">
                 {internalPoints.map((point) => {

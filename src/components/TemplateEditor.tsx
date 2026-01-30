@@ -48,6 +48,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [selectedAreaIds, setSelectedAreaIds] = useState<Set<number>>(new Set());
     const [zoom, setZoom] = useState(1);
     const [activeTool, setActiveTool] = useState<AreaType | 'select' | 'pan' | 'magic-wand'>('select');
+    // New state to track what type of area the magic wand should create
+    const [wandTargetType, setWandTargetType] = useState<AreaType>(AreaTypeEnum.ANSWER);
+    
     const [drawState, setDrawState] = useState<DrawState | null>(null);
     const [clipboard, setClipboard] = useState<Area[]>([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -417,21 +420,39 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         if (activeTool === 'magic-wand') {
             const detected = detectBoxFromPoint(pos.x, pos.y);
             if (detected) {
-                // Determine new question number if applicable
-                const questionAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
-                const existingNumbers = questionAreas.map(a => {
-                    if (a.questionNumber !== undefined && isFinite(a.questionNumber)) return a.questionNumber;
-                    const match = a.name.match(/問(\d+)/);
-                    return match ? parseInt(match[1], 10) : 0;
-                });
-                const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
-                const questionNumber = maxNumber + 1;
-                const newName = `問${questionNumber}`;
+                // Determine new name based on selected target type
+                let newName: string;
+                let questionNumber: number | undefined;
+
+                // Logic similar to manual drawing but using wandTargetType
+                if (wandTargetType === AreaTypeEnum.MARK_SHEET || wandTargetType === AreaTypeEnum.ANSWER) {
+                    const questionAreas = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER);
+                    const existingNumbers = questionAreas.map(a => {
+                        if (a.questionNumber !== undefined && isFinite(a.questionNumber)) return a.questionNumber;
+                        const match = a.name.match(/問(\d+)/);
+                        return match ? parseInt(match[1], 10) : 0;
+                    });
+                    const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+                    questionNumber = maxNumber + 1;
+                    newName = `問${questionNumber}`;
+                } else {
+                    const typeNameMap: Record<string, string> = {
+                        [AreaTypeEnum.NAME]: '氏名',
+                        [AreaTypeEnum.SUBTOTAL]: '小計',
+                        [AreaTypeEnum.TOTAL]: '合計',
+                        [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
+                        [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
+                        [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号'
+                    };
+                    const prefix = typeNameMap[wandTargetType as string] || wandTargetType;
+                    const count = areas.filter(a => a.type === wandTargetType).length;
+                    newName = `${prefix}${count + 1}`;
+                }
 
                 const newArea: Area = {
                     id: Date.now(),
                     name: newName,
-                    type: AreaTypeEnum.ANSWER, // Default to Answer
+                    type: wandTargetType, // Use the selected type from toolbar
                     x: detected.x,
                     y: detected.y,
                     width: detected.w,
@@ -440,7 +461,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     pageIndex: activePageIndex
                 };
                 handleAreasChange([...areas, newArea]);
-                setSelectedAreaIds(new Set([newArea.id])); // Select it immediately so user can change type
+                setSelectedAreaIds(new Set([newArea.id])); // Select it immediately
             }
             return;
         }
@@ -637,6 +658,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     activeTool={activeTool} 
                     setActiveTool={setActiveTool}
                     zoom={zoom} onZoomChange={setZoom} 
+                    wandTargetType={wandTargetType}
+                    setWandTargetType={setWandTargetType}
                 />
                 
                 {/* Page Navigation Tabs */}

@@ -1,3 +1,4 @@
+
 // This file contains utility functions used across the application,
 // including file handling and advanced image processing.
 import * as pdfjsLib from 'pdfjs-dist';
@@ -57,7 +58,7 @@ export const convertFileToImages = async (file: File): Promise<string[]> => {
             await page.render({
                 canvasContext: context!,
                 viewport: viewport
-            }).promise;
+            } as any).promise;
 
             images.push(canvas.toDataURL('image/jpeg', 0.85));
         }
@@ -271,4 +272,36 @@ export const perspectiveTransform = (
     
     ctx.putImageData(destData, 0, 0);
     return canvas.toDataURL();
+};
+
+/**
+ * Detects the bounding box of the content (e.g. a black box or ink) within an image.
+ * Used for precise mark sheet grid alignment.
+ */
+export const detectContentBox = (imageData: ImageData): { x: number, y: number, w: number, h: number } | null => {
+    const { data, width, height } = imageData;
+    const threshold = 128; // Simple threshold for black/dark pixels
+
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    let found = false;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            
+            if (gray < threshold) {
+                found = true;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    if (!found) return null;
+
+    // Add a tiny margin? No, precise is better.
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 };
