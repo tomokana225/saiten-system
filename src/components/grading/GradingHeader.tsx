@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { GradingFilter, Area } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
-import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon } from '../icons';
+import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon } from '../icons';
 
 interface GradingHeaderProps {
     selectedArea: Area | undefined;
@@ -23,6 +23,8 @@ interface GradingHeaderProps {
     onAnswerFormatChange: (format: string) => void;
     isImageEnhanced: boolean;
     onToggleImageEnhancement: () => void;
+    autoAlign: boolean;
+    onToggleAutoAlign: () => void;
 }
 
 const filterOptions: { value: GradingFilter; label: string }[] = [
@@ -42,7 +44,7 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
     selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
     aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
-    isImageEnhanced, onToggleImageEnhancement
+    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;
@@ -94,12 +96,20 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
 
                 <div className="flex items-center gap-4">
                     <button 
+                        onClick={onToggleAutoAlign}
+                        className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors border ${autoAlign ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700' : 'bg-white text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                        title="基準マークを使ってスキャンのズレを補正します"
+                    >
+                        <BoxSelectIcon className="w-4 h-4" />
+                        <span>位置補正 {autoAlign ? 'ON' : 'OFF'}</span>
+                    </button>
+                    <button 
                         onClick={onToggleImageEnhancement}
                         className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${isImageEnhanced ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                         title="薄い文字を濃く表示します"
                     >
                         <PaletteIcon className="w-4 h-4" />
-                        <span>文字を濃くする</span>
+                        <span>文字強調</span>
                     </button>
                     <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
                     <button onClick={() => onBulkScore(ScoringStatus.CORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>

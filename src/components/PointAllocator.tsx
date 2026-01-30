@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
-import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, SettingsIcon } from './icons';
+import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, CheckCircle2Icon, CopyIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { AnswerSnippet } from './AnswerSnippet';
 
@@ -17,10 +16,12 @@ export const PointAllocator = () => {
     const questionNumberAreas = useMemo(() => areas.filter(a => a.type === AreaType.QUESTION_NUMBER), [areas]);
     const [isDetecting, setIsDetecting] = useState(false);
     const [showImages, setShowImages] = useState(true);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-    // Bulk settings state
-    const [bulkPoints, setBulkPoints] = useState<number | ''>(10);
-    const [bulkOptions, setBulkOptions] = useState<number | ''>(4);
+    // State for Bulk Editing
+    const [bulkPoints, setBulkPoints] = useState<string>('');
+    const [bulkChoices, setBulkChoices] = useState<string>('');
+    const [bulkLayout, setBulkLayout] = useState<'horizontal' | 'vertical'>('horizontal');
 
     const [internalPoints, setInternalPoints] = useState<Point[]>(() => {
         const initialPoints = relevantAreas.map(area => {
@@ -62,32 +63,13 @@ export const PointAllocator = () => {
         handlePointsChange(internalPoints);
     }, [internalPoints, handlePointsChange]);
     
-    const handleApplyBulkSettings = () => {
-        const pVal = typeof bulkPoints === 'number' ? bulkPoints : undefined;
-        const oVal = typeof bulkOptions === 'number' ? bulkOptions : undefined;
-
-        if (pVal === undefined && oVal === undefined) return;
-
-        setInternalPoints(prev => prev.map(p => {
-            const area = areas.find(a => a.id === p.id);
-            if (area?.type === AreaType.MARK_SHEET) {
-                return {
-                    ...p,
-                    points: pVal !== undefined ? pVal : p.points,
-                    markSheetOptions: oVal !== undefined ? oVal : p.markSheetOptions,
-                    // If options changed, reset correct answer index if out of bounds
-                    correctAnswerIndex: (oVal !== undefined && (p.correctAnswerIndex ?? 0) >= oVal) ? 0 : p.correctAnswerIndex
-                };
-            }
-            return p;
-        }));
-        alert('マークシートの一括設定を適用しました。');
-    };
-
     const handleAutoDetectAnswers = async () => {
         if (!template) return;
         setIsDetecting(true);
         try {
+            // NOTE: Only detects on the FIRST page for now, or we need to iterate all relevant pages.
+            // Simplified: iterating points and loading corresponding page.
+            
             const markSheetPoints = internalPoints.filter(p => {
                 const area = areas.find(a => a.id === p.id);
                 return area?.type === AreaType.MARK_SHEET;
@@ -238,6 +220,57 @@ export const PointAllocator = () => {
         );
     };
     
+    // Bulk Operations
+    const toggleSelect = (id: number) => {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === internalPoints.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(internalPoints.map(p => p.id)));
+        }
+    };
+
+    const applyBulkPoints = () => {
+        const pts = parseInt(bulkPoints);
+        if (isNaN(pts)) return;
+        setInternalPoints(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, points: pts } : p));
+    };
+
+    const applyBulkOptions = () => {
+        const opts = parseInt(bulkChoices);
+        if (isNaN(opts) || opts < 2 || opts > 10) return;
+        setInternalPoints(prev => prev.map(p => {
+            if (selectedIds.has(p.id)) {
+                // Only apply if it's a mark sheet area
+                const area = relevantAreas.find(a => a.id === p.id);
+                if (area?.type === AreaType.MARK_SHEET) {
+                    return { ...p, markSheetOptions: opts };
+                }
+            }
+            return p;
+        }));
+    };
+
+    const applyBulkLayout = (layout: 'horizontal' | 'vertical') => {
+        setInternalPoints(prev => prev.map(p => {
+            if (selectedIds.has(p.id)) {
+                const area = relevantAreas.find(a => a.id === p.id);
+                if (area?.type === AreaType.MARK_SHEET) {
+                    return { ...p, markSheetLayout: layout };
+                }
+            }
+            return p;
+        }));
+    };
+
     const subtotalSums = useMemo(() => {
         return subtotalAreas.map(subtotalArea => ({
             id: subtotalArea.id,
@@ -251,68 +284,32 @@ export const PointAllocator = () => {
     }, [internalPoints]);
 
     return (
-        <div className="w-full max-w-full mx-auto flex flex-col h-full">
-            <div className="flex-shrink-0 mb-4 space-y-4">
-                <div className="flex justify-between items-center">
+        <div className="w-full max-w-full mx-auto flex flex-col h-full relative">
+            <div className="flex-shrink-0 flex justify-between items-center mb-4">
+                <div className="flex items-center gap-4">
                     <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">各解答欄への配点設定</h3>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowImages(!showImages)}
-                            className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                            title={showImages ? "画像を隠す" : "画像を表示"}
-                        >
-                            {showImages ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                            <span>{showImages ? '画像を隠す' : '画像を表示'}</span>
-                        </button>
-                         <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
-                            {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                            {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
-                        </button>
-                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer bg-slate-200 dark:bg-slate-700 px-3 py-1.5 rounded-md hover:bg-slate-300">
+                        <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === internalPoints.length} onChange={toggleSelectAll} className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500" />
+                        <span className="text-sm font-medium">すべて選択</span>
+                    </label>
                 </div>
-
-                {/* Bulk Settings Panel */}
-                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-lg shadow-sm">
-                    <div className="flex items-center gap-2 mb-2 text-slate-700 dark:text-slate-200 font-semibold text-sm">
-                        <SettingsIcon className="w-4 h-4" />
-                        <span>マークシート一括設定</span>
-                    </div>
-                    <div className="flex items-end gap-4">
-                        <div>
-                            <label className="block text-xs text-slate-500 mb-1">選択肢の数</label>
-                            <input 
-                                type="number" 
-                                min="2" 
-                                max="10" 
-                                value={bulkOptions} 
-                                onChange={e => setBulkOptions(e.target.value === '' ? '' : parseInt(e.target.value))} 
-                                className="w-20 p-1.5 border rounded text-sm bg-slate-50 dark:bg-slate-900 dark:border-slate-600"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-slate-500 mb-1">配点</label>
-                            <input 
-                                type="number" 
-                                min="0" 
-                                value={bulkPoints} 
-                                onChange={e => setBulkPoints(e.target.value === '' ? '' : parseInt(e.target.value))} 
-                                className="w-20 p-1.5 border rounded text-sm bg-slate-50 dark:bg-slate-900 dark:border-slate-600"
-                            />
-                        </div>
-                        <button 
-                            onClick={handleApplyBulkSettings} 
-                            className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500"
-                        >
-                            すべてのマークシートに適用
-                        </button>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-2">
-                        ※この操作を行うと、全ての「マークシート」タイプの問題の設定が上書きされます。
-                    </p>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowImages(!showImages)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                        title={showImages ? "画像を隠す" : "画像を表示"}
+                    >
+                        {showImages ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                        <span>{showImages ? '画像を隠す' : '画像を表示'}</span>
+                    </button>
+                     <button onClick={handleAutoDetectAnswers} disabled={isDetecting || !internalPoints.some(p => areas.find(a=>a.id===p.id)?.type === AreaType.MARK_SHEET)} className="flex items-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors">
+                        {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                        {isDetecting ? '認識中...' : 'マークシートの正解を自動認識'}
+                    </button>
                 </div>
             </div>
-
-            <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md">
+            
+            <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md pb-24">
                 <div className="space-y-4">
                 {internalPoints.map((point) => {
                     const area = relevantAreas.find(a => a.id === point.id);
@@ -320,11 +317,22 @@ export const PointAllocator = () => {
                     
                     const pageIndex = area.pageIndex || 0;
                     const imageSrc = template?.pages?.[pageIndex]?.imagePath || template?.filePath;
+                    const isSelected = selectedIds.has(point.id);
 
                     return (
-                    <div key={point.id} className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+                    <div 
+                        key={point.id} 
+                        className={`p-4 rounded-lg shadow-sm border transition-all ${isSelected ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-400 ring-1 ring-sky-400' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}
+                        onClick={() => toggleSelect(point.id)}
+                    >
+                        <div className="flex items-center gap-3 mb-2">
+                            <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(point.id)} onClick={(e) => e.stopPropagation()} className="w-5 h-5 rounded text-sky-600 focus:ring-sky-500 flex-shrink-0" />
+                            <div className="font-bold text-slate-700 dark:text-slate-300">{point.label}</div>
+                            <span className="text-xs px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-700">{area.type} {pageIndex > 0 ? `(p.${pageIndex+1})` : ''}</span>
+                        </div>
+
                         {showImages && template && (
-                            <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group">
+                            <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group" onClick={(e) => e.stopPropagation()}>
                                 <AnswerSnippet
                                     imageSrc={imageSrc}
                                     area={area}
@@ -333,15 +341,14 @@ export const PointAllocator = () => {
                                 />
                             </div>
                         )}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4" onClick={(e) => e.stopPropagation()}>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-500">問題</label>
-                                <input type="text" value={point.label} onChange={(e) => handlePointPropChange(point.id, 'label', e.target.value)} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2" />
-                                <span className="text-xs px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-700">{area.type} {pageIndex > 0 ? `(p.${pageIndex+1})` : ''}</span>
+                                <label className="block text-sm font-medium text-slate-500">問題ラベル</label>
+                                <input type="text" value={point.label} onChange={(e) => handlePointPropChange(point.id, 'label', e.target.value)} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-slate-500">配点</label>
-                                <input type="number" min="0" value={point.points} onChange={(e) => handlePointPropChange(point.id, 'points', parseInt(e.target.value) || 0)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2" />
+                                <input type="number" min="0" value={point.points} onChange={(e) => handlePointPropChange(point.id, 'points', parseInt(e.target.value) || 0)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" />
                             </div>
                             <div className="space-y-4">
                                 {subtotalAreas.length > 0 && (
@@ -364,8 +371,8 @@ export const PointAllocator = () => {
                             </div>
                         </div>
                         {area.type === AreaType.MARK_SHEET && (
-                             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">選択肢の数</label><input type="number" min="2" max="10" value={point.markSheetOptions || 4} onChange={e => handlePointPropChange(point.id, 'markSheetOptions', parseInt(e.target.value) || 2)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2" /></div>
+                             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">選択肢の数</label><input type="number" min="2" max="10" value={point.markSheetOptions || 4} onChange={e => handlePointPropChange(point.id, 'markSheetOptions', parseInt(e.target.value) || 2)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" /></div>
                                 <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">レイアウト</label><div className="flex items-center gap-2 p-1 bg-slate-200 dark:bg-slate-900/50 rounded-lg w-fit"><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'horizontal')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'horizontal' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>横並び</button><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'vertical')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'vertical' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>縦並び</button></div></div>
                                 <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">正解の選択肢</label><div className="flex flex-wrap items-center gap-1">{Array.from({ length: point.markSheetOptions || 0 }).map((_, i) => (<button key={i} onClick={() => handlePointPropChange(point.id, 'correctAnswerIndex', i)} className={`w-8 h-8 rounded-md text-xs font-mono ${point.correctAnswerIndex === i ? 'bg-sky-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300'}`}>{String.fromCharCode(65 + i)}</button>))}</div></div>
                              </div>
@@ -374,6 +381,34 @@ export const PointAllocator = () => {
                 )})}
                 </div>
             </div>
+
+            {/* Bulk Action Bar */}
+            {selectedIds.size > 0 && (
+                <div className="absolute bottom-20 left-0 right-0 mx-auto w-max max-w-[90%] bg-slate-800 text-white p-3 rounded-xl shadow-xl flex flex-wrap items-center gap-4 z-50 animate-in slide-in-from-bottom-4">
+                    <span className="text-sm font-bold bg-slate-700 px-2 py-1 rounded">{selectedIds.size} 件選択中</span>
+                    <div className="h-6 w-px bg-slate-600"></div>
+                    
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs">配点:</span>
+                        <input type="number" min="0" placeholder="-" className="w-16 p-1 text-black rounded text-sm" value={bulkPoints} onChange={e => setBulkPoints(e.target.value)} />
+                        <button onClick={applyBulkPoints} disabled={!bulkPoints} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button>
+                    </div>
+
+                    <div className="h-6 w-px bg-slate-600"></div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs">選択肢数:</span>
+                        <input type="number" min="2" max="10" placeholder="-" className="w-12 p-1 text-black rounded text-sm" value={bulkChoices} onChange={e => setBulkChoices(e.target.value)} />
+                        <button onClick={applyBulkOptions} disabled={!bulkChoices} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button>
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-slate-700 p-1 rounded">
+                        <button onClick={() => applyBulkLayout('horizontal')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">横並び</button>
+                        <button onClick={() => applyBulkLayout('vertical')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">縦並び</button>
+                    </div>
+                </div>
+            )}
+
              <div className="flex-shrink-0 mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg flex justify-end items-center gap-8">
                 {subtotalSums.length > 0 && (<div className="flex flex-col items-end gap-1 text-slate-600 dark:text-slate-300">{subtotalSums.map(sub => (<p key={sub.id} className="text-md font-semibold">{sub.name}: {sub.sum} 点</p>))}</div>)}
                 {subtotalSums.length > 0 && (<div className="border-l border-slate-300 dark:border-slate-600 h-12"></div>)}

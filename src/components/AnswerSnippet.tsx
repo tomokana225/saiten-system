@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Area, Template } from '../types';
 import { RotateCcwIcon, SpinnerIcon, XIcon } from './icons';
+import { detectAndWarpCrop } from '../utils';
 
 // Props for the inner component that contains hooks
 interface PannableImageProps {
@@ -154,10 +155,14 @@ interface AnswerSnippetProps {
     onPanCommit?: (offset: { x: number; y: number }) => void;
     padding?: number;
     isEnhanced?: boolean;
+    useAlignment?: boolean; // New prop for auto-alignment
 }
 
+// Simple in-memory cache to avoid re-detecting marks for every snippet on same page
+const alignmentCache = new Map<string, any>();
+
 export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({ 
-    imageSrc, area, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0, isEnhanced = false
+    imageSrc, area, template, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0, isEnhanced = false, useAlignment = false
 }) => {
     const [croppedImage, setCroppedImage] = useState<{ url: string, width: number, height: number, cropX: number, cropY: number } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -181,11 +186,45 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
                 }
 
                 const img = new Image();
+                img.crossOrigin = "Anonymous";
                 img.src = result.details.url;
                 await img.decode();
 
                 if (!isMounted) return;
 
+                // --- Automatic Alignment Logic ---
+                if (useAlignment && template && template.alignmentMarkIdealCorners) {
+                    // Try to detect marks and warp
+                    // Check cache first using imageSrc as key
+                    // Note: This cache is per-session/refresh. 
+                    let srcCorners = alignmentCache.get(imageSrc);
+                    
+                    const alignedDataUrl = await detectAndWarpCrop(
+                        img, 
+                        template.alignmentMarkIdealCorners, 
+                        { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
+                        srcCorners
+                    );
+
+                    if (alignedDataUrl.corners) {
+                        alignmentCache.set(imageSrc, alignedDataUrl.corners);
+                    }
+
+                    if (alignedDataUrl.url) {
+                        setCroppedImage({
+                            url: alignedDataUrl.url,
+                            width: area.width + padding*2,
+                            height: area.height + padding*2,
+                            cropX: area.x - padding,
+                            cropY: area.y - padding
+                        });
+                        setLoading(false);
+                        return;
+                    }
+                    // Fallback to normal crop if alignment fails
+                }
+
+                // --- Standard Simple Crop ---
                 const canvas = document.createElement('canvas');
                 
                 // Calculate crop coordinates with padding
@@ -226,7 +265,7 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
         crop();
 
         return () => { isMounted = false; };
-    }, [imageSrc, area.x, area.y, area.width, area.height, padding]);
+    }, [imageSrc, area.x, area.y, area.width, area.height, padding, useAlignment, template]);
 
     if (!imageSrc) {
         return <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 text-xs">No Image</div>;

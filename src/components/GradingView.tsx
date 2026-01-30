@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { AllScores, ScoreData, GradingFilter, Annotation, Point, Template } from '../types';
+import type { AllScores, ScoreData, GradingFilter, Annotation, Point } from '../types';
 import { AreaType, ScoringStatus } from '../types';
 import { callGeminiAPIBatch } from '../api/gemini';
 import { QuestionSidebar } from './grading/QuestionSidebar';
@@ -8,46 +8,14 @@ import { GradingHeader } from './grading/GradingHeader';
 import { StudentAnswerGrid } from './grading/StudentAnswerGrid';
 import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
-import { perspectiveTransform, findAlignmentMarks, detectContentBox } from '../utils';
 
-const cropImage = async (imagePath: string, area: import('../types').Area, template?: Template): Promise<string> => {
+const cropImage = async (imagePath: string, area: import('../types').Area): Promise<string> => {
     const result = await window.electronAPI.invoke('get-image-details', imagePath);
     if (!result.success || !result.details?.url) {
         console.error("Failed to get image data URL for cropping:", result.error);
         return '';
     }
-    let dataUrl = result.details.url;
-
-    // --- Perspective Correction Logic ---
-    if (template && template.alignmentMarkIdealCorners) {
-        // We only perform correction if the template has defined ideal alignment marks
-        const img = new Image();
-        img.src = dataUrl;
-        await img.decode();
-
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const detectedMarks = findAlignmentMarks(imageData);
-
-            if (detectedMarks) {
-                // Perform corrections
-                dataUrl = perspectiveTransform(
-                    img,
-                    detectedMarks,
-                    template.alignmentMarkIdealCorners,
-                    template.width,
-                    template.height
-                );
-            }
-        }
-    }
-    // ------------------------------------
-
+    const dataUrl = result.details.url;
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
@@ -56,8 +24,6 @@ const cropImage = async (imagePath: string, area: import('../types').Area, templ
             canvas.height = area.height;
             const ctx = canvas.getContext('2d');
             if (!ctx) return reject(new Error('Could not get canvas context'));
-            
-            // Draw the cropped area from the (potentially corrected) source image
             ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
             resolve(canvas.toDataURL('image/png').split(',')[1]);
         };
@@ -76,56 +42,37 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) return resolve(-1);
             ctx.drawImage(img, 0, 0);
-            
-            let imageData = ctx.getImageData(0, 0, img.width, img.height);
-            let workWidth = img.width;
-            let workHeight = img.height;
-            let offsetX = 0;
-            let offsetY = 0;
-
-            // --- High Precision Detection Logic ---
-            // Try to find the actual content box (the black frame around options) inside the cropped snippet
-            // This handles slight misalignments even after perspective correction
-            const contentBox = detectContentBox(imageData);
-            if (contentBox && contentBox.w > 10 && contentBox.h > 10) {
-                // If a valid box is found, we focus our analysis grid strictly within this box
-                workWidth = contentBox.w;
-                workHeight = contentBox.h;
-                offsetX = contentBox.x;
-                offsetY = contentBox.y;
-            }
-            // -------------------------------------
-
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
             const data = imageData.data;
+
             const options = point.markSheetOptions || 4;
             const isHorizontal = point.markSheetLayout === 'horizontal';
-            
-            // Calculate segments based on the Detected Content Box
-            const segmentWidth = isHorizontal ? workWidth / options : workWidth;
-            const segmentHeight = isHorizontal ? workHeight : workHeight / options;
+            const segmentWidth = isHorizontal ? img.width / options : img.width;
+            const segmentHeight = isHorizontal ? img.height : img.height / options;
             
             const roiAverages: number[] = [];
 
             // 1. Calculate average brightness for the CENTER ROI of each option
             for (let i = 0; i < options; i++) {
-                const xStart = Math.floor(offsetX + (isHorizontal ? i * segmentWidth : 0));
-                const yStart = Math.floor(offsetY + (isHorizontal ? 0 : i * segmentHeight));
+                const xStart = Math.floor(isHorizontal ? i * segmentWidth : 0);
+                const yStart = Math.floor(isHorizontal ? 0 : i * segmentHeight);
                 
-                // Define ROI: Use a smaller central area (e.g., 30%) to avoid sampling borders if tilted
-                const roiMarginX = segmentWidth * 0.35; 
-                const roiMarginY = segmentHeight * 0.35;
+                // Define ROI: Center 50% of the segment to avoid borders and noise
+                // "1ブロックの中の中心に四角を作って"
+                const roiMarginX = segmentWidth * 0.25; 
+                const roiMarginY = segmentHeight * 0.25;
                 
                 const roiX = Math.floor(xStart + roiMarginX);
                 const roiY = Math.floor(yStart + roiMarginY);
-                const roiW = Math.max(1, Math.ceil(segmentWidth * 0.3));
-                const roiH = Math.max(1, Math.ceil(segmentHeight * 0.3));
+                const roiW = Math.ceil(segmentWidth * 0.5);
+                const roiH = Math.ceil(segmentHeight * 0.5);
 
                 let totalBrightness = 0;
                 let pixelCount = 0;
 
                 for (let y = roiY; y < roiY + roiH; y++) {
                     for (let x = roiX; x < roiX + roiW; x++) {
-                        // Boundary check against the full canvas
+                        // Boundary check
                         if (x < 0 || x >= img.width || y < 0 || y >= img.height) continue;
 
                         const idx = (y * img.width + x) * 4;
@@ -148,8 +95,8 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const paperBrightness = Math.max(...roiAverages);
 
             // 3. Find thresholds
-            const thresholdRatio = 0.85; // Slightly stricter threshold for marks
-            const minDiff = 25;
+            const thresholdRatio = 0.80; 
+            const minDiff = 30;
 
             const markedIndices: number[] = [];
             
@@ -198,6 +145,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
     const [aiGradingMode, setAiGradingMode] = useState<'auto' | 'strict'>('auto');
     const [answerFormat, setAnswerFormat] = useState('');
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
+    const [autoAlign, setAutoAlign] = useState(false);
 
     const answerAreas = useMemo(() => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET), [areas]);
 
@@ -269,8 +217,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     const studentImage = student.images[pageIndex];
                     if (!studentImage) continue;
                     
-                    // Pass template for perspective correction if available
-                    const studentSnippet = await cropImage(studentImage, area, template);
+                    const studentSnippet = await cropImage(studentImage, area);
                     if (!studentSnippet) continue;
                     
                     const detectedMarkResult = await analyzeMarkSheetSnippet(studentSnippet, point);
@@ -319,7 +266,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                      continue;
                 }
                 
-                // Crop master image (usually no need for perspective correction on master)
                 const masterSnippet = await cropImage(masterImage, area);
                 if (!masterSnippet) {
                     completedTasks += studentsToGrade.length;
@@ -331,8 +277,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                         const studentImage = student.images[pageIndex];
                         return {
                             studentId: student.id,
-                            // Pass template for perspective correction
-                            base64: studentImage ? await cropImage(studentImage, area, template) : null
+                            base64: studentImage ? await cropImage(studentImage, area) : null
                         };
                     })
                 );
@@ -549,8 +494,48 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         <div className="flex h-full gap-4">
             <QuestionSidebar answerAreas={answerAreas} points={points} scores={scores} students={studentsWithInfo} selectedAreaId={selectedAreaId} onSelectArea={setSelectedAreaId} isDisabled={isGrading || isGradingAll} />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <GradingHeader selectedArea={answerAreas.find(a => a.id === selectedAreaId)} onStartAIGrading={handleStartAIGrading} onStartMarkSheetGrading={handleStartMarkSheetGrading} onStartAIGradingAll={handleStartAIGradingAll} isGrading={isGrading} isGradingAll={isGradingAll} progress={progress} filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={handleBulkScore} aiGradingMode={aiGradingMode} onAiGradingModeChange={setAiGradingMode} answerFormat={answerFormat} onAnswerFormatChange={setAnswerFormat} isImageEnhanced={isImageEnhanced} onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} />
-                <StudentAnswerGrid students={filteredStudents} selectedAreaId={selectedAreaId} template={template} areas={areas} points={points} scores={scores} onScoreChange={updateScore} onStartAnnotation={(studentId, areaId) => setAnnotatingStudent({ studentId, areaId })} onPanCommit={handlePanCommit} gradingStatus={{}} columnCount={columnCount} focusedStudentId={focusedStudentId} onStudentFocus={setFocusedStudentId} partialScoreInput={partialScoreInput} correctedImages={correctedImages} isImageEnhanced={isImageEnhanced} />
+                <GradingHeader 
+                    selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
+                    onStartAIGrading={handleStartAIGrading} 
+                    onStartMarkSheetGrading={handleStartMarkSheetGrading} 
+                    onStartAIGradingAll={handleStartAIGradingAll} 
+                    isGrading={isGrading} 
+                    isGradingAll={isGradingAll} 
+                    progress={progress} 
+                    filter={filter} 
+                    onFilterChange={setFilter} 
+                    apiKey={apiKey} 
+                    columnCount={columnCount} 
+                    onColumnCountChange={setColumnCount} 
+                    onBulkScore={handleBulkScore} 
+                    aiGradingMode={aiGradingMode} 
+                    onAiGradingModeChange={setAiGradingMode} 
+                    answerFormat={answerFormat} 
+                    onAnswerFormatChange={setAnswerFormat} 
+                    isImageEnhanced={isImageEnhanced} 
+                    onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} 
+                    autoAlign={autoAlign}
+                    onToggleAutoAlign={() => setAutoAlign(!autoAlign)}
+                />
+                <StudentAnswerGrid 
+                    students={filteredStudents} 
+                    selectedAreaId={selectedAreaId} 
+                    template={template} 
+                    areas={areas} 
+                    points={points} 
+                    scores={scores} 
+                    onScoreChange={updateScore} 
+                    onStartAnnotation={(studentId, areaId) => setAnnotatingStudent({ studentId, areaId })} 
+                    onPanCommit={handlePanCommit} 
+                    gradingStatus={{}} 
+                    columnCount={columnCount} 
+                    focusedStudentId={focusedStudentId} 
+                    onStudentFocus={setFocusedStudentId} 
+                    partialScoreInput={partialScoreInput} 
+                    correctedImages={correctedImages} 
+                    isImageEnhanced={isImageEnhanced} 
+                    autoAlign={autoAlign}
+                />
             </main>
             {annotatingStudentData && (
                  <AnnotationEditor student={annotatingStudentData.student} area={annotatingStudentData.area} template={template!} initialAnnotations={annotatingStudentData.initialAnnotations} onSave={handleSaveAnnotations} onClose={() => setAnnotatingStudent(null)} />

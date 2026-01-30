@@ -20,11 +20,12 @@ interface StudentAnswerGridProps {
     partialScoreInput: string;
     correctedImages: Record<string, string>;
     isImageEnhanced?: boolean;
+    autoAlign?: boolean;
 }
 
 export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
     students, selectedAreaId, template, areas, points, scores, onScoreChange, onStartAnnotation, onPanCommit, gradingStatus,
-    columnCount, focusedStudentId, onStudentFocus, partialScoreInput, correctedImages, isImageEnhanced
+    columnCount, focusedStudentId, onStudentFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign
 }) => {
     
     const selectedArea = useMemo(() => areas.find(a => a.id === selectedAreaId), [areas, selectedAreaId]);
@@ -78,6 +79,7 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
                             partialScoreInput={focusedStudentId === student.id ? partialScoreInput : ''}
                             correctedImages={correctedImages}
                             isImageEnhanced={isImageEnhanced}
+                            autoAlign={autoAlign}
                         />
                     );
                 })}

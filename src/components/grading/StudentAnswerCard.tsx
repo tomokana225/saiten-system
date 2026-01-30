@@ -77,11 +77,12 @@ interface StudentAnswerCardProps {
     partialScoreInput: string;
     correctedImages: Record<string, string>;
     isImageEnhanced?: boolean;
+    autoAlign?: boolean;
 }
 
 export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     student, template, area, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
-    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced
+    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign
 }) => {
     const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
 
@@ -168,6 +169,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                     onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)}
                     padding={15}
                     isEnhanced={isImageEnhanced}
+                    useAlignment={autoAlign}
                 >
                     <AnnotationOverlay annotations={scoreData?.annotations || []} />
                     <MarkSheetOverlay point={point} detectedMarkIndex={scoreData?.detectedMarkIndex} />
