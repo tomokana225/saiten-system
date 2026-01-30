@@ -88,9 +88,6 @@ export const PointAllocator = () => {
         if (!template) return;
         setIsDetecting(true);
         try {
-            // NOTE: Only detects on the FIRST page for now, or we need to iterate all relevant pages.
-            // Simplified: iterating points and loading corresponding page.
-            
             const markSheetPoints = internalPoints.filter(p => {
                 const area = areas.find(a => a.id === p.id);
                 return area?.type === AreaType.MARK_SHEET;
