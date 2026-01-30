@@ -111,14 +111,14 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
                 const xStart = Math.floor(offsetX + (isHorizontal ? i * segmentWidth : 0));
                 const yStart = Math.floor(offsetY + (isHorizontal ? 0 : i * segmentHeight));
                 
-                // Define ROI: Center 50% of the segment to avoid borders and noise
-                const roiMarginX = segmentWidth * 0.25; 
-                const roiMarginY = segmentHeight * 0.25;
+                // Define ROI: Use a smaller central area (e.g., 30%) to avoid sampling borders if tilted
+                const roiMarginX = segmentWidth * 0.35; 
+                const roiMarginY = segmentHeight * 0.35;
                 
                 const roiX = Math.floor(xStart + roiMarginX);
                 const roiY = Math.floor(yStart + roiMarginY);
-                const roiW = Math.ceil(segmentWidth * 0.5);
-                const roiH = Math.ceil(segmentHeight * 0.5);
+                const roiW = Math.max(1, Math.ceil(segmentWidth * 0.3));
+                const roiH = Math.max(1, Math.ceil(segmentHeight * 0.3));
 
                 let totalBrightness = 0;
                 let pixelCount = 0;
@@ -148,8 +148,8 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             const paperBrightness = Math.max(...roiAverages);
 
             // 3. Find thresholds
-            const thresholdRatio = 0.80; 
-            const minDiff = 30;
+            const thresholdRatio = 0.85; // Slightly stricter threshold for marks
+            const minDiff = 25;
 
             const markedIndices: number[] = [];
             

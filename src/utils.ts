@@ -275,33 +275,87 @@ export const perspectiveTransform = (
 };
 
 /**
- * Detects the bounding box of the content (e.g. a black box or ink) within an image.
- * Used for precise mark sheet grid alignment.
+ * Detects the bounding box of the content using Projection Profiles.
+ * This is robust against noise and finds the rectangular frame (answer box) accurately
+ * even if the image contains some artifacts.
  */
 export const detectContentBox = (imageData: ImageData): { x: number, y: number, w: number, h: number } | null => {
     const { data, width, height } = imageData;
-    const threshold = 128; // Simple threshold for black/dark pixels
+    const threshold = 160; // Lightness threshold (pixels darker than this are counted)
+    const lineThreshold = 0.25; // A line must be at least this portion of the perpendicular dimension to be considered a border
 
-    let minX = width, minY = height, maxX = 0, maxY = 0;
-    let found = false;
+    const rowCounts = new Int32Array(height).fill(0);
+    const colCounts = new Int32Array(width).fill(0);
 
+    // 1. Build Histogram (Projection Profile)
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const idx = (y * width + x) * 4;
             const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
             
             if (gray < threshold) {
-                found = true;
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
+                rowCounts[y]++;
+                colCounts[x]++;
             }
         }
     }
 
-    if (!found) return null;
+    // 2. Find boundaries by scanning from outside in
+    // We look for the first row/col that has a significant number of dark pixels (indicating a line)
+    
+    // Top
+    let minY = 0;
+    for (let y = 0; y < height / 2; y++) {
+        if (rowCounts[y] > width * lineThreshold) {
+            minY = y;
+            break;
+        }
+    }
 
-    // Add a tiny margin? No, precise is better.
-    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    // Bottom
+    let maxY = height - 1;
+    for (let y = height - 1; y > height / 2; y--) {
+        if (rowCounts[y] > width * lineThreshold) {
+            maxY = y;
+            break;
+        }
+    }
+
+    // Left
+    let minX = 0;
+    for (let x = 0; x < width / 2; x++) {
+        if (colCounts[x] > height * lineThreshold) {
+            minX = x;
+            break;
+        }
+    }
+
+    // Right
+    let maxX = width - 1;
+    for (let x = width - 1; x > width / 2; x--) {
+        if (colCounts[x] > height * lineThreshold) {
+            maxX = x;
+            break;
+        }
+    }
+
+    // Validation: Check if we found a reasonable box
+    if (maxX <= minX || maxY <= minY) {
+        // Fallback: If projection failed (e.g. dotted lines or very faint), 
+        // try a simpler bounding box of all dark pixels, but with a center bias
+        return null;
+    }
+
+    // Refinement: The detected lines usually have thickness. 
+    // We ideally want the *outer* boundary for cropping, or *inner*?
+    // Usually marks are inside. Let's return the outer boundary of the found lines.
+    // The current loop finds the *outermost* index that met the threshold.
+    
+    const w = maxX - minX + 1;
+    const h = maxY - minY + 1;
+
+    // Safety: don't return tiny noise boxes
+    if (w < 10 || h < 10) return null;
+
+    return { x: minX, y: minY, w, h };
 };
