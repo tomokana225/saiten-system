@@ -22,13 +22,15 @@ const typeNameMap: Record<string, string> = {
     [AreaTypeEnum.TOTAL]: '合計',
     [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
     [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
-    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号'
+    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
+    [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: '学籍番号基準(右)',
+    [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: '学籍番号基準(下)',
 };
 
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, setActiveTool, zoom, onZoomChange, wandTargetType, setWandTargetType }) => {
     return (
-        <div className="flex-shrink-0 flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
-            <div className="flex items-center gap-2">
+        <div className="flex-shrink-0 flex items-center bg-slate-100 dark:bg-slate-800 p-2 rounded-lg gap-2 overflow-hidden">
+            <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                     onClick={() => setActiveTool('select')}
                     className={`p-2 rounded-md ${activeTool === 'select' ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700'}`}
@@ -66,11 +68,13 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, se
                         </div>
                     )}
                 </div>
+            </div>
 
-                <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2"></div>
+            <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2 flex-shrink-0"></div>
 
-                <span className="text-sm font-medium mr-2">手動描画:</span>
-                <div className="flex gap-1 overflow-x-auto max-w-[40vw] scrollbar-hide">
+            <div className="flex items-center flex-1 min-w-0 overflow-hidden gap-2">
+                <span className="text-sm font-medium flex-shrink-0">手動描画:</span>
+                <div className="flex gap-1 overflow-x-auto scrollbar-hide min-w-0 w-full items-center">
                     {Object.values(AreaTypeEnum).map(type => (
                         <button
                             key={type}
@@ -80,14 +84,15 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, se
                                 color: activeTool === type ? 'white' : areaTypeColors[type].hex,
                                 backgroundColor: activeTool === type ? areaTypeColors[type].hex : ''
                             }}
-                            className={`px-2 py-1 text-xs rounded-md border-2 whitespace-nowrap ${activeTool !== type ? 'bg-white dark:bg-slate-700' : ''}`}
+                            className={`px-2 py-1 text-xs rounded-md border-2 whitespace-nowrap flex-shrink-0 ${activeTool !== type ? 'bg-white dark:bg-slate-700' : ''}`}
                         >
                             {typeNameMap[type] || type}
                         </button>
                     ))}
                 </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-2 flex-shrink-0">
                 <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ZoomOutIcon className="w-5 h-5"/></button>
                 <span className="text-sm w-12 text-center">{(zoom * 100).toFixed(0)}%</span>
                  <button onClick={() => onZoomChange(Math.min(3, zoom + 0.1))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ZoomInIcon className="w-5 h-5"/></button>
