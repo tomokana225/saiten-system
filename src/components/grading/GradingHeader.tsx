@@ -9,6 +9,7 @@ interface GradingHeaderProps {
     selectedArea: Area | undefined;
     onStartAIGrading: () => void;
     onStartMarkSheetGrading: () => void;
+    onStartMarkSheetGradingAll: () => void;
     onStartAIGradingAll: () => void;
     isGrading: boolean;
     isGradingAll: boolean;
@@ -46,7 +47,7 @@ const presetAnswerFormats = [
 ];
 
 export const GradingHeader: React.FC<GradingHeaderProps> = ({
-    selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
+    selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartMarkSheetGradingAll, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
     aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
     isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign,
@@ -80,14 +81,27 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                             {isGrading ? '採点中...' : 'この問題をAI採点'}
                         </button>
                     )}
+                    
+                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                    <button
+                        onClick={onStartMarkSheetGradingAll}
+                        disabled={isAnyGrading}
+                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-teal-700 text-white rounded-md hover:bg-teal-600 disabled:bg-slate-400 transition-colors"
+                    >
+                        {isGradingAll ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                        {isGradingAll ? '全マークシート採点中...' : '全マークシートを採点'}
+                    </button>
+
                     <button
                         onClick={onStartAIGradingAll}
                         disabled={isAnyGrading || !apiKey}
                         className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-500 disabled:bg-slate-400 transition-colors"
                     >
                         {isGradingAll ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                        {isGradingAll ? '全問題採点中...' : '全問題をAI採点'}
+                        {isGradingAll ? '全問題採点中...' : '全記述問題をAI採点'}
                     </button>
+
                     {isAnyGrading && progress.total > 0 && (
                         <div className="flex items-center gap-2">
                              <div className="flex flex-col text-xs text-slate-500 dark:text-slate-400 w-48">

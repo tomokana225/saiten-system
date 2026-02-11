@@ -133,6 +133,7 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
                     onStartAIGrading={() => selectedAreaId && handleStartGrading([selectedAreaId])} 
                     onStartMarkSheetGrading={() => selectedAreaId && handleStartGrading([selectedAreaId])} 
+                    onStartMarkSheetGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.MARK_SHEET).map(a => a.id))}
                     onStartAIGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.ANSWER).map(a => a.id))} 
                     isGrading={isGrading} isGradingAll={false} progress={progress} 
                     filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={4} onColumnCountChange={() => {}} onBulkScore={() => {}} aiGradingMode="auto" onAiGradingModeChange={() => {}} answerFormat="" onAnswerFormatChange={() => {}} 

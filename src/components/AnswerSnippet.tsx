@@ -113,30 +113,47 @@ const PannableImage: React.FC<PannableImageProps> = ({
             top: `${(offsetY / cropInfo.height) * 100}%`,
             width: `${(area.width / cropInfo.width) * 100}%`,
             height: `${(area.height / cropInfo.height) * 100}%`,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            zIndex: 10
         };
     }, [area, cropInfo]);
 
+    const imageContainerStyle: React.CSSProperties = useMemo(() => {
+        if (!cropInfo) return { width: '100%', height: '100%', position: 'relative' };
+        return {
+            position: 'relative',
+            aspectRatio: `${cropInfo.width} / ${cropInfo.height}`,
+            maxWidth: '100%',
+            maxHeight: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        };
+    }, [cropInfo]);
+
     return (
         <div 
-            className={`w-full h-full relative overflow-hidden select-none ${pannable ? 'cursor-grab' : ''} ${isGrabbing ? 'cursor-grabbing' : ''}`}
+            className={`w-full h-full relative overflow-hidden select-none flex items-center justify-center ${pannable ? 'cursor-grab' : ''} ${isGrabbing ? 'cursor-grabbing' : ''}`}
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onClick={onClick}
         >
             <div 
                 style={{ 
-                    width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${scale})`,
-                    transformOrigin: 'center', transition: isGrabbing ? 'none' : 'transform 0.1s ease-out'
+                    transformOrigin: 'center', transition: isGrabbing ? 'none' : 'transform 0.1s ease-out',
+                    width: '100%', height: '100%'
                 }}
             >
-                <img 
-                    src={imageDataUrl} alt="Answer" draggable={false}
-                    className="max-w-full max-h-full object-contain pointer-events-none transition-[filter] duration-300"
-                    style={{ filter: isEnhanced ? 'grayscale(100%) contrast(200%) brightness(90%)' : 'none' }}
-                />
-                <div style={overlayStyle}>{children}</div>
+                <div style={imageContainerStyle}>
+                    <img 
+                        src={imageDataUrl} alt="Answer" draggable={false}
+                        className="w-full h-full object-contain pointer-events-none transition-[filter] duration-300"
+                        style={{ filter: isEnhanced ? 'grayscale(100%) contrast(200%) brightness(90%)' : 'none' }}
+                    />
+                    <div style={overlayStyle}>{children}</div>
+                </div>
             </div>
             {pannable && (scale !== 1 || panOffset.x !== 0 || panOffset.y !== 0) && (
                 <button 
