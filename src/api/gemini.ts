@@ -16,7 +16,7 @@ export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeTyp
         required: ["label", "x", "y", "width", "height"]
     };
 
-    // Define the schema for the overall detection result
+    // Define the schema for the overall detection result - MUST cover all AreaType strings
     const detectionSchema = {
         type: Type.OBJECT,
         properties: {
@@ -25,8 +25,13 @@ export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeTyp
             "小計": { type: Type.ARRAY, items: areaSchema, description: "検出された小計欄のリスト。" },
             "合計": { type: Type.ARRAY, items: areaSchema, description: "検出された合計点欄のリスト。" },
             "マークシート": { type: Type.ARRAY, items: areaSchema, description: "検出されたマークシート領域のリスト。" },
+            "問題番号": { type: Type.ARRAY, items: areaSchema, description: "検出された問題番号領域のリスト。" },
+            "基準マーク": { type: Type.ARRAY, items: areaSchema, description: "検出された基準マークのリスト。" },
             "学籍番号": { type: Type.ARRAY, items: areaSchema, description: "検出された学籍番号領域のリスト。" },
-            "基準マーク": { type: Type.ARRAY, items: areaSchema, description: "検出された基準マークのリスト。" }
+            "学籍番号基準(右)": { type: Type.ARRAY, items: areaSchema, description: "学籍番号の右側の基準マーク。" },
+            "学籍番号基準(下)": { type: Type.ARRAY, items: areaSchema, description: "学籍番号の下側の基準マーク。" },
+            "マークシート基準(右)": { type: Type.ARRAY, items: areaSchema, description: "マークシートの右側の基準マーク。" },
+            "マークシート基準(下)": { type: Type.ARRAY, items: areaSchema, description: "マークシートの下側の基準マーク。" }
         }
     };
 

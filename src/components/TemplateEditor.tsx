@@ -44,6 +44,7 @@ const migrateAreas = (areasToMigrate: Area[]): Area[] => {
 };
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
+    // FIX: aiSettings is a property of activeProject, not a direct export of useProject
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
     const { template, areas: initialAreas, points, aiSettings } = activeProject!;
 
@@ -254,6 +255,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         
         setIsProcessing(true);
         try {
+            // Define crop size relative to original image size
+            // Note: If zoom is high, we still crop from original image resolution
             const cropW = 300; const cropH = 150;
             const sx = Math.max(0, pos.x - cropW / 2);
             const sy = Math.max(0, pos.y - cropH / 2);
@@ -273,6 +276,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             const aiRes = await callGeminiAPI(prompt, base64, 'image/png', aiSettings.aiModel);
             if (aiRes.success && aiRes.text) {
                 const data = JSON.parse(aiRes.text.replace(/```json/g, '').replace(/```/g, '').trim());
+                // Try to find the specific type, otherwise take the first array found
                 const detected = data[wandTargetType]?.[0] || Object.values(data).flat()[0];
                 
                 if (detected) {
