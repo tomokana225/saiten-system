@@ -2,7 +2,7 @@
 import React from 'react';
 import type { AreaType } from '../../types';
 import { AreaType as AreaTypeEnum } from '../../types';
-import { ZoomInIcon, ZoomOutIcon, Wand2Icon, Undo2Icon, Redo2Icon, PlusIcon, MousePointer2Icon, CircleDotIcon } from '../icons';
+import { ZoomInIcon, ZoomOutIcon, Wand2Icon, Undo2Icon, Redo2Icon, PlusIcon, MousePointer2Icon, CircleDotIcon, ArrowLeftIcon, ArrowRightIcon } from '../icons';
 import { areaTypeColors } from './TemplateSidebar';
 
 interface TemplateToolbarProps {
@@ -20,6 +20,9 @@ interface TemplateToolbarProps {
     canRedo: boolean;
     showMarkPoints: boolean;
     onToggleMarkPoints: (val: boolean) => void;
+    pageCount?: number;
+    activePageIndex?: number;
+    onPageChange?: (index: number) => void;
 }
 
 const typeNameMap: Record<string, string> = {
@@ -40,7 +43,7 @@ const typeNameMap: Record<string, string> = {
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ 
     isAutoDetectMode, setIsAutoDetectMode, wandTargetType, setWandTargetType,
     manualDrawType, setManualDrawType, zoom, onZoomChange, undo, redo, canUndo, canRedo,
-    showMarkPoints, onToggleMarkPoints
+    showMarkPoints, onToggleMarkPoints, pageCount = 1, activePageIndex = 0, onPageChange
 }) => {
     return (
         <div className="flex-shrink-0 flex items-center bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 gap-3 min-h-[64px]">
@@ -113,6 +116,20 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                     ))}
                 </div>
             </div>
+
+            {pageCount > 1 && onPageChange && (
+                <>
+                    <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
+                    <div className="flex flex-col items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => onPageChange(Math.max(0, activePageIndex - 1))} disabled={activePageIndex === 0} className="p-1 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors disabled:opacity-30"><ArrowLeftIcon className="w-3.5 h-3.5"/></button>
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400 w-12 text-center">{activePageIndex + 1} / {pageCount}</span>
+                            <button onClick={() => onPageChange(Math.min(pageCount - 1, activePageIndex + 1))} disabled={activePageIndex === pageCount - 1} className="p-1 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors disabled:opacity-30"><ArrowRightIcon className="w-3.5 h-3.5"/></button>
+                        </div>
+                        <span className="text-[9px] font-mono font-bold text-slate-400">PAGE</span>
+                    </div>
+                </>
+            )}
 
             <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
 

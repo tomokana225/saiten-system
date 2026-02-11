@@ -1,3 +1,4 @@
+
 import type { SheetLayout, SheetCell, LayoutConfig, NumberingStyle } from '../../types';
 
 type PaperSize = 'A4' | 'B5' | 'A3';
@@ -137,7 +138,7 @@ export const generateAutoLayout = (config: LayoutConfig): SheetLayout => {
         
         const gapSize = config.gapBetweenQuestions !== undefined ? config.gapBetweenQuestions : 2;
 
-        let globalQNum = 1;
+        let globalQNum = config.startQuestionNumber || 1;
     
         config.sections.forEach(section => {
             const sectionStartRow = cells.length;

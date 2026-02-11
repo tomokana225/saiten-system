@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { SheetLayout, SheetCell, LayoutConfig, HeaderElement, NumberingStyle } from '../../types';
 import { generateAutoLayout, PAPER_DIMENSIONS } from './LayoutGenerator';
@@ -40,6 +41,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     // --- Builder State ---
     const [config, setConfig] = useState<LayoutConfig>({
         name: '', paperSize: 'A4', borderWidth: 1, borderColor: '#000000', defaultRowHeight: 10, gapBetweenQuestions: 2, sections: [],
+        startQuestionNumber: 1,
         headerElements: [
             { id: 'title', label: 'タイトル', height: 2, visible: true },
             { id: 'score', label: '点数欄', height: 2, visible: true },
@@ -78,6 +80,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                 ...loadedConfig, 
                 defaultRowHeight: loadedConfig.defaultRowHeight || 10, 
                 gapBetweenQuestions: loadedConfig.gapBetweenQuestions !== undefined ? loadedConfig.gapBetweenQuestions : 2,
+                startQuestionNumber: loadedConfig.startQuestionNumber || 1,
                 headerSettings: mergedHeader,
                 headerElements: headerElements,
                 headerPosition: loadedConfig.headerPosition || 'top'
@@ -106,6 +109,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
             borderColor: '#000000',
             defaultRowHeight: initRowHeight,
             gapBetweenQuestions: 2,
+            startQuestionNumber: 1,
             sections: [{ id: `sec_${Date.now()}`, title: 'I', numberingStyle: '1', questions: [] }],
             headerElements: [
                 { id: 'title', label: 'タイトル', height: 2, visible: true },
@@ -452,6 +456,20 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
                                         <label className="text-[10px] text-slate-400 whitespace-nowrap">行高:</label>
                                         <input type="number" min="5" max="30" value={config.defaultRowHeight} onChange={e => { setConfig({...config, defaultRowHeight: parseInt(e.target.value) || 10}); setTimeout(() => handleCreateOrUpdateLayout(false), 0); }} className="w-full p-1 text-sm bg-transparent text-right"/>
                                     </div>
+                                </div>
+                                <div className="flex items-center gap-2 mt-2 bg-slate-50 dark:bg-slate-700 border rounded px-2 py-1">
+                                    <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">問題番号の開始:</label>
+                                    <input 
+                                        type="number" 
+                                        min="1" 
+                                        max="1000" 
+                                        value={config.startQuestionNumber || 1} 
+                                        onChange={e => { 
+                                            setConfig({...config, startQuestionNumber: parseInt(e.target.value) || 1}); 
+                                            setTimeout(() => handleCreateOrUpdateLayout(false), 0); 
+                                        }} 
+                                        className="w-full p-1 text-sm bg-transparent text-right outline-none"
+                                    />
                                 </div>
                                 <div className="pt-2 border-t dark:border-slate-600 text-xs space-y-2">
                                     <label className="flex items-center gap-2 cursor-pointer"><span className="text-[10px] font-bold text-slate-400">解答欄間隔:</span><input type="number" min="0" max="5" value={config.gapBetweenQuestions} onChange={e => handleConfigChange({gapBetweenQuestions: parseInt(e.target.value)})} className="w-10 p-0.5 border rounded bg-slate-50 dark:bg-slate-900 text-center"/></label>

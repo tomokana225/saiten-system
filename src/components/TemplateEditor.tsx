@@ -419,9 +419,25 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
 
     return (
         <div className="w-full h-full flex gap-4 overflow-hidden">
-            <TemplateSidebar areas={areas} setAreas={commitAreas} selectedAreaIds={selectedAreaIds} setSelectedAreaIds={setSelectedAreaIds} apiKey={apiKey} template={template} onTemplateChange={handleTemplateChange} detSettings={detSettings} setDetSettings={setDetSettings} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} />
+            <TemplateSidebar 
+                areas={areas} setAreas={commitAreas} 
+                selectedAreaIds={selectedAreaIds} setSelectedAreaIds={setSelectedAreaIds} 
+                apiKey={apiKey} template={template} onTemplateChange={handleTemplateChange} 
+                detSettings={detSettings} setDetSettings={setDetSettings} 
+                undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1}
+                activePageIndex={activePageIndex}
+                onPageChange={setActivePageIndex}
+            />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <TemplateToolbar isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode} wandTargetType={wandTargetType} setWandTargetType={setWandTargetType} manualDrawType={manualDrawType} setManualDrawType={setManualDrawType} zoom={zoom} onZoomChange={setZoom} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} showMarkPoints={showMarkPoints} onToggleMarkPoints={setShowMarkPoints} />
+                <TemplateToolbar 
+                    isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode} 
+                    wandTargetType={wandTargetType} setWandTargetType={setWandTargetType} 
+                    manualDrawType={manualDrawType} setManualDrawType={setManualDrawType} 
+                    zoom={zoom} onZoomChange={setZoom} 
+                    undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} 
+                    showMarkPoints={showMarkPoints} onToggleMarkPoints={setShowMarkPoints}
+                    pageCount={pages.length} activePageIndex={activePageIndex} onPageChange={setActivePageIndex}
+                />
                 <div ref={containerRef} className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg" onWheel={handleWheel}>
                     <div className="relative" style={{ width: activePage.width * zoom, height: activePage.height * zoom, margin: 'auto' }}>
                         <div className="absolute top-0 left-0" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>

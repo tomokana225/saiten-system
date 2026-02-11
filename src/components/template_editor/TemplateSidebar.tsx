@@ -38,11 +38,13 @@ interface TemplateSidebarProps {
     redo: () => void;
     canUndo: boolean;
     canRedo: boolean;
+    activePageIndex: number;
+    onPageChange: (index: number) => void;
 }
 
 export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ 
     areas, setAreas, selectedAreaIds, setSelectedAreaIds, apiKey, template, onTemplateChange, 
-    detSettings, setDetSettings, undo, redo, canUndo, canRedo 
+    detSettings, setDetSettings, undo, redo, canUndo, canRedo, activePageIndex, onPageChange
 }) => {
     const [isDetecting, setIsDetecting] = useState(false);
     const [isOptionsExpanded, setIsOptionsExpanded] = useState(false);
@@ -51,8 +53,8 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
     const handleDetectAlignmentMarks = async () => {
         setIsDetecting(true);
         try {
-            const pageIndex = 0; // Currently assumes detection on page 1
-            const imagePath = template.pages?.[pageIndex]?.imagePath || template.filePath;
+            // Detect marks on the CURRENT active page
+            const imagePath = template.pages?.[activePageIndex]?.imagePath || template.filePath;
             
             const result = await window.electronAPI.invoke('get-image-details', imagePath);
             if (!result.success || !result.details?.url) {
@@ -79,21 +81,29 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
             });
 
             if (marks) {
-                const existingMarkIds = new Set(areas.filter(a => a.type === AreaType.ALIGNMENT_MARK).map(a => a.id));
-                const newAreas = areas.filter(a => a.type !== AreaType.ALIGNMENT_MARK);
+                // Remove existing marks ONLY from the current page
+                const otherPageAreas = areas.filter(a => a.type !== AreaType.ALIGNMENT_MARK || a.pageIndex !== activePageIndex);
+                
                 // Mark display size: use the actual minSize setting or proportional
                 const markSize = Math.max(detSettings.minSize, Math.min(img.naturalWidth, img.naturalHeight) * 0.03);
 
                 const markAreas: Area[] = [
-                    { id: Date.now(), name: '基準TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+1, name: '基準TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+2, name: '基準BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+3, name: '基準BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now(), name: '基準TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: activePageIndex },
+                    { id: Date.now()+1, name: '基準TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize, pageIndex: activePageIndex },
+                    { id: Date.now()+2, name: '基準BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize, pageIndex: activePageIndex },
+                    { id: Date.now()+3, name: '基準BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize, pageIndex: activePageIndex },
                 ];
 
-                setAreas([...newAreas, ...markAreas]);
-                onTemplateChange({ alignmentMarkIdealCorners: marks });
-                alert(`${markAreas.length}個の基準マークを検出しました。`);
+                setAreas([...otherPageAreas, ...markAreas]);
+                
+                // Note: We only store one set of "Ideal Corners" in the template for warping.
+                // Usually this is sufficient if all pages are scanned similarly. 
+                // If pages differ drastically, we might need page-specific ideal corners in the future.
+                if (activePageIndex === 0) {
+                    onTemplateChange({ alignmentMarkIdealCorners: marks });
+                }
+                
+                alert(`このページで${markAreas.length}個の基準マークを検出しました。`);
             } else {
                 alert('基準マークを検出できませんでした。「詳細設定」の「感度」や「最小サイズ」を調整してみてください。');
             }
@@ -129,13 +139,19 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
     };
     
     const sortedAreas = useMemo(() => {
-        const markSheets = areas
-            .filter(a => a.type === AreaTypeEnum.MARK_SHEET)
-            .sort((a, b) => (a.questionNumber ?? Infinity) - (b.questionNumber ?? Infinity));
-    
-        const otherAreas = areas.filter(a => a.type !== AreaTypeEnum.MARK_SHEET);
-        
-        return [...markSheets, ...otherAreas];
+        // Sort by page first, then by type/number
+        const sorted = [...areas].sort((a, b) => {
+            const pageA = a.pageIndex || 0;
+            const pageB = b.pageIndex || 0;
+            if (pageA !== pageB) return pageA - pageB;
+            
+            // Same page: prioritize question numbers for marksheet
+            if (a.type === AreaTypeEnum.MARK_SHEET && b.type === AreaTypeEnum.MARK_SHEET) {
+                return (a.questionNumber ?? Infinity) - (b.questionNumber ?? Infinity);
+            }
+            return 0; // Maintain insertion order otherwise
+        });
+        return sorted;
     }, [areas]);
 
     // Keep selected item in view after list re-orders
@@ -168,7 +184,7 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg shadow-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 font-bold text-sm"
                 >
                     {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                    <span>基準マークを自動検出</span>
+                    <span>現在のページで基準マーク検出</span>
                 </button>
 
                 {/* Collapsible Detection Options */}
@@ -243,16 +259,24 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                 {sortedAreas.map(area => {
                     const colors = areaTypeColors[area.type] || fallbackColor;
                     const isSelected = selectedAreaIds.has(area.id);
+                    const areaPageIndex = area.pageIndex || 0;
+                    
                     return (
                         <div
                             key={area.id}
                             data-area-id={area.id}
-                            onClick={() => setSelectedAreaIds(new Set([area.id]))}
+                            onClick={() => {
+                                setSelectedAreaIds(new Set([area.id]));
+                                if (areaPageIndex !== activePageIndex) {
+                                    onPageChange(areaPageIndex);
+                                }
+                            }}
                             className={`group p-2.5 rounded-xl cursor-pointer border-2 transition-all ${isSelected ? 'bg-white dark:bg-slate-700 border-sky-500 shadow-md ring-2 ring-sky-500/20' : `bg-slate-50 dark:bg-slate-900 border-transparent hover:border-slate-200 dark:hover:border-slate-700`}`}
                         >
                             <div className="flex items-center justify-between mb-1.5">
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: colors.hex }} />
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">P{areaPageIndex + 1}</span>
                                     <input
                                         type="text"
                                         value={area.name}
