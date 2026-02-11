@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
-import type { GradingFilter, Area } from '../../types';
+import type { GradingFilter, Area, AISettings } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
-import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon } from '../icons';
+import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon, CircleDotIcon } from '../icons';
 
 interface GradingHeaderProps {
     selectedArea: Area | undefined;
@@ -25,6 +26,8 @@ interface GradingHeaderProps {
     onToggleImageEnhancement: () => void;
     autoAlign: boolean;
     onToggleAutoAlign: () => void;
+    aiSettings: AISettings;
+    onAiSettingsChange: (updater: (prev: AISettings) => AISettings) => void;
 }
 
 const filterOptions: { value: GradingFilter; label: string }[] = [
@@ -44,7 +47,8 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
     selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
     aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
-    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign
+    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign,
+    aiSettings, onAiSettingsChange
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;
@@ -95,6 +99,16 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                  </div>
 
                 <div className="flex items-center gap-4">
+                    {isMarkSheet && (
+                        <button 
+                            onClick={() => onAiSettingsChange(prev => ({ ...prev, showMarkCentroids: !prev.showMarkCentroids }))}
+                            className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors border ${aiSettings.showMarkCentroids ? 'bg-teal-100 text-teal-700 border-teal-300 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700' : 'bg-white text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                            title="判定の中心点を表示します"
+                        >
+                            <CircleDotIcon className="w-4 h-4" />
+                            <span>判定位置表示 {aiSettings.showMarkCentroids ? 'ON' : 'OFF'}</span>
+                        </button>
+                    )}
                     <button 
                         onClick={onToggleAutoAlign}
                         className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors border ${autoAlign ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700' : 'bg-white text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}

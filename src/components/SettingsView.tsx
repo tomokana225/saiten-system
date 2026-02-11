@@ -128,9 +128,19 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                                     1 から開始 (1, 2, 3...)
                                 </button>
                             </div>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                配点設定画面や採点結果で表示されるマークの番号の基準値を設定します。
-                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-900 rounded-lg">
+                            <div className="space-y-1">
+                                <label className="text-sm font-bold">判定位置の表示</label>
+                                <p className="text-xs text-slate-500">マークの中心点（緑の点）を採点画面に表示します。</p>
+                            </div>
+                            <button 
+                                onClick={() => onAiSettingsChange(prev => ({ ...prev, showMarkCentroids: !prev.showMarkCentroids }))}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${aiSettings.showMarkCentroids ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${aiSettings.showMarkCentroids ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
                         </div>
 
                         <div className="space-y-2">
