@@ -26,7 +26,7 @@ export interface DetectionSettings {
     padding: number;
 }
 
-const RESIZE_HANDLE_SIZE = 12; // Slightly larger for easier grabbing
+const RESIZE_HANDLE_SIZE = 12;
 const MIN_AREA_SIZE = 5;
 
 const migrateAreas = (areasToMigrate: Area[]): Area[] => {
@@ -62,7 +62,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [manualDrawType, setManualDrawType] = useState<AreaType | null>(null);
     
     const [drawState, setDrawState] = useState<DrawState | null>(null);
-    const [clipboard, setClipboard] = useState<Area[]>([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     
     const [panState, setPanState] = useState<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -77,8 +76,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const interactionThrottle = useRef<number | null>(null);
-    const targetScrollRef = useRef<{left: number, top: number} | null>(null);
-    const zoomRef = useRef(zoom);
 
     const [canvasCursor, setCanvasCursor] = useState<'default' | 'crosshair' | 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize' | 'move' | 'pointer'>('default');
 
@@ -88,10 +85,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         setHistory([migrated]);
         setHistoryIndex(0);
     }, [activeProject?.id]);
-
-    useEffect(() => {
-        zoomRef.current = zoom;
-    }, [zoom]);
 
     const commitAreas = useCallback((newAreas: Area[]) => {
         const migrated = migrateAreas(newAreas);
@@ -107,7 +100,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const undo = useCallback(() => {
         if (historyIndex > 0) {
             const prevState = history[historyIndex - 1];
-            isHistoryAction.current = true;
             setHistoryIndex(prev => prev - 1);
             setAreas(prevState);
             handleAreasChange(prevState);
@@ -117,7 +109,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const redo = useCallback(() => {
         if (historyIndex < history.length - 1) {
             const nextState = history[historyIndex + 1];
-            isHistoryAction.current = true;
             setHistoryIndex(prev => prev + 1);
             setAreas(nextState);
             handleAreasChange(nextState);
@@ -138,64 +129,57 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             { name: 'left', x: area.x, y: area.y + area.height / 2, cursor: 'ew-resize' as const },
             { name: 'right', x: area.x + area.width, y: area.y + area.height / 2, cursor: 'ew-resize' as const },
         ];
-
         for (const handle of handles) {
-            if (Math.abs(x - handle.x) < handleSize && Math.abs(y - handle.y) < handleSize) {
-                return handle;
-            }
+            if (Math.abs(x - handle.x) < handleSize && Math.abs(y - handle.y) < handleSize) return handle;
         }
         return null;
     }, [zoom]);
 
     useEffect(() => {
-        const draw = () => {
-            const canvas = canvasRef.current;
-            const ctx = canvas?.getContext('2d');
-            if (!ctx || !canvas || !activePage) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas || !activePage) return;
 
-            canvas.width = activePage.width;
-            canvas.height = activePage.height;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.width = activePage.width;
+        canvas.height = activePage.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            currentPageAreas.forEach(area => {
-                const color = areaTypeColors[area.type]?.hex || '#000000';
-                const isSelected = selectedAreaIds.has(area.id);
-                ctx.strokeStyle = color;
-                ctx.lineWidth = isSelected ? 4 : 2;
-                ctx.strokeRect(area.x, area.y, area.width, area.height);
+        currentPageAreas.forEach(area => {
+            const color = areaTypeColors[area.type]?.hex || '#000000';
+            const isSelected = selectedAreaIds.has(area.id);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isSelected ? 4 : 2;
+            ctx.strokeRect(area.x, area.y, area.width, area.height);
 
-                ctx.save();
-                ctx.fillStyle = color;
-                ctx.globalAlpha = 0.15;
-                ctx.fillRect(area.x, area.y, area.width, area.height);
-                
-                ctx.globalAlpha = 0.4;
-                const fontSize = Math.max(12, Math.min(area.height * 0.4, 60));
-                if (area.width > 20 && area.height > 15) {
-                    ctx.font = `bold ${fontSize}px sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(area.name, area.x + area.width / 2, area.y + area.height / 2);
-                }
-                ctx.restore();
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.15;
+            ctx.fillRect(area.x, area.y, area.width, area.height);
+            
+            ctx.globalAlpha = 0.4;
+            const fontSize = Math.max(12, Math.min(area.height * 0.4, 60));
+            if (area.width > 20 && area.height > 15) {
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(area.name, area.x + area.width / 2, area.y + area.height / 2);
+            }
+            ctx.restore();
 
-                if (isSelected) {
-                    ctx.fillStyle = '#0ea5e9';
-                    const handleSize = RESIZE_HANDLE_SIZE / zoom;
-                    const rectHandles = [
-                        { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
-                        { x: area.x, y: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },
-                        { x: area.x + area.width / 2, y: area.y }, { x: area.x + area.width / 2, y: area.y + area.height },
-                        { x: area.x, y: area.y + area.height / 2 }, { x: area.x + area.width, y: area.y + area.height / 2 },
-                    ];
-                    rectHandles.forEach(h => ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize));
-                }
-            });
-        };
-        draw();
+            if (isSelected) {
+                ctx.fillStyle = '#0ea5e9';
+                const handleSize = RESIZE_HANDLE_SIZE / zoom;
+                const rectHandles = [
+                    { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
+                    { x: area.x, y: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },
+                    { x: area.x + area.width / 2, y: area.y }, { x: area.x + area.width / 2, y: area.y + area.height },
+                    { x: area.x, y: area.y + area.height / 2 }, { x: area.x + area.width, y: area.y + area.height / 2 },
+                ];
+                rectHandles.forEach(h => ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize));
+            }
+        });
     }, [currentPageAreas, selectedAreaIds, activePage, zoom]);
     
-    // Relative coordinate helper
     const getRelativeCoords = (e: React.MouseEvent | MouseEvent): { x: number, y: number } => {
         const rect = canvasRef.current!.getBoundingClientRect();
         return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
@@ -211,23 +195,15 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
 
         const pos = getRelativeCoords(e);
-        
-        // Find if we clicked an area or a handle
         const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         const handle = clickedArea && selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
 
         if (handle && clickedArea) {
-            // Priority 1: Resizing via handle
             setDrawState({ isResizing: true, isMoving: false, isDrawing: false, startPoint: pos, resizeHandle: handle.name, moveStartArea: clickedArea });
         } else if (clickedArea) {
-            // Priority 2: Moving existing area
-            if (e.shiftKey) {
-                const newSet = new Set(selectedAreaIds); if (newSet.has(clickedArea.id)) newSet.delete(clickedArea.id); else newSet.add(clickedArea.id);
-                setSelectedAreaIds(newSet);
-            } else {
-                if (!selectedAreaIds.has(clickedArea.id)) setSelectedAreaIds(new Set([clickedArea.id]));
-            }
-
+            if (!selectedAreaIds.has(clickedArea.id) && !e.shiftKey) setSelectedAreaIds(new Set([clickedArea.id]));
+            else if (e.shiftKey) { const next = new Set(selectedAreaIds); if(next.has(clickedArea.id)) next.delete(clickedArea.id); else next.add(clickedArea.id); setSelectedAreaIds(next); }
+            
             const moveStartPositions = new Map<number, { x: number; y: number }>();
             const targetIds = selectedAreaIds.has(clickedArea.id) ? selectedAreaIds : new Set([clickedArea.id]);
             targetIds.forEach(id => {
@@ -236,10 +212,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             });
             setDrawState({ isResizing: false, isMoving: true, isDrawing: false, startPoint: pos, resizeHandle: null, moveStartArea: clickedArea, moveStartPositions });
         } else if (manualDrawType) {
-            // Priority 3: Drawing new area
             setDrawState({ isDrawing: true, isResizing: false, isMoving: false, startPoint: pos, resizeHandle: null, moveStartArea: null });
         } else {
-            // Selection reset
             setSelectedAreaIds(new Set());
         }
     };
@@ -247,21 +221,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const handleInteractionMove = (e: React.MouseEvent) => {
         const pos = getRelativeCoords(e);
         
-        // Cursor updates (feedback)
         if (!drawState && !panState) {
-            if (isSpacePressed) {
-                setCanvasCursor('pointer');
-            } else {
-                const hoveredArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
-                if (hoveredArea) {
-                    const handle = selectedAreaIds.has(hoveredArea.id) ? getResizeHandle(hoveredArea, pos.x, pos.y) : null;
-                    setCanvasCursor(handle ? handle.cursor : 'move');
-                } else if (manualDrawType) {
-                    setCanvasCursor('crosshair');
-                } else {
-                    setCanvasCursor('default');
-                }
-            }
+            const hoveredArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
+            if (hoveredArea) {
+                const handle = selectedAreaIds.has(hoveredArea.id) ? getResizeHandle(hoveredArea, pos.x, pos.y) : null;
+                setCanvasCursor(handle ? handle.cursor : 'move');
+            } else if (manualDrawType) setCanvasCursor('crosshair');
+            else setCanvasCursor('default');
         }
 
         if (panState?.isPanning && containerRef.current) {
@@ -291,21 +257,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     if (startPos) return { ...area, x: startPos.x + dx, y: startPos.y + dy };
                     return area;
                 }));
-            } else if (drawState.isDrawing) {
-                // Drawing handled in real-time on canvas overlay for performance
-                const { startPoint } = drawState;
-                const x = Math.min(pos.x, startPoint.x); const y = Math.min(pos.y, startPoint.y);
-                const width = Math.abs(pos.x - startPoint.x); const height = Math.abs(pos.y - startPoint.y);
-                const ctx = canvasRef.current?.getContext('2d');
-                if (ctx && activePage) {
-                    ctx.clearRect(0,0,canvasRef.current!.width, canvasRef.current!.height);
-                    currentPageAreas.forEach(area => {
-                        ctx.strokeStyle = areaTypeColors[area.type]?.hex || '#000000';
-                        ctx.lineWidth = selectedAreaIds.has(area.id) ? 4 : 2; ctx.strokeRect(area.x, area.y, area.width, area.height);
-                    });
-                    ctx.strokeStyle = areaTypeColors[manualDrawType!]?.hex || '#0ea5e9';
-                    ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
-                }
             }
         };
 
@@ -318,73 +269,44 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             const pos = getRelativeCoords(e); const { startPoint } = drawState;
             const width = Math.abs(pos.x - startPoint.x); const height = Math.abs(pos.y - startPoint.y);
             if (width > MIN_AREA_SIZE && height > MIN_AREA_SIZE) {
-                let newName: string; let questionNumber: number | undefined;
-                if (manualDrawType === AreaTypeEnum.MARK_SHEET || manualDrawType === AreaTypeEnum.ANSWER) {
-                    const existingNumbers = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER).map(a => {
-                        if (a.questionNumber !== undefined) return a.questionNumber;
-                        const match = a.name.match(/問(\d+)/); return match ? parseInt(match[1], 10) : 0;
-                    });
-                    questionNumber = (existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0) + 1; newName = `問${questionNumber}`;
-                } else {
-                    const prefix = manualDrawType; const count = areas.filter(a => a.type === manualDrawType).length; newName = `${prefix}${count + 1}`;
-                }
-                const newArea: Area = { id: Date.now(), name: newName, type: manualDrawType, x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y), width, height, questionNumber, pageIndex: activePageIndex };
+                const newArea: Area = { id: Date.now(), name: `領域${areas.length + 1}`, type: manualDrawType, x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y), width, height, pageIndex: activePageIndex };
                 commitAreas([...areas, newArea]); setSelectedAreaIds(new Set([newArea.id]));
             }
-        } else if(drawState?.isMoving || drawState?.isResizing) {
-            commitAreas(areas);
-        }
+        } else if(drawState?.isMoving || drawState?.isResizing) commitAreas(areas);
         setDrawState(null); setPanState(null);
     };
 
-    // Keyboard controls
+    const handleWheel = (e: React.WheelEvent) => {
+        if (e.ctrlKey || e.metaKey || e.deltaX !== 0) {
+            e.preventDefault();
+            const delta = -e.deltaY * 0.01;
+            setZoom(prev => Math.min(5, Math.max(0.1, prev + delta)));
+        }
+    };
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+            if ((e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
             if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); }
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-                e.preventDefault(); if (e.shiftKey) redo(); else undo();
-            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
             if (e.key === 'Escape') { setSelectedAreaIds(new Set()); setManualDrawType(null); }
-            else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedAreaIds.size > 0) { commitAreas(areas.filter(a => !selectedAreaIds.has(a.id))); setSelectedAreaIds(new Set()); }
-            }
+            if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedAreaIds.size > 0) { commitAreas(areas.filter(a => !selectedAreaIds.has(a.id))); setSelectedAreaIds(new Set()); } }
         };
         const handleKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') setIsSpacePressed(false); };
         window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
         return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
-    }, [selectedAreaIds, areas, commitAreas, undo, redo]);
+    }, [selectedAreaIds, areas, commitAreas, undo]);
 
     return (
         <div className="w-full h-full flex gap-4 overflow-hidden">
-            <TemplateSidebar 
-                areas={areas} setAreas={commitAreas} 
-                selectedAreaIds={selectedAreaIds} setSelectedAreaIds={setSelectedAreaIds} 
-                apiKey={apiKey} template={template} onTemplateChange={handleTemplateChange}
-                detSettings={detSettings} setDetSettings={setDetSettings}
-                undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1}
-            />
+            <TemplateSidebar areas={areas} setAreas={commitAreas} selectedAreaIds={selectedAreaIds} setSelectedAreaIds={setSelectedAreaIds} apiKey={apiKey} template={template} onTemplateChange={handleTemplateChange} detSettings={detSettings} setDetSettings={setDetSettings} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <TemplateToolbar 
-                    isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode}
-                    wandTargetType={wandTargetType} setWandTargetType={setWandTargetType}
-                    manualDrawType={manualDrawType} setManualDrawType={setManualDrawType}
-                    zoom={zoom} onZoomChange={setZoom} 
-                    undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1}
-                />
-                <div ref={containerRef} className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg">
+                <TemplateToolbar isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode} wandTargetType={wandTargetType} setWandTargetType={setWandTargetType} manualDrawType={manualDrawType} setManualDrawType={setManualDrawType} zoom={zoom} onZoomChange={setZoom} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} />
+                <div ref={containerRef} className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg" onWheel={handleWheel}>
                     <div className="relative" style={{ width: activePage.width * zoom, height: activePage.height * zoom, margin: 'auto' }}>
                         <div className="absolute top-0 left-0" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
                             <img ref={imageRef} src={activePage.imagePath} alt="Template" className="block pointer-events-none select-none" style={{ width: activePage.width, height: activePage.height }}/>
-                            <canvas 
-                                ref={canvasRef} 
-                                className="absolute top-0 left-0"
-                                style={{ cursor: canvasCursor }}
-                                onMouseDown={handleMouseDown}
-                                onMouseMove={handleInteractionMove}
-                                onMouseUp={handleMouseUp}
-                                onMouseLeave={() => drawState && handleMouseUp()}
-                            />
+                            <canvas ref={canvasRef} className="absolute top-0 left-0" style={{ cursor: canvasCursor }} onMouseDown={handleMouseDown} onMouseMove={handleInteractionMove} onMouseUp={handleMouseUp} onMouseLeave={() => drawState && handleMouseUp()} />
                         </div>
                     </div>
                 </div>

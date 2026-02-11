@@ -18,6 +18,8 @@ export const areaTypeColors: { [key in AreaType]: { hex: string; bg: string; tex
     [AreaTypeEnum.STUDENT_ID_MARK]: { hex: '#8b5cf6', bg: 'bg-violet-200 dark:bg-violet-700', text: 'text-violet-800 dark:text-violet-300', hover: 'hover:bg-violet-300/50 dark:hover:bg-violet-600/50' },
     [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: { hex: '#ec4899', bg: 'bg-pink-200 dark:bg-pink-700', text: 'text-pink-800 dark:text-pink-300', hover: 'hover:bg-pink-300/50 dark:hover:bg-pink-600/50' },
     [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: { hex: '#06b6d4', bg: 'bg-cyan-200 dark:bg-cyan-700', text: 'text-cyan-800 dark:text-cyan-300', hover: 'hover:bg-cyan-300/50 dark:hover:bg-cyan-600/50' },
+    [AreaTypeEnum.MARKSHEET_REF_RIGHT]: { hex: '#f97316', bg: 'bg-orange-100 dark:bg-orange-900/50', text: 'text-orange-800 dark:text-orange-300', hover: 'hover:bg-orange-200/50 dark:hover:bg-orange-800/50' },
+    [AreaTypeEnum.MARKSHEET_REF_BOTTOM]: { hex: '#d946ef', bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/50', text: 'text-fuchsia-800 dark:text-fuchsia-300', hover: 'hover:bg-fuchsia-200/50 dark:hover:bg-fuchsia-800/50' },
 };
 
 const fallbackColor = areaTypeColors[AreaTypeEnum.QUESTION_NUMBER];

@@ -56,23 +56,21 @@ interface Point { x: number; y: number; }
 interface Corners { tl: Point; tr: Point; br: Point; bl: Point; }
 
 /**
- * Finds alignment marks by looking for the outermost dark blobs in each corner quadrant.
+ * Finds alignment marks by looking for the absolute outermost dark blobs in corner areas.
  */
 export const findAlignmentMarks = (
     imageData: ImageData, 
     settings: { minSize: number, threshold: number, padding: number } = { minSize: 10, threshold: 160, padding: 0 }
 ): Corners | null => {
     const { data, width, height } = imageData;
-    const searchRange = 0.20; // Search within outer 20% of page
+    const searchRange = 0.20; // 20% from edges
     const cornerW = Math.floor(width * searchRange);
     const cornerH = Math.floor(height * searchRange);
 
     const findBestCentroid = (startX: number, startY: number, endX: number, endY: number, targetX: number, targetY: number): Point | null => {
         const visited = new Uint8Array((endX - startX) * (endY - startY));
         let bestCandidate: { centroid: Point, distSq: number } | null = null;
-
         const minArea = settings.minSize * settings.minSize;
-        const threshold = settings.threshold;
 
         for (let y = startY; y < endY; y++) {
             for (let x = startX; x < endX; x++) {
@@ -82,7 +80,7 @@ export const findAlignmentMarks = (
                 const idx = (y * width + x) * 4;
                 const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
 
-                if (gray < threshold) {
+                if (gray < settings.threshold) {
                     let sumX = 0, sumY = 0, count = 0;
                     let minX = x, maxX = x, minY = y, maxY = y;
                     const stack = [[x, y]];
@@ -101,25 +99,24 @@ export const findAlignmentMarks = (
                                 if (!visited[nvIdx]) {
                                     const nIdx = (ny * width + nx) * 4;
                                     const nGray = 0.299 * data[nIdx] + 0.587 * data[nIdx + 1] + 0.114 * data[nIdx + 2];
-                                    if (nGray < threshold) {
+                                    if (nGray < settings.threshold) {
                                         visited[nvIdx] = 1;
                                         stack.push([nx, ny]);
                                     }
                                 }
                             }
                         }
-                        if (count > 5000) break; // Blob too large
+                        if (count > 5000) break;
                     }
 
                     const blobW = maxX - minX + 1;
                     const blobH = maxY - minY + 1;
                     const aspectRatio = Math.max(blobW, blobH) / Math.min(blobW, blobH);
 
-                    // Filters: Minimum size, not too thin (like a line), not too huge
-                    if (count >= minArea && count < (width * height * 0.05) && aspectRatio < 2.5) {
+                    if (count >= minArea && count < (width * height * 0.02) && aspectRatio < 3) {
                         const centroid = { x: sumX / count, y: sumY / count };
+                        // Distance to actual page corner (0,0 or W,0 etc.)
                         const distSq = Math.pow(centroid.x - targetX, 2) + Math.pow(centroid.y - targetY, 2);
-                        
                         if (!bestCandidate || distSq < bestCandidate.distSq) {
                             bestCandidate = { centroid, distSq };
                         }
@@ -139,7 +136,6 @@ export const findAlignmentMarks = (
     return null;
 };
 
-// HOMOGRAPHY / WARP Logic (Unchanged but ensuring efficiency)
 const getHomographyMatrix = (src: Point[], dst: Point[]): number[][] => {
     const P: number[][] = [];
     for (let i = 0; i < 4; i++) {

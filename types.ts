@@ -57,6 +57,8 @@ export enum AreaType {
     STUDENT_ID_MARK = '学籍番号',
     STUDENT_ID_REF_RIGHT = '学籍番号基準(右)',
     STUDENT_ID_REF_BOTTOM = '学籍番号基準(下)',
+    MARKSHEET_REF_RIGHT = 'マークシート基準(右)',
+    MARKSHEET_REF_BOTTOM = 'マークシート基準(下)',
 }
 
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;

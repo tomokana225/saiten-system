@@ -31,6 +31,8 @@ const typeNameMap: Record<string, string> = {
     [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
     [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: '学籍基準(右)',
     [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: '学籍基準(下)',
+    [AreaTypeEnum.MARKSHEET_REF_RIGHT]: 'マーク基準(右)',
+    [AreaTypeEnum.MARKSHEET_REF_BOTTOM]: 'マーク基準(下)',
 };
 
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ 
@@ -45,7 +47,7 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                 <button onClick={redo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="やり直す (Ctrl+Y)"><Redo2Icon className="w-4 h-4"/></button>
             </div>
 
-            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
 
             {/* Smart Interaction Controls */}
             <div className="flex flex-col gap-1 shrink-0">
@@ -74,7 +76,7 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                 </div>
             </div>
 
-            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
 
             {/* Manual Draw Types - Grouped into 2 rows to prevent overflow */}
             <div className="flex items-center flex-1 min-w-0 gap-3">
@@ -97,7 +99,7 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                 </div>
             </div>
 
-            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
 
             <div className="flex flex-col items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
                 <div className="flex items-center gap-1">
