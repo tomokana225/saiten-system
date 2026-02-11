@@ -21,9 +21,16 @@ interface TemplateToolbarProps {
 }
 
 const typeNameMap: Record<string, string> = {
-    [AreaTypeEnum.ANSWER]: '解答', [AreaTypeEnum.MARK_SHEET]: 'マークシート', [AreaTypeEnum.NAME]: '氏名',
-    [AreaTypeEnum.SUBTOTAL]: '小計', [AreaTypeEnum.TOTAL]: '合計', [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
-    [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク', [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
+    [AreaTypeEnum.ANSWER]: '解答', 
+    [AreaTypeEnum.MARK_SHEET]: 'マークシート', 
+    [AreaTypeEnum.NAME]: '氏名',
+    [AreaTypeEnum.SUBTOTAL]: '小計', 
+    [AreaTypeEnum.TOTAL]: '合計', 
+    [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
+    [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク', 
+    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
+    [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: '学籍基準(右)',
+    [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: '学籍基準(下)',
 };
 
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ 
@@ -31,28 +38,28 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
     manualDrawType, setManualDrawType, zoom, onZoomChange, undo, redo, canUndo, canRedo
 }) => {
     return (
-        <div className="flex-shrink-0 flex items-center bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 gap-3 overflow-hidden">
+        <div className="flex-shrink-0 flex items-center bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 gap-3 min-h-[64px]">
             {/* History Controls */}
-            <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                <button onClick={undo} disabled={!canUndo} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="元に戻す (Ctrl+Z)"><Undo2Icon className="w-5 h-5"/></button>
-                <button onClick={redo} disabled={!canRedo} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="やり直す (Ctrl+Y)"><Redo2Icon className="w-5 h-5"/></button>
+            <div className="flex flex-col gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                <button onClick={undo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="元に戻す (Ctrl+Z)"><Undo2Icon className="w-4 h-4"/></button>
+                <button onClick={redo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="やり直す (Ctrl+Y)"><Redo2Icon className="w-4 h-4"/></button>
             </div>
 
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
 
             {/* Smart Interaction Controls */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-col gap-1 shrink-0">
                 <button
                     onClick={() => { setIsAutoDetectMode(false); setManualDrawType(null); }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all font-bold text-sm ${!isAutoDetectMode && !manualDrawType ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg transition-all font-bold text-xs ${!isAutoDetectMode && !manualDrawType ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                 >
-                    <MousePointer2Icon className="w-4 h-4" />
-                    <span>通常ツール</span>
+                    <MousePointer2Icon className="w-3.5 h-3.5" />
+                    <span>通常選択</span>
                 </button>
 
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all font-bold text-sm border-2 ${isAutoDetectMode ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600'}`}>
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-lg transition-all font-bold text-xs border-2 ${isAutoDetectMode ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600'}`}>
                     <button onClick={() => setIsAutoDetectMode(!isAutoDetectMode)} className="flex items-center gap-2">
-                        <Wand2Icon className="w-4 h-4" />
+                        <Wand2Icon className="w-3.5 h-3.5" />
                         <span>自動認識</span>
                     </button>
                     {isAutoDetectMode && (
@@ -67,12 +74,12 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                 </div>
             </div>
 
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
 
-            {/* Manual Draw Types - Selecting one prepares the tool to draw that specific type */}
-            <div className="flex items-center flex-1 min-w-0 gap-2 overflow-hidden">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">手動追加:</span>
-                <div className="flex gap-1 overflow-x-auto scrollbar-hide shrink-0 p-1">
+            {/* Manual Draw Types - Grouped into 2 rows to prevent overflow */}
+            <div className="flex items-center flex-1 min-w-0 gap-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0 writing-mode-vertical text-center hidden sm:block">手動<br/>追加</span>
+                <div className="grid grid-rows-2 grid-flow-col gap-1 overflow-x-auto scrollbar-hide p-1">
                     {Object.values(AreaTypeEnum).map(type => (
                         <button
                             key={type}
@@ -82,7 +89,7 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                                 color: manualDrawType === type ? 'white' : areaTypeColors[type].hex,
                                 backgroundColor: manualDrawType === type ? areaTypeColors[type].hex : ''
                             }}
-                            className={`px-3 py-1 text-[11px] font-bold rounded-lg border-2 whitespace-nowrap transition-all active:scale-95 ${manualDrawType !== type ? 'bg-white dark:bg-slate-900' : 'shadow-sm'}`}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md border-2 whitespace-nowrap transition-all active:scale-95 ${manualDrawType !== type ? 'bg-white dark:bg-slate-900' : 'shadow-sm'}`}
                         >
                             {typeNameMap[type] || type}
                         </button>
@@ -90,10 +97,14 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                 </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomOutIcon className="w-4 h-4"/></button>
-                <span className="text-[10px] font-mono font-bold w-12 text-center text-slate-600 dark:text-slate-400">{(zoom * 100).toFixed(0)}%</span>
-                <button onClick={() => onZoomChange(Math.min(5, zoom + 0.1))} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomInIcon className="w-4 h-4"/></button>
+            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+
+            <div className="flex flex-col items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                <div className="flex items-center gap-1">
+                    <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-1 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomOutIcon className="w-3.5 h-3.5"/></button>
+                    <button onClick={() => onZoomChange(Math.min(5, zoom + 0.1))} className="p-1 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomInIcon className="w-3.5 h-3.5"/></button>
+                </div>
+                <span className="text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400">{(zoom * 100).toFixed(0)}%</span>
             </div>
         </div>
     );
