@@ -137,6 +137,111 @@ export const findAlignmentMarks = (
     return null;
 };
 
+// Client-side flood fill detection for "Magic Wand" tool
+export const detectRectFromPoint = (
+    img: HTMLImageElement,
+    x: number,
+    y: number,
+    threshold: number = 160
+): { x: number, y: number, width: number, height: number } | null => {
+    // Search Region of Interest (ROI) to avoid processing full 4K images
+    // Centered around the click point
+    const roiSize = 1000;
+    const sx = Math.max(0, Math.floor(x - roiSize / 2));
+    const sy = Math.max(0, Math.floor(y - roiSize / 2));
+    const sw = Math.min(img.naturalWidth - sx, roiSize);
+    const sh = Math.min(img.naturalHeight - sy, roiSize);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    const imgData = ctx.getImageData(0, 0, sw, sh);
+    const data = imgData.data;
+
+    // Convert global click to ROI local coordinates
+    const localX = Math.floor(x - sx);
+    const localY = Math.floor(y - sy);
+
+    if (localX < 0 || localX >= sw || localY < 0 || localY >= sh) return null;
+
+    // Helper: is the pixel "background" (light enough)?
+    // Returns true if light, false if dark (border)
+    const isBackground = (lx: number, ly: number) => {
+        if (lx < 0 || ly < 0 || lx >= sw || ly >= sh) return false;
+        const idx = (ly * sw + lx) * 4;
+        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        return gray > threshold;
+    };
+
+    // If clicked on a dark line, fail immediately
+    if (!isBackground(localX, localY)) return null;
+
+    // BFS Flood Fill
+    const visited = new Uint8Array(sw * sh); 
+    const queue: number[] = [localX, localY];
+    let minX = localX, maxX = localX, minY = localY, maxY = localY;
+    
+    // Safety limit to prevent freezing on huge white areas
+    const limitPixels = 200000; 
+    let count = 0;
+
+    visited[localY * sw + localX] = 1;
+
+    while (queue.length > 0) {
+        const cy = queue.pop()!;
+        const cx = queue.pop()!;
+        count++;
+
+        if (count > limitPixels) break;
+
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+
+        const neighbors = [
+            cx + 1, cy,
+            cx - 1, cy,
+            cx, cy + 1,
+            cx, cy - 1
+        ];
+
+        for (let i = 0; i < neighbors.length; i += 2) {
+            const nx = neighbors[i];
+            const ny = neighbors[i + 1];
+
+            if (nx >= 0 && nx < sw && ny >= 0 && ny < sh) {
+                const idx = ny * sw + nx;
+                if (visited[idx] === 0) {
+                    if (isBackground(nx, ny)) {
+                        visited[idx] = 1;
+                        queue.push(nx, ny);
+                    } else {
+                        // Hit a border pixel (dark), stop expansion here.
+                        // Ideally we check if it's a valid edge.
+                    }
+                }
+            }
+        }
+    }
+
+    // Add padding to include the border width itself
+    const padding = 2;
+    const finalX = sx + minX - padding;
+    const finalY = sy + minY - padding;
+    const finalW = (maxX - minX) + (padding * 2);
+    const finalH = (maxY - minY) + (padding * 2);
+
+    // Filter out noise / tiny spots
+    if (finalW < 10 || finalH < 10) return null;
+
+    return { x: finalX, y: finalY, width: finalW, height: finalH };
+};
+
 export const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
     const peaks: number[] = [];
     let inPeak = false;

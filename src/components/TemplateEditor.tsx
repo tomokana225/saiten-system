@@ -5,8 +5,7 @@ import { AreaType as AreaTypeEnum } from '../types';
 import { TemplateSidebar, areaTypeColors } from './template_editor/TemplateSidebar';
 import { TemplateToolbar } from './template_editor/TemplateToolbar';
 import { useProject } from '../context/ProjectContext';
-import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, loadImage } from '../utils';
-import { callGeminiAPI } from '../api/gemini';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, loadImage, detectRectFromPoint } from '../utils';
 
 interface TemplateEditorProps {
     apiKey: string;
@@ -264,44 +263,33 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         
         setIsProcessing(true);
         try {
-            // Define crop size relative to original image size
-            // Note: If zoom is high, we still crop from original image resolution
-            const cropW = 300; const cropH = 150;
-            const sx = Math.max(0, pos.x - cropW / 2);
-            const sy = Math.max(0, pos.y - cropH / 2);
-            
             const result = await window.electronAPI.invoke('get-image-details', activePage.imagePath);
-            if (!result.success) throw new Error("Image details failed");
+            if (!result.success || !result.details?.url) {
+                throw new Error("Failed to load image for detection.");
+            }
             
+            // Note: We MUST load the image to work with pixel data locally
             const img = await loadImage(result.details.url);
-            const canvas = document.createElement('canvas');
-            canvas.width = cropW; canvas.height = cropH;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
             
-            const base64 = canvas.toDataURL('image/png').split(',')[1];
-            const prompt = `${wandTargetType}の枠を1つだけ検出してください。クリックされた中心座標は(${pos.x - sx}, ${pos.y - sy})付近です。`;
-            
-            const aiRes = await callGeminiAPI(prompt, base64, 'image/png', aiSettings.aiModel);
-            if (aiRes.success && aiRes.text) {
-                const data = JSON.parse(aiRes.text.replace(/```json/g, '').replace(/```/g, '').trim());
-                // Try to find the specific type, otherwise take the first array found
-                const detected = data[wandTargetType]?.[0] || Object.values(data).flat()[0];
-                
-                if (detected) {
-                    const newArea: Area = {
-                        id: Date.now(),
-                        name: detected.label || `${wandTargetType}${areas.length + 1}`,
-                        type: wandTargetType,
-                        x: sx + detected.x,
-                        y: sy + detected.y,
-                        width: detected.width,
-                        height: detected.height,
-                        pageIndex: activePageIndex
-                    };
-                    commitAreas([...areas, newArea]);
-                    setSelectedAreaIds(new Set([newArea.id]));
-                }
+            // Client-side detection logic (Flood Fill / Magic Wand)
+            const rect = detectRectFromPoint(img, pos.x, pos.y, 160); // Use a standard threshold
+
+            if (rect) {
+                const newArea: Area = {
+                    id: Date.now(),
+                    name: `${wandTargetType}${areas.length + 1}`,
+                    type: wandTargetType,
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    pageIndex: activePageIndex
+                };
+                commitAreas([...areas, newArea]);
+                setSelectedAreaIds(new Set([newArea.id]));
+            } else {
+                // Optional: Feedback if nothing detected (e.g., clicked on a line)
+                console.log("No clear frame detected at this point.");
             }
         } catch (e) {
             console.error("Auto detect error:", e);
