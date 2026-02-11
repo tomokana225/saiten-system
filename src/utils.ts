@@ -19,7 +19,11 @@ export const fileToArrayBuffer = (file: File): Promise<ArrayBuffer> => {
 export const loadImage = (src: string): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.crossOrigin = "Anonymous";
+        // Only set crossOrigin for remote URLs to allow canvas export.
+        // For blob: and data: URLs (local), setting this can cause SecurityError in some browsers/contexts.
+        if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+            img.crossOrigin = "Anonymous";
+        }
         img.onload = () => resolve(img);
         img.onerror = reject;
         img.src = src;

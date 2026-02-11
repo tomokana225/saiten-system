@@ -46,7 +46,16 @@ const migrateAreas = (areasToMigrate: Area[]): Area[] => {
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     // FIX: aiSettings is a property of activeProject, not a direct export of useProject
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
-    const { template, areas: initialAreas, points, aiSettings } = activeProject!;
+    
+    // Default settings to prevent crash on legacy projects
+    const { template, areas: initialAreas, points, aiSettings = { 
+        batchSize: 5, 
+        delayBetweenBatches: 1000, 
+        gradingMode: 'quality', 
+        markSheetSensitivity: 1.5, 
+        markSheetNumberingBase: 1, 
+        aiModel: 'gemini-3-flash-preview' 
+    } } = activeProject!;
 
     const [history, setHistory] = useState<Area[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
