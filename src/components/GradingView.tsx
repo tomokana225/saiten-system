@@ -42,20 +42,30 @@ const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
     return peaks;
 };
 
-const findNearestRefArea = (target: Area, candidates: Area[], type: AreaType): Area | undefined => {
-    if (candidates.length === 0) return undefined;
-    // Find closest area of specific type on the relevant axis
-    return candidates
-        .filter(c => c.type === type && (c.pageIndex || 0) === (target.pageIndex || 0))
-        .sort((a, b) => {
-            const distA = type === AreaType.MARKSHEET_REF_RIGHT 
-                ? Math.abs((a.y + a.height/2) - (target.y + target.height/2))
-                : Math.abs((a.x + a.width/2) - (target.x + target.width/2));
-            const distB = type === AreaType.MARKSHEET_REF_RIGHT
-                ? Math.abs((b.y + b.height/2) - (target.y + target.height/2))
-                : Math.abs((b.x + b.width/2) - (target.x + target.width/2));
-            return distA - distB;
-        })[0];
+// Find the reference area that is most closely aligned with the target area
+const findNearestAlignedRefArea = (target: Area, candidates: Area[], type: AreaType): Area | undefined => {
+    const pageIndex = target.pageIndex || 0;
+    const alignedCandidates = candidates.filter(c => c.type === type && (c.pageIndex || 0) === pageIndex);
+    
+    if (alignedCandidates.length === 0) return undefined;
+
+    return alignedCandidates.sort((a, b) => {
+        if (type === AreaType.MARKSHEET_REF_RIGHT) {
+            // Must overlap vertically, find closest horizontally to the right
+            const vOverlapA = Math.max(0, Math.min(target.y + target.height, a.y + a.height) - Math.max(target.y, a.y));
+            const vOverlapB = Math.max(0, Math.min(target.y + target.height, b.y + b.height) - Math.max(target.y, b.y));
+            if (vOverlapA > 0 && vOverlapB === 0) return -1;
+            if (vOverlapB > 0 && vOverlapA === 0) return 1;
+            return (a.x - target.x) - (b.x - target.x);
+        } else {
+            // Must overlap horizontally, find closest vertically below
+            const hOverlapA = Math.max(0, Math.min(target.x + target.width, a.x + a.width) - Math.max(target.x, a.x));
+            const hOverlapB = Math.max(0, Math.min(target.x + target.width, b.x + b.width) - Math.max(target.x, b.x));
+            if (hOverlapA > 0 && hOverlapB === 0) return -1;
+            if (hOverlapB > 0 && hOverlapA === 0) return 1;
+            return (a.y - target.y) - (b.y - target.y);
+        }
+    })[0];
 };
 
 const analyzeMarkSheetSnippet = async (imagePath: string, area: Area, point: Point, refR?: Area, refB?: Area): Promise<{ index: number | number[], positions: {x:number,y:number}[] }> => {
@@ -78,7 +88,8 @@ const analyzeMarkSheetSnippet = async (imagePath: string, area: Area, point: Poi
         for (let y = 0; y < sh; y++) {
             for (let x = 0; x < sw; x++) {
                 const idx = (y * sw + x) * 4;
-                if ((0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]) < 160) {
+                // Use a standard threshold for marker detection
+                if ((0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]) < 150) {
                     if (dir === 'x') profile[x]++; else profile[y]++;
                 }
             }
@@ -86,39 +97,64 @@ const analyzeMarkSheetSnippet = async (imagePath: string, area: Area, point: Poi
         return profile;
     };
 
-    const options = point.markSheetOptions || 4;
+    let options = point.markSheetOptions || 4;
     const isH = point.markSheetLayout === 'horizontal';
     let rows: number[] = [], cols: number[] = [];
 
+    // 1. Determine Scan Grid from Reference Areas
     if (isH) {
+        // Horizontal questions: Use Bottom markers for column centers, Answer Area for row center
         rows = [area.y + area.height / 2];
         if (refB) {
             const peaks = findPeaks(getProj(refB, 'x'));
-            if (peaks.length === options) cols = peaks.map(px => refB.x + px);
+            if (peaks.length > 0) {
+                cols = peaks.map(px => refB.x + px);
+                options = cols.length; // Override options based on detected markers
+            }
         }
-        if (cols.length === 0) for(let i=0; i<options; i++) cols.push(area.x + (area.width/options) * (i+0.5));
+        if (cols.length === 0) {
+            // Fallback to even distribution
+            for(let i=0; i<options; i++) cols.push(area.x + (area.width/options) * (i+0.5));
+        }
     } else {
+        // Vertical questions: Use Right markers for row centers, Answer Area for column center
         cols = [area.x + area.width / 2];
         if (refR) {
             const peaks = findPeaks(getProj(refR, 'y'));
-            if (peaks.length === options) rows = peaks.map(py => refR.y + py);
+            if (peaks.length > 0) {
+                rows = peaks.map(py => refR.y + py);
+                options = rows.length; // Override options based on detected markers
+            }
         }
-        if (rows.length === 0) for(let i=0; i<options; i++) rows.push(area.y + (area.height/options) * (i+0.5));
+        if (rows.length === 0) {
+            // Fallback to even distribution
+            for(let i=0; i<options; i++) rows.push(area.y + (area.height/options) * (i+0.5));
+        }
     }
 
+    // 2. Perform Fill Check at Grid Intersections
     const pos: {x:number,y:number}[] = [];
     const marks: number[] = [];
-    const roi = 8;
+    const roi = 10; // Region of interest size in pixels
     for (let i = 0; i < options; i++) {
         const cx = isH ? cols[i] : cols[0];
         const cy = isH ? rows[0] : rows[i];
         pos.push({ x: cx, y: cy });
+        
         let dark = 0;
         const data = ctx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
-        for(let k=0; k<data.length; k+=4) if((0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]) < 160) dark++;
-        if (dark > (roi*roi*0.35)) marks.push(i);
+        for(let k=0; k<data.length; k+=4) {
+            if((0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]) < 170) dark++;
+        }
+        
+        // Threshold: 30% fill
+        if (dark > (roi * roi * 0.30)) marks.push(i);
     }
-    return { index: marks.length === 1 ? marks[0] : marks.length > 1 ? marks : -1, positions: pos };
+
+    return { 
+        index: marks.length === 1 ? marks[0] : marks.length > 1 ? marks : -1, 
+        positions: pos 
+    };
 };
 
 export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
@@ -127,7 +163,7 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
     const [filter, setFilter] = useState<GradingFilter>('ALL');
     const [isGrading, setIsGrading] = useState(false);
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
+    const [progress, setProgress] = useState({ current: 0, total: 0, message: '' });
 
     const answerAreas = useMemo(() => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET), [areas]);
 
@@ -136,7 +172,7 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
         const validStudents = studentsWithInfo.filter(s => s.images.length > 0);
         const total = validStudents.length * areaIds.length;
         let current = 0;
-        setProgress({ current, total });
+        setProgress({ current, total, message: '採点準備中...' });
 
         for (const areaId of areaIds) {
             const area = areas.find(a => a.id === areaId)!;
@@ -144,46 +180,63 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
             const pageIdx = area.pageIndex || 0;
 
             if (area.type === AreaType.MARK_SHEET) {
-                // AUTO DISCOVERY of ref areas if not explicitly linked
-                let refR = point.markRefRightAreaId ? areas.find(a => a.id === point.markRefRightAreaId) : undefined;
-                let refB = point.markRefBottomAreaId ? areas.find(a => a.id === point.markRefBottomAreaId) : undefined;
+                // AUTO DISCOVERY of reference areas aligned with this question
+                let refR = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_RIGHT);
+                let refB = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_BOTTOM);
                 
-                if (!refR) refR = findNearestRefArea(area, areas, AreaType.MARKSHEET_REF_RIGHT);
-                if (!refB) refB = findNearestRefArea(area, areas, AreaType.MARKSHEET_REF_BOTTOM);
+                setProgress(p => ({ ...p, message: `${point.label} のマークを認識中...` }));
 
                 for (const student of validStudents) {
-                    const res = await analyzeMarkSheetSnippet(student.images[pageIdx]!, area, point, refR, refB);
+                    const studentImage = student.images[pageIdx];
+                    if (!studentImage) {
+                        current++; continue;
+                    }
+                    
+                    const res = await analyzeMarkSheetSnippet(studentImage, area, point, refR, refB);
                     const isCorrect = typeof res.index === 'number' && res.index === point.correctAnswerIndex;
+                    
                     handleScoresChange(prev => ({
                         ...prev,
-                        [student.id]: { ...prev[student.id], [areaId]: { 
-                            status: isCorrect ? ScoringStatus.CORRECT : (res.index === -1 ? ScoringStatus.UNSCORED : ScoringStatus.INCORRECT), 
-                            score: isCorrect ? point.points : 0, 
-                            detectedPositions: res.positions, 
-                            detectedMarkIndex: res.index 
-                        }}
+                        [student.id]: { 
+                            ...prev[student.id], 
+                            [areaId]: { 
+                                status: isCorrect ? ScoringStatus.CORRECT : (res.index === -1 ? ScoringStatus.UNSCORED : ScoringStatus.INCORRECT), 
+                                score: isCorrect ? point.points : 0, 
+                                detectedPositions: res.positions, 
+                                detectedMarkIndex: res.index 
+                            }
+                        }
                     }));
-                    setProgress({ current: ++current, total });
+                    setProgress(p => ({ ...p, current: ++current }));
                 }
             } else {
                 const masterImage = template.pages[pageIdx].imagePath;
                 const masterSnippet = await cropImage(masterImage, area);
+                setProgress(p => ({ ...p, message: `${point.label} をAI採点中...` }));
+
                 for (let i = 0; i < validStudents.length; i += aiSettings.batchSize) {
                     const batch = validStudents.slice(i, i + aiSettings.batchSize);
-                    const studentSnippets = await Promise.all(batch.map(async s => ({ studentId: s.id, base64: await cropImage(s.images[pageIdx]!, area) })));
+                    const studentSnippets = await Promise.all(batch.map(async s => ({ 
+                        studentId: s.id, 
+                        base64: await cropImage(s.images[pageIdx]!, area) 
+                    })));
                     const res = await callGeminiAPIBatch(masterSnippet, studentSnippets, point, 'auto', '', aiSettings.gradingMode, aiSettings.aiModel);
                     if (res.results) {
                         handleScoresChange(prev => {
                             const next = { ...prev };
-                            res.results.forEach((r: any) => { if(!next[r.studentId]) next[r.studentId] = {}; next[r.studentId][areaId] = { status: r.status, score: r.score }; });
+                            res.results.forEach((r: any) => { 
+                                if(!next[r.studentId]) next[r.studentId] = {}; 
+                                next[r.studentId][areaId] = { status: r.status, score: r.score }; 
+                            });
                             return next;
                         });
                     }
-                    current += batch.length; setProgress({ current, total });
+                    current += batch.length; setProgress(p => ({ ...p, current }));
                 }
             }
         }
         setIsGrading(false);
+        setProgress({ current: 0, total: 0, message: '' });
     };
 
     if (!selectedAreaId && answerAreas.length > 0) setSelectedAreaId(answerAreas[0].id);

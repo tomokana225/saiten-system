@@ -8,6 +8,23 @@ import { AnswerSnippet } from './AnswerSnippet';
 
 const answerAndMarkSheetAreas = (areas: Area[]) => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET);
 
+// Peak detection logic used in grading
+const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
+    const peaks: number[] = [];
+    let inPeak = false; let sum = 0; let mass = 0;
+    const max = Math.max(...profile); const threshold = max * thresholdRatio;
+    for (let i = 0; i < profile.length; i++) {
+        if (profile[i] > threshold) {
+            if (!inPeak) { inPeak = true; sum = 0; mass = 0; }
+            sum += i * profile[i]; mass += profile[i];
+        } else if (inPeak) {
+            inPeak = false; if (mass > 0) peaks.push(sum / mass);
+        }
+    }
+    if (inPeak && mass > 0) peaks.push(sum / mass);
+    return peaks;
+};
+
 export const PointAllocator = () => {
     const { activeProject, handlePointsChange } = useProject();
     const { areas, points, template } = activeProject!;
@@ -69,36 +86,58 @@ export const PointAllocator = () => {
                 const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
                 ctx.drawImage(img, 0, 0);
 
-                const data = ctx.getImageData(area.x, area.y, area.width, area.height).data;
-                const options = point.markSheetOptions || 4;
-                const isHorizontal = point.markSheetLayout === 'horizontal';
-                const segmentWidth = isHorizontal ? area.width / options : area.width;
-                const segmentHeight = isHorizontal ? area.height : area.height / options;
-                const darknessScores = Array(options).fill(0);
-
-                for (let i = 0; i < options; i++) {
-                    const xStart = isHorizontal ? i * segmentWidth : 0;
-                    const yStart = isHorizontal ? 0 : i * segmentHeight;
-                    let darkSum = 0;
-                    for (let y = Math.floor(yStart + segmentHeight * 0.2); y < yStart + segmentHeight * 0.8; y++) {
-                        for (let x = Math.floor(xStart + segmentWidth * 0.2); x < xStart + segmentWidth * 0.8; x++) {
-                            const idx = (y * Math.floor(area.width) + x) * 4;
-                            darkSum += (255 - (0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]));
+                const getProj = (a: Area, dir: 'x' | 'y') => {
+                    const sx = Math.floor(a.x); const sy = Math.floor(a.y);
+                    const sw = Math.floor(a.width); const sh = Math.floor(a.height);
+                    const data = ctx.getImageData(sx, sy, sw, sh).data;
+                    const size = dir === 'x' ? sw : sh;
+                    const profile = new Array(size).fill(0);
+                    for (let y = 0; y < sh; y++) {
+                        for (let x = 0; x < sw; x++) {
+                            const idx = (y * sw + x) * 4;
+                            if ((0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]) < 150) {
+                                if (dir === 'x') profile[x]++; else profile[y]++;
+                            }
                         }
                     }
-                    darknessScores[i] = darkSum;
-                }
+                    return profile;
+                };
 
-                const winner = darknessScores.indexOf(Math.max(...darknessScores));
-                if (Math.max(...darknessScores) > 1000) {
-                    const idx = updatedPoints.findIndex(p => p.id === point.id);
-                    updatedPoints[idx] = { ...updatedPoints[idx], correctAnswerIndex: winner };
-                    detectedCount++;
+                const isHorizontal = point.markSheetLayout === 'horizontal';
+                const options = point.markSheetOptions || 4;
+                const profile = getProj(area, isHorizontal ? 'x' : 'y');
+                const peaks = findPeaks(profile, 0.3);
+
+                if (peaks.length > 0) {
+                    // Sample each peak's center to find the darkest one
+                    const darknessScores = peaks.map(p => {
+                        const cx = isHorizontal ? area.x + p : area.x + area.width / 2;
+                        const cy = isHorizontal ? area.y + area.height / 2 : area.y + p;
+                        const roi = 10;
+                        let dark = 0;
+                        const data = ctx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
+                        for(let k=0; k<data.length; k+=4) {
+                            if((0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]) < 170) dark++;
+                        }
+                        return dark;
+                    });
+
+                    const maxDarkness = Math.max(...darknessScores);
+                    if (maxDarkness > 20) { // Some minimum darkness threshold
+                        const winner = darknessScores.indexOf(maxDarkness);
+                        const idx = updatedPoints.findIndex(p => p.id === point.id);
+                        updatedPoints[idx] = { ...updatedPoints[idx], correctAnswerIndex: winner, markSheetOptions: peaks.length };
+                        detectedCount++;
+                    }
                 }
             }
             setInternalPoints(updatedPoints);
             alert(`${detectedCount}件のマークシートの正解を自動認識しました。`);
-        } catch (error) { console.error(error); } finally { setIsDetecting(false); }
+        } catch (error) { 
+            console.error("Auto detect failed:", error); 
+        } finally { 
+            setIsDetecting(false); 
+        }
     };
 
     const handlePointPropChange = (id: number, field: keyof Point, value: any) => {
