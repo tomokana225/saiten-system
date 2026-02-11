@@ -5,7 +5,8 @@ import { AreaType as AreaTypeEnum } from '../types';
 import { TemplateSidebar, areaTypeColors } from './template_editor/TemplateSidebar';
 import { TemplateToolbar } from './template_editor/TemplateToolbar';
 import { useProject } from '../context/ProjectContext';
-import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, loadImage } from '../utils';
+import { callGeminiAPI } from '../api/gemini';
 
 interface TemplateEditorProps {
     apiKey: string;
@@ -58,6 +59,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [zoom, setZoom] = useState(1);
     
     const [isAutoDetectMode, setIsAutoDetectMode] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
     const [wandTargetType, setWandTargetType] = useState<AreaType>(AreaTypeEnum.ANSWER);
     const [manualDrawType, setManualDrawType] = useState<AreaType | null>(null);
     
@@ -80,7 +82,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const interactionThrottle = useRef<number | null>(null);
 
-    const [canvasCursor, setCanvasCursor] = useState<'default' | 'crosshair' | 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize' | 'move' | 'pointer'>('default');
+    const [canvasCursor, setCanvasCursor] = useState<'default' | 'crosshair' | 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize' | 'move' | 'pointer' | 'wait'>('default');
 
     useEffect(() => {
         const migrated = migrateAreas(initialAreas);
@@ -247,6 +249,54 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
     };
 
+    const handleAutoDetect = async (pos: { x: number, y: number }) => {
+        if (!activePage || isProcessing) return;
+        
+        setIsProcessing(true);
+        try {
+            const cropW = 300; const cropH = 150;
+            const sx = Math.max(0, pos.x - cropW / 2);
+            const sy = Math.max(0, pos.y - cropH / 2);
+            
+            const result = await window.electronAPI.invoke('get-image-details', activePage.imagePath);
+            if (!result.success) throw new Error("Image details failed");
+            
+            const img = await loadImage(result.details.url);
+            const canvas = document.createElement('canvas');
+            canvas.width = cropW; canvas.height = cropH;
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+            
+            const base64 = canvas.toDataURL('image/png').split(',')[1];
+            const prompt = `${wandTargetType}の枠を1つだけ検出してください。クリックされた中心座標は(${pos.x - sx}, ${pos.y - sy})付近です。`;
+            
+            const aiRes = await callGeminiAPI(prompt, base64, 'image/png', aiSettings.aiModel);
+            if (aiRes.success && aiRes.text) {
+                const data = JSON.parse(aiRes.text.replace(/```json/g, '').replace(/```/g, '').trim());
+                const detected = data[wandTargetType]?.[0] || Object.values(data).flat()[0];
+                
+                if (detected) {
+                    const newArea: Area = {
+                        id: Date.now(),
+                        name: detected.label || `${wandTargetType}${areas.length + 1}`,
+                        type: wandTargetType,
+                        x: sx + detected.x,
+                        y: sy + detected.y,
+                        width: detected.width,
+                        height: detected.height,
+                        pageIndex: activePageIndex
+                    };
+                    commitAreas([...areas, newArea]);
+                    setSelectedAreaIds(new Set([newArea.id]));
+                }
+            }
+        } catch (e) {
+            console.error("Auto detect error:", e);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleMouseDown = (e: React.MouseEvent) => {
         const isMiddleClick = e.button === 1; 
         const isSpacePan = e.button === 0 && isSpacePressed;
@@ -257,6 +307,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
 
         const pos = getRelativeCoords(e);
+        
+        if (isAutoDetectMode) {
+            handleAutoDetect(pos);
+            return;
+        }
+
         const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         const handle = clickedArea && selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
 
@@ -285,10 +341,11 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         
         if (!drawState && !panState) {
             const hoveredArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
-            if (hoveredArea) {
+            if (isProcessing) setCanvasCursor('wait');
+            else if (hoveredArea) {
                 const handle = selectedAreaIds.has(hoveredArea.id) ? getResizeHandle(hoveredArea, pos.x, pos.y) : null;
                 setCanvasCursor(handle ? handle.cursor : 'move');
-            } else if (manualDrawType) setCanvasCursor('crosshair');
+            } else if (isAutoDetectMode || manualDrawType) setCanvasCursor('crosshair');
             else setCanvasCursor('default');
         }
 
@@ -351,7 +408,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             if ((e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
             if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
-            if (e.key === 'Escape') { setSelectedAreaIds(new Set()); setManualDrawType(null); }
+            if (e.key === 'Escape') { setSelectedAreaIds(new Set()); setManualDrawType(null); setIsAutoDetectMode(false); }
             if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedAreaIds.size > 0) { commitAreas(areas.filter(a => !selectedAreaIds.has(a.id))); setSelectedAreaIds(new Set()); } }
         };
         const handleKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') setIsSpacePressed(false); };
@@ -369,6 +426,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                         <div className="absolute top-0 left-0" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
                             <img ref={imageRef} src={activePage.imagePath} alt="Template" className="block pointer-events-none select-none" style={{ width: activePage.width, height: activePage.height }}/>
                             <canvas ref={canvasRef} className="absolute top-0 left-0" style={{ cursor: canvasCursor }} onMouseDown={handleMouseDown} onMouseMove={handleInteractionMove} onMouseUp={handleMouseUp} onMouseLeave={() => drawState && handleMouseUp()} />
+                            {isProcessing && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-50">
+                                    <div className="bg-white/90 dark:bg-slate-800/90 p-4 rounded-full shadow-lg">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

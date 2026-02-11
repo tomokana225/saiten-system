@@ -1,4 +1,4 @@
-// FIX: Corrected import path for types from `./types` to `../types`.
+
 import { ScoringStatus, Type, Point } from '../types';
 
 // Used for TemplateEditor area detection
@@ -23,13 +23,21 @@ export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeTyp
             "氏名": { type: Type.ARRAY, items: areaSchema, description: "検出された氏名欄のリスト。" },
             "解答": { type: Type.ARRAY, items: areaSchema, description: "検出された解答欄のリスト。" },
             "小計": { type: Type.ARRAY, items: areaSchema, description: "検出された小計欄のリスト。" },
-            "合計": { type: Type.ARRAY, items: areaSchema, description: "検出された合計点欄のリスト。" }
+            "合計": { type: Type.ARRAY, items: areaSchema, description: "検出された合計点欄のリスト。" },
+            "マークシート": { type: Type.ARRAY, items: areaSchema, description: "検出されたマークシート領域のリスト。" },
+            "学籍番号": { type: Type.ARRAY, items: areaSchema, description: "検出された学籍番号領域のリスト。" },
+            "基準マーク": { type: Type.ARRAY, items: areaSchema, description: "検出された基準マークのリスト。" }
         }
     };
 
+    const systemInstruction = `あなたはテスト用紙のレイアウトを解析する専門家です。
+画像の中から指示された種類の入力欄や解答欄を検出し、その座標を返してください。
+座標は画像の左上を(0,0)としたピクセル単位で指定してください。
+指定された中心座標の周辺にある、最も適切な四角い枠線を1つだけ特定してください。`;
+
     try {
         const result = await window.electronAPI.invoke('gemini-generate-content', {
-            model: model, // Using passed model or default
+            model: model, 
             contents: {
                 parts: [
                     { text: prompt },
@@ -37,8 +45,9 @@ export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeTyp
                 ]
             },
             config: {
+                systemInstruction,
                 responseMimeType: "application/json",
-                responseSchema: detectionSchema, // Add the strict schema
+                responseSchema: detectionSchema,
             }
         });
         return result;
@@ -135,7 +144,6 @@ export const callGeminiAPIBatch = async (
         if (result.success && result.text) {
              let parsedResults;
              try {
-                // Clean up markdown ```json ... ```
                 const jsonString = result.text.replace(/```json/g, '').replace(/```/g, '').trim();
                 parsedResults = JSON.parse(jsonString);
              } catch (e) {
