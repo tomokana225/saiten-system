@@ -1,6 +1,7 @@
 
 import React from 'react';
-import type { Student, Area, Point, ScoreData, Template } from '../../types';
+// Added AISettings to import
+import type { Student, Area, Point, ScoreData, Template, AISettings } from '../../types';
 import { ScoringStatus } from '../../types';
 import { AnswerSnippet } from '../AnswerSnippet';
 import { AnnotationOverlay } from '../AnnotationOverlay';
@@ -101,11 +102,15 @@ interface StudentAnswerCardProps {
     correctedImages: Record<string, string>;
     isImageEnhanced?: boolean;
     autoAlign?: boolean;
+    // Added missing AISettings prop
+    aiSettings: AISettings;
 }
 
 export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     student, template, area, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
-    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign
+    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign,
+    // Destructured aiSettings
+    aiSettings
 }) => {
     const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
     const pageIndex = area.pageIndex || 0;

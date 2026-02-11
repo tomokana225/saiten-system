@@ -1,5 +1,7 @@
+
 import React, { useState } from 'react';
-import type { GradingFilter, Area } from '../../types';
+// Added AISettings to import
+import type { GradingFilter, Area, AISettings } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
 import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon } from '../icons';
 
@@ -25,6 +27,9 @@ interface GradingHeaderProps {
     onToggleImageEnhancement: () => void;
     autoAlign: boolean;
     onToggleAutoAlign: () => void;
+    // Added aiSettings and onAiSettingsChange to fix TypeScript errors in GradingView
+    aiSettings: AISettings;
+    onAiSettingsChange: (updater: (prev: AISettings) => AISettings) => void;
 }
 
 const filterOptions: { value: GradingFilter; label: string }[] = [
@@ -44,7 +49,9 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
     selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
     aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
-    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign
+    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign,
+    // Destructured added props
+    aiSettings, onAiSettingsChange
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;

@@ -133,13 +133,15 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             const refB = findNearestAlignedRefArea(area, areas, AreaTypeEnum.MARKSHEET_REF_BOTTOM);
 
             try {
+                // For the Template Editor, we do NOT pass idealCorners because the template IS the ideal.
                 const res = await analyzeMarkSheetSnippet(
                     activePage.imagePath,
                     area,
                     point,
                     aiSettings.markSheetSensitivity,
                     refR,
-                    refB
+                    refB,
+                    undefined 
                 );
                 newDetectedPoints[area.id] = res.positions;
             } catch (e) {
@@ -229,13 +231,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             if (isSelected) {
                 ctx.fillStyle = '#0ea5e9';
                 const handleSize = RESIZE_HANDLE_SIZE / zoom;
-                const rectHandles = [
-                    { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
-                    { x: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },
-                    { x: area.x + area.width / 2, y: area.y }, { x: area.x + area.width / 2, y: area.y + area.height },
-                    { x: area.y + area.height / 2 }, { x: area.x + area.width, y: area.y + area.height / 2 },
-                ];
-                // Note: The original handles array had a bug in y coordinates above, fixing here for visualization
                 const correctedHandles = [
                     { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
                     { x: area.x, y: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },

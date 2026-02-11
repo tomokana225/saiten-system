@@ -133,50 +133,30 @@ export const findAlignmentMarks = (
     return null;
 };
 
-/**
- * Finds center of mass for peaks in a projection profile.
- * Improved to provide sub-pixel accuracy based on the "mass" of the black area.
- */
 export const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
     const peaks: number[] = [];
     let inPeak = false;
     let sum = 0; 
     let mass = 0;
-    
-    // Invert profile if needed (assuming profile counts black pixels)
     const max = Math.max(...profile);
     const threshold = max * thresholdRatio;
-    
     for (let i = 0; i < profile.length; i++) {
         if (profile[i] > threshold) {
-            if (!inPeak) {
-                inPeak = true;
-                sum = 0;
-                mass = 0;
-            }
-            // Weight the position by the intensity/count at that pixel
-            sum += i * profile[i];
-            mass += profile[i];
+            if (!inPeak) { inPeak = true; sum = 0; mass = 0; }
+            sum += i * profile[i]; mass += profile[i];
         } else if (inPeak) {
             inPeak = false;
-            if (mass > 0) {
-                // Centroid calculation
-                peaks.push(sum / mass);
-            }
+            if (mass > 0) peaks.push(sum / mass);
         }
     }
-    if (inPeak && mass > 0) {
-        peaks.push(sum / mass);
-    }
+    if (inPeak && mass > 0) peaks.push(sum / mass);
     return peaks;
 };
 
 export const findNearestAlignedRefArea = (target: Area, candidates: Area[], type: AreaType): Area | undefined => {
     const pageIndex = target.pageIndex || 0;
     const alignedCandidates = candidates.filter(c => c.type === type && (c.pageIndex || 0) === pageIndex);
-    
     if (alignedCandidates.length === 0) return undefined;
-
     return alignedCandidates.sort((a, b) => {
         if (type === AreaType.MARKSHEET_REF_RIGHT) {
             const vOverlapA = Math.max(0, Math.min(target.y + target.height, a.y + a.height) - Math.max(target.y, a.y));
@@ -200,16 +180,49 @@ export const analyzeMarkSheetSnippet = async (
     point: Point, 
     sensitivity: number = 1.5,
     refR?: Area, 
-    refB?: Area
+    refB?: Area,
+    idealCorners?: Corners
 ): Promise<{ index: number | number[], positions: {x:number,y:number}[] }> => {
     const result = await window.electronAPI.invoke('get-image-details', imagePath);
     if (!result.success || !result.details?.url) return { index: -1, positions: [] };
-    const img = new Image(); img.src = result.details.url;
-    await new Promise(r => img.onload = r);
+    
+    const img = await loadImage(result.details.url);
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-    ctx.drawImage(img, 0, 0);
+    
+    // Check if alignment is needed
+    let finalCtx = ctx;
+    let finalCanvas = canvas;
+    
+    if (idealCorners) {
+        const srcCtx = ctx;
+        srcCtx.drawImage(img, 0, 0);
+        const imageData = srcCtx.getImageData(0, 0, canvas.width, canvas.height);
+        const srcCorners = findAlignmentMarks(imageData, { minSize: 8, threshold: 160, padding: 0 });
+        
+        if (srcCorners) {
+            // Create a temporary canvas for the warped version of the entire page
+            const warpedCanvas = document.createElement('canvas');
+            warpedCanvas.width = img.naturalWidth;
+            warpedCanvas.height = img.naturalHeight;
+            const warpedCtx = warpedCanvas.getContext('2d')!;
+            
+            // Warp the entire image so it matches the template coordinate system
+            const warpUrl = warpArea(img, img.naturalWidth, img.naturalHeight, srcCorners, idealCorners, { 
+                x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight 
+            });
+            const warpedImg = await loadImage(warpUrl);
+            warpedCtx.drawImage(warpedImg, 0, 0);
+            
+            finalCanvas = warpedCanvas;
+            finalCtx = warpedCtx;
+        } else {
+            finalCtx.drawImage(img, 0, 0);
+        }
+    } else {
+        finalCtx.drawImage(img, 0, 0);
+    }
 
     const fillGrayThreshold = Math.floor(255 / sensitivity);
     const fillRatioThreshold = 0.20 + (sensitivity - 1.1) * 0.1;
@@ -218,7 +231,7 @@ export const analyzeMarkSheetSnippet = async (
         const sx = Math.floor(a.x); const sy = Math.floor(a.y);
         const sw = Math.floor(a.width); const sh = Math.floor(a.height);
         if (sw <= 0 || sh <= 0) return [];
-        const data = ctx.getImageData(sx, sy, sw, sh).data;
+        const data = finalCtx.getImageData(sx, sy, sw, sh).data;
         const size = dir === 'x' ? sw : sh;
         const profile = new Array(size).fill(0);
         for (let y = 0; y < sh; y++) {
@@ -237,32 +250,24 @@ export const analyzeMarkSheetSnippet = async (
     let rows: number[] = [], cols: number[] = [];
 
     if (isH) {
-        // Horizontal: Row is usually center of area, cols from timing marks (Ref Bottom)
         rows = [area.y + area.height / 2];
         if (refB) {
             const peaks = findPeaks(getProj(refB, 'x'));
-            if (peaks.length > 0) {
-                cols = peaks.map(px => refB.x + px);
-                options = cols.length;
-            }
+            if (peaks.length > 0) { cols = peaks.map(px => refB.x + px); options = cols.length; }
         }
         if (cols.length === 0) for(let i=0; i<options; i++) cols.push(area.x + (area.width/options) * (i+0.5));
     } else {
-        // Vertical: Col is center of area, rows from timing marks (Ref Right)
         cols = [area.x + area.width / 2];
         if (refR) {
             const peaks = findPeaks(getProj(refR, 'y'));
-            if (peaks.length > 0) {
-                rows = peaks.map(py => refR.y + py);
-                options = rows.length;
-            }
+            if (peaks.length > 0) { rows = peaks.map(py => refR.y + py); options = rows.length; }
         }
         if (rows.length === 0) for(let i=0; i<options; i++) rows.push(area.y + (area.height/options) * (i+0.5));
     }
 
     const pos: {x:number,y:number}[] = [];
     const marks: number[] = [];
-    const roi = 14; // Sampling region size
+    const roi = 14;
 
     for (let i = 0; i < options; i++) {
         const cx = isH ? cols[i] : cols[0];
@@ -270,13 +275,11 @@ export const analyzeMarkSheetSnippet = async (
         pos.push({ x: cx, y: cy });
         
         let darkCount = 0;
-        // Sample exactly around the calculated center (cx, cy)
-        const data = ctx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
+        const data = finalCtx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
         for(let k=0; k<data.length; k+=4) {
             const gray = (0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]);
             if(gray < fillGrayThreshold) darkCount++;
         }
-        
         const ratio = darkCount / (roi * roi);
         if (ratio > fillRatioThreshold) marks.push(i);
     }
