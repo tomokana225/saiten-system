@@ -13,54 +13,69 @@ interface MarkSheetOverlayProps {
 }
 
 const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreData }) => {
-    if (!point.markSheetOptions || point.correctAnswerIndex === undefined) return null;
+    if (!point.markSheetOptions || point.correctAnswerIndex === undefined || !scoreData?.detectedPositions) return null;
     
-    const options = Array.from({ length: point.markSheetOptions });
-    const isHorizontal = point.markSheetLayout === 'horizontal';
-    const detectedMarkIndex = scoreData?.detectedMarkIndex;
-    const detectedPositions = scoreData?.detectedPositions;
+    const detectedMarkIndex = scoreData.detectedMarkIndex;
+    const detectedPositions = scoreData.detectedPositions;
 
     return (
         <div className="absolute inset-0 pointer-events-none">
-            {/* Visual feedback: green dots for recognized scan points */}
-            {detectedPositions && detectedPositions.map((pos, i) => (
-                <div 
-                    key={`dot-${i}`}
-                    style={{
-                        position: 'absolute',
-                        left: `${((pos.x - area.x) / area.width) * 100}%`,
-                        top: `${((pos.y - area.y) / area.height) * 100}%`,
-                        width: '4px',
-                        height: '4px',
-                        backgroundColor: '#22c55e',
-                        borderRadius: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        boxShadow: '0 0 2px rgba(0,0,0,0.5)',
-                        zIndex: 10
-                    }}
-                />
-            ))}
+            {detectedPositions.map((pos, i) => {
+                const isCorrectAnswer = i === point.correctAnswerIndex;
+                
+                // Determine if this specific option was detected as being marked
+                let isDetectedAsMarked = false;
+                if (Array.isArray(detectedMarkIndex)) {
+                    isDetectedAsMarked = detectedMarkIndex.includes(i);
+                } else {
+                    isDetectedAsMarked = i === detectedMarkIndex;
+                }
 
-            {/* Boxes indicating Correct vs Incorrect status */}
-            <div className={`absolute inset-0 flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}>
-                {options.map((_, i) => {
-                    const isCorrectAnswer = i === point.correctAnswerIndex;
-                    let isDetectedAnswer = false;
-                    if (Array.isArray(detectedMarkIndex)) isDetectedAnswer = detectedMarkIndex.includes(i);
-                    else if (detectedMarkIndex !== undefined && detectedMarkIndex >= 0) isDetectedAnswer = i === detectedMarkIndex;
+                // Show red box ONLY if this option was marked but is not the correct one
+                const isIncorrectMark = isDetectedAsMarked && !isCorrectAnswer;
+                
+                // Position relative to the snippet area
+                const left = `${((pos.x - area.x) / area.width) * 100}%`;
+                const top = `${((pos.y - area.y) / area.height) * 100}%`;
 
-                    const isIncorrectMark = isDetectedAnswer && !isCorrectAnswer;
-                    
-                    let style: React.CSSProperties = { borderWidth: '0px', backgroundColor: 'transparent', position: 'relative' };
-                    if (isCorrectAnswer) {
-                        style = { border: '3px solid rgba(34, 197, 94, 0.6)', boxShadow: '0 0 4px rgba(34, 197, 94, 0.3) inset' };
-                    } else if (isIncorrectMark) {
-                        style = { border: '3px solid rgba(239, 68, 68, 0.6)', boxShadow: '0 0 4px rgba(239, 68, 68, 0.3) inset' };
-                    }
+                return (
+                    <React.Fragment key={`opt-${i}`}>
+                        {/* The Green Dot (Scan Point) */}
+                        <div 
+                            style={{
+                                position: 'absolute',
+                                left,
+                                top,
+                                width: '4px',
+                                height: '4px',
+                                backgroundColor: '#22c55e',
+                                borderRadius: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                boxShadow: '0 0 2px rgba(0,0,0,0.5)',
+                                zIndex: 30
+                            }}
+                        />
 
-                    return <div key={i} className="flex-1 transition-colors" style={style} />;
-                })}
-            </div>
+                        {/* The Result Box (Green for correct, Red for detected incorrect) */}
+                        {(isCorrectAnswer || isIncorrectMark) && (
+                            <div 
+                                style={{
+                                    position: 'absolute',
+                                    left,
+                                    top,
+                                    width: '28px', // Slightly larger than typical mark
+                                    height: '28px',
+                                    transform: 'translate(-50%, -50%)',
+                                    border: isCorrectAnswer ? '3px solid rgba(34, 197, 94, 0.7)' : '3px solid rgba(239, 68, 68, 0.7)',
+                                    borderRadius: '4px',
+                                    backgroundColor: isCorrectAnswer ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                    zIndex: 20
+                                }}
+                            />
+                        )}
+                    </React.Fragment>
+                );
+            })}
         </div>
     );
 };
