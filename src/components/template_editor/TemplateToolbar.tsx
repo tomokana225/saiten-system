@@ -2,7 +2,7 @@
 import React from 'react';
 import type { AreaType } from '../../types';
 import { AreaType as AreaTypeEnum } from '../../types';
-import { ZoomInIcon, ZoomOutIcon, Wand2Icon, Undo2Icon, Redo2Icon, PlusIcon, MousePointer2Icon } from '../icons';
+import { ZoomInIcon, ZoomOutIcon, Wand2Icon, Undo2Icon, Redo2Icon, PlusIcon, MousePointer2Icon, CircleDotIcon } from '../icons';
 import { areaTypeColors } from './TemplateSidebar';
 
 interface TemplateToolbarProps {
@@ -18,6 +18,8 @@ interface TemplateToolbarProps {
     redo: () => void;
     canUndo: boolean;
     canRedo: boolean;
+    showMarkPoints: boolean;
+    onToggleMarkPoints: (val: boolean) => void;
 }
 
 const typeNameMap: Record<string, string> = {
@@ -37,7 +39,8 @@ const typeNameMap: Record<string, string> = {
 
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ 
     isAutoDetectMode, setIsAutoDetectMode, wandTargetType, setWandTargetType,
-    manualDrawType, setManualDrawType, zoom, onZoomChange, undo, redo, canUndo, canRedo
+    manualDrawType, setManualDrawType, zoom, onZoomChange, undo, redo, canUndo, canRedo,
+    showMarkPoints, onToggleMarkPoints
 }) => {
     return (
         <div className="flex-shrink-0 flex items-center bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 gap-3 min-h-[64px]">
@@ -75,6 +78,18 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
                     )}
                 </div>
             </div>
+
+            <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
+            
+            {/* Mark Detection Helper */}
+            <button
+                onClick={() => onToggleMarkPoints(!showMarkPoints)}
+                className={`flex flex-col items-center justify-center gap-1 px-3 py-1 rounded-lg transition-all font-bold text-[10px] border ${showMarkPoints ? 'bg-teal-500 text-white border-teal-600 shadow-inner' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50'}`}
+                title="マークの認識中心座標を表示します"
+            >
+                <CircleDotIcon className="w-4 h-4" />
+                <span>認識点表示</span>
+            </button>
 
             <div className="h-10 w-px bg-slate-200 dark:border-slate-700 shrink-0"></div>
 

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import type { Student, Area, Point, ScoreData, Template, AISettings } from '../../types';
+import type { Student, Area, Point, ScoreData, Template } from '../../types';
 import { ScoringStatus } from '../../types';
 import { AnswerSnippet } from '../AnswerSnippet';
 import { AnnotationOverlay } from '../AnnotationOverlay';
@@ -10,10 +10,9 @@ interface MarkSheetOverlayProps {
     area: Area;
     point: Point;
     scoreData?: ScoreData;
-    showCentroids?: boolean;
 }
 
-const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreData, showCentroids }) => {
+const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreData }) => {
     if (!point.markSheetOptions || point.correctAnswerIndex === undefined || !scoreData?.detectedPositions) return null;
     
     const detectedMarkIndex = scoreData.detectedMarkIndex;
@@ -41,36 +40,25 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreD
 
                 return (
                     <React.Fragment key={`opt-${i}`}>
-                        {/* The Precision Centroid (Visual Confirmation) */}
-                        {showCentroids && (
-                            <>
-                                {/* Vertical crosshair line */}
-                                <div style={{ 
-                                    position: 'absolute', left, top: '10%', bottom: '10%', 
-                                    width: '1px', backgroundColor: '#22c55e', opacity: 0.6, zIndex: 40 
-                                }} />
-                                {/* Horizontal crosshair line */}
-                                <div style={{ 
-                                    position: 'absolute', top, left: '10%', right: '10%', 
-                                    height: '1px', backgroundColor: '#22c55e', opacity: 0.6, zIndex: 40 
-                                }} />
-                                {/* Center dot */}
-                                <div 
-                                    style={{
-                                        position: 'absolute',
-                                        left,
-                                        top,
-                                        width: '4px',
-                                        height: '4px',
-                                        backgroundColor: '#22c55e',
-                                        borderRadius: '50%',
-                                        transform: 'translate(-50%, -50%)',
-                                        boxShadow: '0 0 2px rgba(0,0,0,0.5)',
-                                        zIndex: 50
-                                    }}
-                                />
-                            </>
-                        )}
+                        {/* The Scan Point (Visual Confirmation of precision) */}
+                        <div 
+                            style={{
+                                position: 'absolute',
+                                left,
+                                top,
+                                width: '6px',
+                                height: '6px',
+                                backgroundColor: '#22c55e',
+                                borderRadius: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                boxShadow: '0 0 3px rgba(0,0,0,0.8)',
+                                zIndex: 40
+                            }}
+                        />
+
+                        {/* Coordinate indicator lines (very faint) */}
+                        <div style={{ position: 'absolute', left, top: 0, bottom: 0, width: '1px', backgroundColor: 'rgba(34, 197, 94, 0.1)', zIndex: 30 }} />
+                        <div style={{ position: 'absolute', top, left: 0, right: 0, height: '1px', backgroundColor: 'rgba(34, 197, 94, 0.1)', zIndex: 30 }} />
 
                         {/* The Result Box (Green for correct, Red for detected incorrect) */}
                         {(isCorrectAnswer || isIncorrectMark) && (
@@ -113,12 +101,11 @@ interface StudentAnswerCardProps {
     correctedImages: Record<string, string>;
     isImageEnhanced?: boolean;
     autoAlign?: boolean;
-    aiSettings?: AISettings;
 }
 
 export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     student, template, area, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
-    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign, aiSettings
+    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign
 }) => {
     const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
     const pageIndex = area.pageIndex || 0;
@@ -170,7 +157,7 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
             <div className="relative w-full bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px' }}>
                 <AnswerSnippet imageSrc={imageSrc} area={area} template={template} pannable={isFocused} onClick={handleAnswerClick} manualPanOffset={scoreData?.manualPanOffset} onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)} padding={15} isEnhanced={isImageEnhanced} useAlignment={autoAlign}>
                     <AnnotationOverlay annotations={scoreData?.annotations || []} />
-                    <MarkSheetOverlay area={area} point={point} scoreData={scoreData} showCentroids={aiSettings?.showMarkCentroids} />
+                    <MarkSheetOverlay area={area} point={point} scoreData={scoreData} />
                 </AnswerSnippet>
             </div>
             <div className="flex items-center justify-around gap-1">

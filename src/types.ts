@@ -179,7 +179,6 @@ export interface AISettings {
     gradingMode: 'quality' | 'speed';
     markSheetSensitivity: number;
     markSheetNumberingBase: number;
-    showMarkCentroids: boolean;
     aiModel: string;
 }
 

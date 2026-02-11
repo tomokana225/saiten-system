@@ -116,7 +116,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     if (proj.aiSettings) {
                         if (!proj.aiSettings.aiModel) proj.aiSettings.aiModel = 'gemini-3-flash-preview';
                         if (proj.aiSettings.markSheetNumberingBase === undefined) proj.aiSettings.markSheetNumberingBase = 1;
-                        if (proj.aiSettings.showMarkCentroids === undefined) proj.aiSettings.showMarkCentroids = false;
                     }
                 }
                 setProjects(storedProjects);
@@ -194,7 +193,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
             id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
-            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, markSheetNumberingBase: 1, showMarkCentroids: false, aiModel: 'gemini-3-flash-preview' },
+            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, markSheetNumberingBase: 1, aiModel: 'gemini-3-flash-preview' },
             lastModified: Date.now(),
         };
         setProjects(prev => ({...prev, [newId]: newProject}));
@@ -233,7 +232,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 if (newProject.aiSettings) {
                     if (!newProject.aiSettings.aiModel) newProject.aiSettings.aiModel = 'gemini-3-flash-preview';
                     if (newProject.aiSettings.markSheetNumberingBase === undefined) newProject.aiSettings.markSheetNumberingBase = 1;
-                    if (newProject.aiSettings.showMarkCentroids === undefined) newProject.aiSettings.showMarkCentroids = false;
                 }
                 setProjects(prev => ({ ...prev, [newProject.id]: newProject }));
                 alert(`プロジェクト「${newProject.name}」をインポートしました。`);
@@ -382,8 +380,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         
         const validPointIds = new Set(activeProject.points.map(p => p.id));
         const allStudentsWithDetails = activeProject.studentInfo.map((info, index) => {
-            // FIX: Explicitly cast empty object to the expected score record type to ensure property access works during calculation.
-            const studentScores = (activeProject.scores[info.id] || {}) as Record<number, ScoreData>;
+            const studentScores = activeProject.scores[info.id] || {};
             const totalScore = Object.entries(studentScores).reduce((sum, [pointIdStr, scoreData]: [string, ScoreData]) => {
                 if (validPointIds.has(parseInt(pointIdStr, 10))) {
                     return sum + (scoreData.score || 0);
@@ -395,8 +392,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             activeProject.areas.filter(a => a.type === '小計' as AreaType).forEach(subArea => {
                 subtotals[subArea.id] = activeProject.points
                     .filter(p => p.subtotalIds?.includes(subArea.id))
-                    // FIX: Explicitly typed the accumulator 'sum' to number to avoid 'boolean' inference issues in reduce.
-                    .reduce((sum: number, p) => sum + (studentScores[p.id]?.score || 0), 0);
+                    .reduce((sum, p) => sum + (studentScores[p.id]?.score || 0), 0);
             });
 
             const sheet = activeProject.uploadedSheets[index];
@@ -407,7 +403,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
 
         const presentStudents = allStudentsWithDetails.filter(s => !s.isAbsent);
-        const presentScores = presentScores = presentStudents.map(s => s.totalScore);
+        const presentScores = presentStudents.map(s => s.totalScore);
         const totalPresent = presentScores.length;
         
         const sumScores = presentScores.reduce((sum, score) => sum + score, 0);
@@ -436,10 +432,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         presentResults.sort((a, b) => b.totalScore - a.totalScore);
         presentResults.forEach((result, index) => {
-            // FIX: Parenthesized the condition in the ternary operator to prevent TS from misinterpreting '&&' result as a branch return type.
-            result.rank = (index > 0 && result.totalScore === presentResults[index - 1].totalScore) 
-                ? presentResults[index - 1].rank 
-                : index + 1;
+            result.rank = index > 0 && result.totalScore === presentResults[index-1].totalScore ? presentResults[index-1].rank : index + 1;
         });
 
         const resultsByClass: { [className: string]: typeof presentResults } = {};
@@ -451,10 +444,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         Object.values(resultsByClass).forEach(classGroup => {
             classGroup.sort((a,b) => b.totalScore - a.totalScore);
             classGroup.forEach((result, index) => {
-                // FIX: Parenthesized the condition in the ternary operator for class ranking to resolve potential boolean vs number type assignment issues.
-                result.classRank = (index > 0 && result.totalScore === classGroup[index - 1].totalScore) 
-                    ? classGroup[index - 1].classRank 
-                    : index + 1;
+                result.classRank = index > 0 && result.totalScore === classGroup[index-1].totalScore ? classGroup[index-1].classRank : index + 1;
             });
         });
 

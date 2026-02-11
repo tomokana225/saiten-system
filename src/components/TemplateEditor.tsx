@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import type { Template, Area, AreaType } from '../types';
+import type { Template, Area, AreaType, Point } from '../types';
 import { AreaType as AreaTypeEnum } from '../types';
 import { TemplateSidebar, areaTypeColors } from './template_editor/TemplateSidebar';
 import { TemplateToolbar } from './template_editor/TemplateToolbar';
 import { useProject } from '../context/ProjectContext';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
 
 interface TemplateEditorProps {
     apiKey: string;
@@ -43,11 +44,10 @@ const migrateAreas = (areasToMigrate: Area[]): Area[] => {
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
-    const { template, areas: initialAreas } = activeProject!;
+    const { template, areas: initialAreas, points, aiSettings } = activeProject!;
 
     const [history, setHistory] = useState<Area[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
-    const isHistoryAction = useRef(false);
 
     const pages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
     const [activePageIndex, setActivePageIndex] = useState(0);
@@ -71,6 +71,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         threshold: 160,
         padding: 0
     });
+
+    const [showMarkPoints, setShowMarkPoints] = useState(false);
+    const [detectedMarkPoints, setDetectedMarkPoints] = useState<Record<number, {x: number, y: number}[]>>({});
 
     const containerRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
@@ -116,6 +119,43 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     }, [history, historyIndex, handleAreasChange]);
     
     const currentPageAreas = areas.filter(a => (a.pageIndex === undefined ? 0 : a.pageIndex) === activePageIndex);
+
+    // --- Mark Detection Preview Logic ---
+    const updateMarkDetection = useCallback(async () => {
+        if (!showMarkPoints || !activePage) return;
+        
+        const markSheetAreas = currentPageAreas.filter(a => a.type === AreaTypeEnum.MARK_SHEET);
+        const newDetectedPoints: Record<number, {x: number, y: number}[]> = {};
+
+        for (const area of markSheetAreas) {
+            const point = points.find(p => p.id === area.id) || { id: area.id, markSheetOptions: 4, markSheetLayout: 'horizontal' } as Point;
+            const refR = findNearestAlignedRefArea(area, areas, AreaTypeEnum.MARKSHEET_REF_RIGHT);
+            const refB = findNearestAlignedRefArea(area, areas, AreaTypeEnum.MARKSHEET_REF_BOTTOM);
+
+            try {
+                const res = await analyzeMarkSheetSnippet(
+                    activePage.imagePath,
+                    area,
+                    point,
+                    aiSettings.markSheetSensitivity,
+                    refR,
+                    refB
+                );
+                newDetectedPoints[area.id] = res.positions;
+            } catch (e) {
+                console.error("Editor mark detection failed for area", area.id, e);
+            }
+        }
+        setDetectedMarkPoints(newDetectedPoints);
+    }, [showMarkPoints, currentPageAreas, activePage, points, areas, aiSettings.markSheetSensitivity]);
+
+    useEffect(() => {
+        if (showMarkPoints) {
+            updateMarkDetection();
+        } else {
+            setDetectedMarkPoints({});
+        }
+    }, [showMarkPoints, updateMarkDetection]);
 
     const getResizeHandle = useCallback((area: Area, x: number, y: number) => {
         const handleSize = RESIZE_HANDLE_SIZE / zoom;
@@ -166,19 +206,46 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             }
             ctx.restore();
 
+            // Draw detection points if enabled and available
+            if (showMarkPoints && detectedMarkPoints[area.id]) {
+                ctx.save();
+                ctx.strokeStyle = '#22c55e'; // Bright Green
+                ctx.lineWidth = 1;
+                detectedMarkPoints[area.id].forEach(pos => {
+                    // Draw Crosshair
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x - 10, pos.y); ctx.lineTo(pos.x + 10, pos.y);
+                    ctx.moveTo(pos.x, pos.y - 10); ctx.lineTo(pos.x, pos.y + 10);
+                    ctx.stroke();
+                    // Draw Center Dot
+                    ctx.fillStyle = '#22c55e';
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.restore();
+            }
+
             if (isSelected) {
                 ctx.fillStyle = '#0ea5e9';
                 const handleSize = RESIZE_HANDLE_SIZE / zoom;
                 const rectHandles = [
                     { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
+                    { x: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },
+                    { x: area.x + area.width / 2, y: area.y }, { x: area.x + area.width / 2, y: area.y + area.height },
+                    { x: area.y + area.height / 2 }, { x: area.x + area.width, y: area.y + area.height / 2 },
+                ];
+                // Note: The original handles array had a bug in y coordinates above, fixing here for visualization
+                const correctedHandles = [
+                    { x: area.x, y: area.y }, { x: area.x + area.width, y: area.y },
                     { x: area.x, y: area.y + area.height }, { x: area.x + area.width, y: area.y + area.height },
                     { x: area.x + area.width / 2, y: area.y }, { x: area.x + area.width / 2, y: area.y + area.height },
                     { x: area.x, y: area.y + area.height / 2 }, { x: area.x + area.width, y: area.y + area.height / 2 },
                 ];
-                rectHandles.forEach(h => ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize));
+                correctedHandles.forEach(h => ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize));
             }
         });
-    }, [currentPageAreas, selectedAreaIds, activePage, zoom]);
+    }, [currentPageAreas, selectedAreaIds, activePage, zoom, showMarkPoints, detectedMarkPoints]);
     
     const getRelativeCoords = (e: React.MouseEvent | MouseEvent): { x: number, y: number } => {
         const rect = canvasRef.current!.getBoundingClientRect();
@@ -301,7 +368,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         <div className="w-full h-full flex gap-4 overflow-hidden">
             <TemplateSidebar areas={areas} setAreas={commitAreas} selectedAreaIds={selectedAreaIds} setSelectedAreaIds={setSelectedAreaIds} apiKey={apiKey} template={template} onTemplateChange={handleTemplateChange} detSettings={detSettings} setDetSettings={setDetSettings} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <TemplateToolbar isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode} wandTargetType={wandTargetType} setWandTargetType={setWandTargetType} manualDrawType={manualDrawType} setManualDrawType={setManualDrawType} zoom={zoom} onZoomChange={setZoom} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} />
+                <TemplateToolbar isAutoDetectMode={isAutoDetectMode} setIsAutoDetectMode={setIsAutoDetectMode} wandTargetType={wandTargetType} setWandTargetType={setWandTargetType} manualDrawType={manualDrawType} setManualDrawType={setManualDrawType} zoom={zoom} onZoomChange={setZoom} undo={undo} redo={redo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} showMarkPoints={showMarkPoints} onToggleMarkPoints={setShowMarkPoints} />
                 <div ref={containerRef} className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg" onWheel={handleWheel}>
                     <div className="relative" style={{ width: activePage.width * zoom, height: activePage.height * zoom, margin: 'auto' }}>
                         <div className="absolute top-0 left-0" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>

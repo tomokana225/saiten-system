@@ -1,6 +1,5 @@
-
 import React, { useMemo } from 'react';
-import type { Student, Template, Area, Point, AllScores, ScoreData, AISettings } from '../../types';
+import type { Student, Template, Area, Point, AllScores, ScoreData } from '../../types';
 import { StudentAnswerCard } from './StudentAnswerCard';
 import { AnswerSnippet } from '../AnswerSnippet';
 
@@ -22,12 +21,11 @@ interface StudentAnswerGridProps {
     correctedImages: Record<string, string>;
     isImageEnhanced?: boolean;
     autoAlign?: boolean;
-    aiSettings?: AISettings;
 }
 
 export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
     students, selectedAreaId, template, areas, points, scores, onScoreChange, onStartAnnotation, onPanCommit, gradingStatus,
-    columnCount, focusedStudentId, onStudentFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign, aiSettings
+    columnCount, focusedStudentId, onStudentFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign
 }) => {
     
     const selectedArea = useMemo(() => areas.find(a => a.id === selectedAreaId), [areas, selectedAreaId]);
@@ -82,7 +80,6 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
                             correctedImages={correctedImages}
                             isImageEnhanced={isImageEnhanced}
                             autoAlign={autoAlign}
-                            aiSettings={aiSettings}
                         />
                     );
                 })}
