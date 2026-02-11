@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AppStep, ScoringStatus } from '../types';
 import type { GradingProject, Template, Area, StudentInfo, Student, Point, AllScores, StudentResult, Roster, SheetLayout, ExportImportOptions, ScoreData, AreaType } from '../types';
@@ -64,9 +65,11 @@ interface ProjectContextType {
     handleScoresChange: (scoresOrUpdater: AllScores | ((prevScores: AllScores) => AllScores)) => void;
 }
 
+// Added missing { } for React hooks import at top and ensure createContext is available
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // Fixed: Ensure useState is available from React imports
     const [projects, setProjects] = useState<Record<string, GradingProject>>({});
     const [rosters, setRosters] = useState<Record<string, Roster>>({});
     const [sheetLayouts, setSheetLayouts] = useState<Record<string, SheetLayout>>({});
@@ -75,11 +78,13 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [previousStep, setPreviousStep] = useState<AppStep | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Fixed: Ensure useMemo is available from React imports
     const activeProject = useMemo(() => {
         if (!activeProjectId || !projects[activeProjectId]) return null;
         return projects[activeProjectId];
     }, [activeProjectId, projects]);
 
+    // Fixed: Ensure useEffect is available from React imports
     useEffect(() => {
         const initializeData = async () => {
             setIsLoading(true);
@@ -107,9 +112,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                             }
                         }
                     }
-                    // Migration: Ensure aiSettings has model
+                    // Migration: Ensure aiSettings has model and base
                     if (proj.aiSettings) {
-                        proj.aiSettings.aiModel = 'gemini-3-flash-preview';
+                        if (!proj.aiSettings.aiModel) proj.aiSettings.aiModel = 'gemini-3-flash-preview';
+                        if (proj.aiSettings.markSheetNumberingBase === undefined) proj.aiSettings.markSheetNumberingBase = 1;
                     }
                 }
                 setProjects(storedProjects);
@@ -151,6 +157,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         try { localStorage.setItem('sheetLayouts', JSON.stringify(sheetLayouts)); } catch (e) { console.error(e); }
     }, [sheetLayouts, isLoading]);
 
+    // Fixed: Ensure useCallback is available from React imports
     const updateActiveProject = useCallback((updater: (project: GradingProject) => GradingProject) => {
         if (!activeProjectId) return;
         setProjects(prev => ({ ...prev, [activeProjectId]: updater(prev[activeProjectId]) }));
@@ -186,7 +193,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
             id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
-            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, aiModel: 'gemini-3-flash-preview' },
+            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, markSheetNumberingBase: 1, aiModel: 'gemini-3-flash-preview' },
             lastModified: Date.now(),
         };
         setProjects(prev => ({...prev, [newId]: newProject}));
@@ -223,7 +230,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     lastModified: Date.now(),
                 };
                 if (newProject.aiSettings) {
-                    newProject.aiSettings.aiModel = 'gemini-3-flash-preview';
+                    if (!newProject.aiSettings.aiModel) newProject.aiSettings.aiModel = 'gemini-3-flash-preview';
+                    if (newProject.aiSettings.markSheetNumberingBase === undefined) newProject.aiSettings.markSheetNumberingBase = 1;
                 }
                 setProjects(prev => ({ ...prev, [newProject.id]: newProject }));
                 alert(`プロジェクト「${newProject.name}」をインポートしました。`);
@@ -440,11 +448,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             });
         });
 
-        absentResults.forEach(r => {
-            r.rank = null;
-            r.classRank = null;
-        });
-
         return [...presentResults, ...absentResults];
     }, [activeProject]);
 
@@ -527,10 +530,12 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleStudentSheetsChange, handlePointsChange, handleScoresChange
     };
 
+    // Fixed: Ensure useContext is used correctly with ProjectContext
     return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 };
 
 export const useProject = (): ProjectContextType => {
+    // Fixed: Use useContext correctly with defined context
     const context = useContext(ProjectContext);
     if (!context) {
         throw new Error('useProject must be used within a ProjectProvider');

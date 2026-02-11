@@ -3,19 +3,10 @@ import {
   GenerateContentResponse,
   GenerateContentParameters,
   Part,
+  Type,
 } from '@google/genai';
 
-// @google/genai type enum, used for response schema
-export enum Type {
-    TYPE_UNSPECIFIED = 'TYPE_UNSPECIFIED',
-    STRING = 'STRING',
-    NUMBER = 'NUMBER',
-    INTEGER = 'INTEGER',
-    BOOLEAN = 'BOOLEAN',
-    ARRAY = 'ARRAY',
-    OBJECT = 'OBJECT',
-    NULL = 'NULL',
-}
+export { Type };
 
 // App-wide enums and string unions
 export enum AppMode {
@@ -187,6 +178,7 @@ export interface AISettings {
     delayBetweenBatches: number;
     gradingMode: 'quality' | 'speed';
     markSheetSensitivity: number;
+    markSheetNumberingBase: number;
     aiModel: string;
 }
 

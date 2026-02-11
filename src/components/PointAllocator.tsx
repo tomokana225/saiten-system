@@ -5,40 +5,24 @@ import { AreaType } from '../types';
 import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, CheckCircle2Icon, CopyIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { AnswerSnippet } from './AnswerSnippet';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
 
 const answerAndMarkSheetAreas = (areas: Area[]) => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET);
 
-// Peak detection logic used in grading
-const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
-    const peaks: number[] = [];
-    let inPeak = false; let sum = 0; let mass = 0;
-    const max = Math.max(...profile); const threshold = max * thresholdRatio;
-    for (let i = 0; i < profile.length; i++) {
-        if (profile[i] > threshold) {
-            if (!inPeak) { inPeak = true; sum = 0; mass = 0; }
-            sum += i * profile[i]; mass += profile[i];
-        } else if (inPeak) {
-            inPeak = false; if (mass > 0) peaks.push(sum / mass);
-        }
-    }
-    if (inPeak && mass > 0) peaks.push(sum / mass);
-    return peaks;
-};
-
 export const PointAllocator = () => {
     const { activeProject, handlePointsChange } = useProject();
-    const { areas, points, template } = activeProject!;
+    const { areas, points, template, aiSettings } = activeProject!;
+    
+    const numberingBase = aiSettings.markSheetNumberingBase ?? 1;
 
     const relevantAreas = useMemo(() => answerAndMarkSheetAreas(areas), [areas]);
     const subtotalAreas = useMemo(() => areas.filter(a => a.type === AreaType.SUBTOTAL), [areas]);
-    const questionNumberAreas = useMemo(() => areas.filter(a => a.type === AreaType.QUESTION_NUMBER), [areas]);
     const alignmentAreas = useMemo(() => areas.filter(a => a.type === AreaType.ALIGNMENT_MARK || a.type === AreaType.MARKSHEET_REF_RIGHT || a.type === AreaType.MARKSHEET_REF_BOTTOM), [areas]);
     
     const [isDetecting, setIsDetecting] = useState(false);
     const [showImages, setShowImages] = useState(true);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-    // State for Bulk Editing
     const [bulkPoints, setBulkPoints] = useState<string>('');
     const [bulkChoices, setBulkChoices] = useState<string>('');
 
@@ -75,66 +59,30 @@ export const PointAllocator = () => {
                 const pageImage = templatePages[pageIdx]?.imagePath;
                 if (!pageImage) continue;
 
-                const result = await window.electronAPI.invoke('get-image-details', pageImage);
-                if (!result.success || !result.details?.url) continue;
+                // Use the same advanced logic as GradingView to find correct answers on the template
+                const refR = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_RIGHT);
+                const refB = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_BOTTOM);
 
-                const img = new Image();
-                img.src = result.details.url;
-                await new Promise(r => img.onload = r);
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-                const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-                ctx.drawImage(img, 0, 0);
+                const res = await analyzeMarkSheetSnippet(
+                    pageImage, 
+                    area, 
+                    point, 
+                    aiSettings.markSheetSensitivity,
+                    refR, 
+                    refB
+                );
 
-                const getProj = (a: Area, dir: 'x' | 'y') => {
-                    const sx = Math.floor(a.x); const sy = Math.floor(a.y);
-                    const sw = Math.floor(a.width); const sh = Math.floor(a.height);
-                    const data = ctx.getImageData(sx, sy, sw, sh).data;
-                    const size = dir === 'x' ? sw : sh;
-                    const profile = new Array(size).fill(0);
-                    for (let y = 0; y < sh; y++) {
-                        for (let x = 0; x < sw; x++) {
-                            const idx = (y * sw + x) * 4;
-                            if ((0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]) < 150) {
-                                if (dir === 'x') profile[x]++; else profile[y]++;
-                            }
-                        }
-                    }
-                    return profile;
-                };
-
-                const isHorizontal = point.markSheetLayout === 'horizontal';
-                const options = point.markSheetOptions || 4;
-                const profile = getProj(area, isHorizontal ? 'x' : 'y');
-                const peaks = findPeaks(profile, 0.3);
-
-                if (peaks.length > 0) {
-                    // Sample each peak's center to find the darkest one
-                    const darknessScores = peaks.map(p => {
-                        const cx = isHorizontal ? area.x + p : area.x + area.width / 2;
-                        const cy = isHorizontal ? area.y + area.height / 2 : area.y + p;
-                        const roi = 10;
-                        let dark = 0;
-                        const data = ctx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
-                        for(let k=0; k<data.length; k+=4) {
-                            if((0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]) < 170) dark++;
-                        }
-                        return dark;
-                    });
-
-                    const maxDarkness = Math.max(...darknessScores);
-                    if (maxDarkness > 20) { // Some minimum darkness threshold
-                        const winner = darknessScores.indexOf(maxDarkness);
-                        const idx = updatedPoints.findIndex(p => p.id === point.id);
-                        updatedPoints[idx] = { ...updatedPoints[idx], correctAnswerIndex: winner, markSheetOptions: peaks.length };
-                        detectedCount++;
-                    }
+                if (typeof res.index === 'number' && res.index !== -1) {
+                    const idx = updatedPoints.findIndex(p => p.id === point.id);
+                    updatedPoints[idx] = { ...updatedPoints[idx], correctAnswerIndex: res.index };
+                    detectedCount++;
                 }
             }
             setInternalPoints(updatedPoints);
             alert(`${detectedCount}件のマークシートの正解を自動認識しました。`);
         } catch (error) { 
             console.error("Auto detect failed:", error); 
+            alert("自動認識中にエラーが発生しました。");
         } finally { 
             setIsDetecting(false); 
         }
@@ -144,20 +92,6 @@ export const PointAllocator = () => {
         setInternalPoints(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
     };
 
-    const handleSubtotalChange = (pointId: number, subtotalAreaId: number, isChecked: boolean) => {
-        setInternalPoints(prevPoints => 
-            prevPoints.map(p => {
-                if (p.id === pointId) {
-                    const currentIds = p.subtotalIds || [];
-                    if (isChecked) return { ...p, subtotalIds: [...new Set([...currentIds, subtotalAreaId])] };
-                    else return { ...p, subtotalIds: currentIds.filter(id => id !== subtotalAreaId) };
-                }
-                return p;
-            })
-        );
-    };
-
-    // Bulk Operations
     const toggleSelect = (id: number) => {
         setSelectedIds(prev => {
             const next = new Set(prev);
@@ -242,7 +176,19 @@ export const PointAllocator = () => {
                             {area.type === AreaType.MARK_SHEET && (
                                 <>
                                     <div className="space-y-1"><label className="text-xs font-bold text-slate-500">選択肢数</label><input type="number" min="2" max="10" value={point.markSheetOptions || 4} onChange={e => handlePointPropChange(point.id, 'markSheetOptions', parseInt(e.target.value) || 2)} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-slate-500">正解 (0 = A)</label><input type="number" min="0" value={point.correctAnswerIndex || 0} onChange={e => handlePointPropChange(point.id, 'correctAnswerIndex', parseInt(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" /></div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-slate-500">
+                                            正解 ({numberingBase} = {numberingBase === 1 ? '①' : '⓪'})
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            min={numberingBase} 
+                                            max={numberingBase + (point.markSheetOptions || 4) - 1} 
+                                            value={(point.correctAnswerIndex ?? 0) + numberingBase} 
+                                            onChange={e => handlePointPropChange(point.id, 'correctAnswerIndex', (parseInt(e.target.value) || numberingBase) - numberingBase)} 
+                                            className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" 
+                                        />
+                                    </div>
                                 </>
                             )}
                         </div>
@@ -251,7 +197,6 @@ export const PointAllocator = () => {
                 </div>
             </div>
 
-            {/* Bulk Action Bar */}
             {selectedIds.size > 0 && (
                 <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-3 rounded-2xl shadow-2xl flex items-center gap-6 z-50 border border-slate-600 animate-in slide-in-from-bottom-4">
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-700 rounded-lg">

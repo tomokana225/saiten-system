@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from '@google/genai';
 
 export const webElectronAPI = {
@@ -26,20 +27,21 @@ export const webElectronAPI = {
         });
       }
       case 'gemini-validate-key': {
-        const { apiKey } = args[0];
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: 'hello' });
+            // Updated to use process.env.API_KEY exclusively and recommended model 'gemini-3-flash-preview'
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'hello' });
             return { success: true };
         } catch (e: any) {
             return { success: false, error: { message: e.message } };
         }
       }
       case 'gemini-generate-content': {
-        const { apiKey, model, contents, config } = args[0];
+        const { model, contents, config } = args[0];
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({ model, contents, config });
+            // Updated to use process.env.API_KEY exclusively
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({ model: model || 'gemini-3-flash-preview', contents, config });
             return { success: true, text: response.text };
         } catch (e: any) {
             return { success: false, error: { message: e.message } };

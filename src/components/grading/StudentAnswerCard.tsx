@@ -34,27 +34,31 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreD
                 // Show red box ONLY if this option was marked but is not the correct one
                 const isIncorrectMark = isDetectedAsMarked && !isCorrectAnswer;
                 
-                // Position relative to the snippet area
+                // Position relative to the area viewport (percentage of original area)
                 const left = `${((pos.x - area.x) / area.width) * 100}%`;
                 const top = `${((pos.y - area.y) / area.height) * 100}%`;
 
                 return (
                     <React.Fragment key={`opt-${i}`}>
-                        {/* The Green Dot (Scan Point) */}
+                        {/* The Scan Point (Visual Confirmation of precision) */}
                         <div 
                             style={{
                                 position: 'absolute',
                                 left,
                                 top,
-                                width: '4px',
-                                height: '4px',
+                                width: '6px',
+                                height: '6px',
                                 backgroundColor: '#22c55e',
                                 borderRadius: '50%',
                                 transform: 'translate(-50%, -50%)',
-                                boxShadow: '0 0 2px rgba(0,0,0,0.5)',
-                                zIndex: 30
+                                boxShadow: '0 0 3px rgba(0,0,0,0.8)',
+                                zIndex: 40
                             }}
                         />
+
+                        {/* Coordinate indicator lines (very faint) */}
+                        <div style={{ position: 'absolute', left, top: 0, bottom: 0, width: '1px', backgroundColor: 'rgba(34, 197, 94, 0.1)', zIndex: 30 }} />
+                        <div style={{ position: 'absolute', top, left: 0, right: 0, height: '1px', backgroundColor: 'rgba(34, 197, 94, 0.1)', zIndex: 30 }} />
 
                         {/* The Result Box (Green for correct, Red for detected incorrect) */}
                         {(isCorrectAnswer || isIncorrectMark) && (
@@ -63,12 +67,12 @@ const MarkSheetOverlay: React.FC<MarkSheetOverlayProps> = ({ area, point, scoreD
                                     position: 'absolute',
                                     left,
                                     top,
-                                    width: '28px', // Slightly larger than typical mark
-                                    height: '28px',
+                                    width: '32px', // Precisely centered frame
+                                    height: '32px',
                                     transform: 'translate(-50%, -50%)',
-                                    border: isCorrectAnswer ? '3px solid rgba(34, 197, 94, 0.7)' : '3px solid rgba(239, 68, 68, 0.7)',
+                                    border: isCorrectAnswer ? '4px solid rgba(34, 197, 94, 0.8)' : '4px solid rgba(239, 68, 68, 0.8)',
                                     borderRadius: '4px',
-                                    backgroundColor: isCorrectAnswer ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                    backgroundColor: isCorrectAnswer ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                                     zIndex: 20
                                 }}
                             />

@@ -1,5 +1,6 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
+import { Area, Point, AreaType } from './types';
 
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {
@@ -52,24 +53,21 @@ export const convertFileToImages = async (file: File): Promise<string[]> => {
     }
 };
 
-interface Point { x: number; y: number; }
-interface Corners { tl: Point; tr: Point; br: Point; bl: Point; }
+interface PointCoord { x: number; y: number; }
+interface Corners { tl: PointCoord; tr: PointCoord; br: PointCoord; bl: PointCoord; }
 
-/**
- * Finds alignment marks by looking for the absolute outermost dark blobs in corner areas.
- */
 export const findAlignmentMarks = (
     imageData: ImageData, 
     settings: { minSize: number, threshold: number, padding: number } = { minSize: 10, threshold: 160, padding: 0 }
 ): Corners | null => {
     const { data, width, height } = imageData;
-    const searchRange = 0.20; // 20% from edges
+    const searchRange = 0.20;
     const cornerW = Math.floor(width * searchRange);
     const cornerH = Math.floor(height * searchRange);
 
-    const findBestCentroid = (startX: number, startY: number, endX: number, endY: number, targetX: number, targetY: number): Point | null => {
+    const findBestCentroid = (startX: number, startY: number, endX: number, endY: number, targetX: number, targetY: number): PointCoord | null => {
         const visited = new Uint8Array((endX - startX) * (endY - startY));
-        let bestCandidate: { centroid: Point, distSq: number } | null = null;
+        let bestCandidate: { centroid: PointCoord, distSq: number } | null = null;
         const minArea = settings.minSize * settings.minSize;
 
         for (let y = startY; y < endY; y++) {
@@ -115,7 +113,6 @@ export const findAlignmentMarks = (
 
                     if (count >= minArea && count < (width * height * 0.02) && aspectRatio < 3) {
                         const centroid = { x: sumX / count, y: sumY / count };
-                        // Distance to actual page corner (0,0 or W,0 etc.)
                         const distSq = Math.pow(centroid.x - targetX, 2) + Math.pow(centroid.y - targetY, 2);
                         if (!bestCandidate || distSq < bestCandidate.distSq) {
                             bestCandidate = { centroid, distSq };
@@ -136,7 +133,161 @@ export const findAlignmentMarks = (
     return null;
 };
 
-const getHomographyMatrix = (src: Point[], dst: Point[]): number[][] => {
+/**
+ * Finds center of mass for peaks in a projection profile.
+ * Improved to provide sub-pixel accuracy based on the "mass" of the black area.
+ */
+export const findPeaks = (profile: number[], thresholdRatio = 0.35): number[] => {
+    const peaks: number[] = [];
+    let inPeak = false;
+    let sum = 0; 
+    let mass = 0;
+    
+    // Invert profile if needed (assuming profile counts black pixels)
+    const max = Math.max(...profile);
+    const threshold = max * thresholdRatio;
+    
+    for (let i = 0; i < profile.length; i++) {
+        if (profile[i] > threshold) {
+            if (!inPeak) {
+                inPeak = true;
+                sum = 0;
+                mass = 0;
+            }
+            // Weight the position by the intensity/count at that pixel
+            sum += i * profile[i];
+            mass += profile[i];
+        } else if (inPeak) {
+            inPeak = false;
+            if (mass > 0) {
+                // Centroid calculation
+                peaks.push(sum / mass);
+            }
+        }
+    }
+    if (inPeak && mass > 0) {
+        peaks.push(sum / mass);
+    }
+    return peaks;
+};
+
+export const findNearestAlignedRefArea = (target: Area, candidates: Area[], type: AreaType): Area | undefined => {
+    const pageIndex = target.pageIndex || 0;
+    const alignedCandidates = candidates.filter(c => c.type === type && (c.pageIndex || 0) === pageIndex);
+    
+    if (alignedCandidates.length === 0) return undefined;
+
+    return alignedCandidates.sort((a, b) => {
+        if (type === AreaType.MARKSHEET_REF_RIGHT) {
+            const vOverlapA = Math.max(0, Math.min(target.y + target.height, a.y + a.height) - Math.max(target.y, a.y));
+            const vOverlapB = Math.max(0, Math.min(target.y + target.height, b.y + b.height) - Math.max(target.y, b.y));
+            if (vOverlapA > 0 && vOverlapB === 0) return -1;
+            if (vOverlapB > 0 && vOverlapA === 0) return 1;
+            return (a.x - target.x) - (b.x - target.x);
+        } else {
+            const hOverlapA = Math.max(0, Math.min(target.x + target.width, a.x + a.width) - Math.max(target.x, a.x));
+            const hOverlapB = Math.max(0, Math.min(target.x + target.width, b.x + b.width) - Math.max(target.x, b.x));
+            if (hOverlapA > 0 && hOverlapB === 0) return -1;
+            if (hOverlapB > 0 && hOverlapA === 0) return 1;
+            return (a.y - target.y) - (b.y - target.y);
+        }
+    })[0];
+};
+
+export const analyzeMarkSheetSnippet = async (
+    imagePath: string, 
+    area: Area, 
+    point: Point, 
+    sensitivity: number = 1.5,
+    refR?: Area, 
+    refB?: Area
+): Promise<{ index: number | number[], positions: {x:number,y:number}[] }> => {
+    const result = await window.electronAPI.invoke('get-image-details', imagePath);
+    if (!result.success || !result.details?.url) return { index: -1, positions: [] };
+    const img = new Image(); img.src = result.details.url;
+    await new Promise(r => img.onload = r);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(img, 0, 0);
+
+    const fillGrayThreshold = Math.floor(255 / sensitivity);
+    const fillRatioThreshold = 0.20 + (sensitivity - 1.1) * 0.1;
+
+    const getProj = (a: Area, dir: 'x' | 'y') => {
+        const sx = Math.floor(a.x); const sy = Math.floor(a.y);
+        const sw = Math.floor(a.width); const sh = Math.floor(a.height);
+        if (sw <= 0 || sh <= 0) return [];
+        const data = ctx.getImageData(sx, sy, sw, sh).data;
+        const size = dir === 'x' ? sw : sh;
+        const profile = new Array(size).fill(0);
+        for (let y = 0; y < sh; y++) {
+            for (let x = 0; x < sw; x++) {
+                const idx = (y * sw + x) * 4;
+                if ((0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2]) < 160) {
+                    if (dir === 'x') profile[x]++; else profile[y]++;
+                }
+            }
+        }
+        return profile;
+    };
+
+    let options = point.markSheetOptions || 4;
+    const isH = point.markSheetLayout === 'horizontal';
+    let rows: number[] = [], cols: number[] = [];
+
+    if (isH) {
+        // Horizontal: Row is usually center of area, cols from timing marks (Ref Bottom)
+        rows = [area.y + area.height / 2];
+        if (refB) {
+            const peaks = findPeaks(getProj(refB, 'x'));
+            if (peaks.length > 0) {
+                cols = peaks.map(px => refB.x + px);
+                options = cols.length;
+            }
+        }
+        if (cols.length === 0) for(let i=0; i<options; i++) cols.push(area.x + (area.width/options) * (i+0.5));
+    } else {
+        // Vertical: Col is center of area, rows from timing marks (Ref Right)
+        cols = [area.x + area.width / 2];
+        if (refR) {
+            const peaks = findPeaks(getProj(refR, 'y'));
+            if (peaks.length > 0) {
+                rows = peaks.map(py => refR.y + py);
+                options = rows.length;
+            }
+        }
+        if (rows.length === 0) for(let i=0; i<options; i++) rows.push(area.y + (area.height/options) * (i+0.5));
+    }
+
+    const pos: {x:number,y:number}[] = [];
+    const marks: number[] = [];
+    const roi = 14; // Sampling region size
+
+    for (let i = 0; i < options; i++) {
+        const cx = isH ? cols[i] : cols[0];
+        const cy = isH ? rows[0] : rows[i];
+        pos.push({ x: cx, y: cy });
+        
+        let darkCount = 0;
+        // Sample exactly around the calculated center (cx, cy)
+        const data = ctx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
+        for(let k=0; k<data.length; k+=4) {
+            const gray = (0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]);
+            if(gray < fillGrayThreshold) darkCount++;
+        }
+        
+        const ratio = darkCount / (roi * roi);
+        if (ratio > fillRatioThreshold) marks.push(i);
+    }
+
+    return { 
+        index: marks.length === 1 ? marks[0] : marks.length > 1 ? marks : -1, 
+        positions: pos 
+    };
+};
+
+const getHomographyMatrix = (src: PointCoord[], dst: PointCoord[]): number[][] => {
     const P: number[][] = [];
     for (let i = 0; i < 4; i++) {
         const x = src[i].x; const y = src[i].y;

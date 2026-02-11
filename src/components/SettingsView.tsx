@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { SunIcon, MoonIcon, InfoIcon, SpinnerIcon } from './icons';
 import type { AISettings } from '../types';
@@ -17,7 +18,7 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                 <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">テーマ設定</h3>
                 <div className="flex items-center space-x-2 p-1 bg-slate-200 dark:bg-slate-700 rounded-lg">
                     <button onClick={() => setTheme('light')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors ${theme === 'light' ? 'bg-white dark:bg-slate-600 shadow' : 'hover:bg-slate-300 dark:hover:bg-slate-600/50'}`}>
-                        <SunIcon className="w-5 h-5"/>
+                        < SunIcon className="w-5 h-5"/>
                         ライト
                     </button>
                     <button onClick={() => setTheme('dark')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors ${theme === 'dark' ? 'bg-slate-800 text-white shadow' : 'hover:bg-slate-300 dark:hover:bg-slate-600/50'}`}>
@@ -33,7 +34,7 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                     <div className="p-4 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-lg flex items-start gap-3">
                         <InfoIcon className="w-6 h-6 flex-shrink-0 mt-1" />
                         <p className="text-sm">
-                            AIによる自動採点のパフォーマンスを調整します。設定は自動で保存されます。
+                            AIによる自動採点およびマークシート認識のパフォーマンスを調整します。設定は自動で保存されます。
                         </p>
                     </div>
                     <div className="space-y-2">
@@ -68,7 +69,7 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-600"
                         />
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                            一度にAPIへ送信する解答の数です。値を大きくすると全体的な処理時間は短縮される傾向にありますが、1回あたりの待ち時間は長くなります。
+                            一度にAPIへ送信する解答の数です。
                         </p>
                     </div>
                      <div className="space-y-2">
@@ -85,9 +86,6 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                             onChange={(e) => onAiSettingsChange(prev => ({ ...prev, delayBetweenBatches: parseInt(e.target.value, 10) }))}
                             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-600"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            連続したAPIリクエストの間に待機時間を設けます。APIの利用制限エラーが発生する場合、この値を大きく設定してください。
-                        </p>
                     </div>
                     <div className="space-y-2">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -107,31 +105,53 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                                 速度優先
                             </button>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            「速度優先」モードはAIの思考時間を短縮し、採点レスポンスを高速化しますが、複雑な解答に対する精度が若干低下する可能性があります。
-                        </p>
                     </div>
-                     <div className="space-y-2">
-                        <label htmlFor="sensitivity-slider" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            マークシート認識感度: <span className="font-bold">{(aiSettings.markSheetSensitivity || 1.5).toFixed(1)}</span>
-                        </label>
-                        <input
-                            id="sensitivity-slider"
-                            type="range"
-                            min="1.1"
-                            max="3.0"
-                            step="0.1"
-                            value={aiSettings.markSheetSensitivity || 1.5}
-                            onChange={(e) => onAiSettingsChange(prev => ({ ...prev, markSheetSensitivity: parseFloat(e.target.value) }))}
-                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-600"
-                        />
-                        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                            <span>低い (かすれも認識)</span>
-                            <span>高い (濃いマークのみ)</span>
+                    
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-6">
+                        <h4 className="text-md font-bold text-slate-800 dark:text-slate-200">マークシート設定</h4>
+                        
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                マーク開始番号 (0 または 1)
+                            </label>
+                            <div className="flex items-center space-x-2 p-1 bg-slate-200 dark:bg-slate-700 rounded-lg">
+                                <button 
+                                    onClick={() => onAiSettingsChange(prev => ({ ...prev, markSheetNumberingBase: 0 }))}
+                                    className={`flex-1 px-4 py-2 rounded-md text-sm transition-colors ${aiSettings.markSheetNumberingBase === 0 ? 'bg-white dark:bg-slate-600 shadow' : 'hover:bg-slate-300 dark:hover:bg-slate-600/50'}`}
+                                >
+                                    0 から開始 (0, 1, 2...)
+                                </button>
+                                <button 
+                                    onClick={() => onAiSettingsChange(prev => ({ ...prev, markSheetNumberingBase: 1 }))}
+                                    className={`flex-1 px-4 py-2 rounded-md text-sm transition-colors ${aiSettings.markSheetNumberingBase === 1 ? 'bg-white dark:bg-slate-600 shadow' : 'hover:bg-slate-300 dark:hover:bg-slate-600/50'}`}
+                                >
+                                    1 から開始 (1, 2, 3...)
+                                </button>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                配点設定画面や採点結果で表示されるマークの番号の基準値を設定します。
+                            </p>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            認識感度を調整します。値が低いほど、かすれた線や薄いマークも解答として認識しやすくなります。値が高いほど、濃くはっきりと書かれたマークのみを解答として認識します。
-                        </p>
+
+                        <div className="space-y-2">
+                            <label htmlFor="sensitivity-slider" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                マークシート認識感度: <span className="font-bold">{(aiSettings.markSheetSensitivity || 1.5).toFixed(1)}</span>
+                            </label>
+                            <input
+                                id="sensitivity-slider"
+                                type="range"
+                                min="1.1"
+                                max="3.0"
+                                step="0.1"
+                                value={aiSettings.markSheetSensitivity || 1.5}
+                                onChange={(e) => onAiSettingsChange(prev => ({ ...prev, markSheetSensitivity: parseFloat(e.target.value) }))}
+                                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-sky-600"
+                            />
+                            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                <span>低い (かすれも認識)</span>
+                                <span>高い (濃いマークのみ)</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
