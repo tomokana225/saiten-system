@@ -27,35 +27,11 @@ const AppContent: React.FC = () => {
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
     const [appMode, setAppMode] = useState<AppMode>(AppMode.HOME);
     const [printPreviewConfig, setPrintPreviewConfig] = useState<{ open: boolean, initialTab: 'report' | 'sheets', questionStats: QuestionStats[] }>({ open: false, initialTab: 'report', questionStats: [] });
-    const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('geminiApiKey') || '');
-    const [apiKeyStatus, setApiKeyStatus] = useState<'unchecked' | 'validating' | 'valid' | 'invalid'>('unchecked');
 
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');
         localStorage.setItem('theme', theme);
     }, [theme]);
-    
-    const handleValidateKey = useCallback(async (keyToValidate: string) => {
-        if (!keyToValidate) {
-            setApiKeyStatus('unchecked');
-            return;
-        }
-        setApiKeyStatus('validating');
-        const result = await window.electronAPI.invoke('gemini-validate-key', { apiKey: keyToValidate });
-        setApiKeyStatus(result.success ? 'valid' : 'invalid');
-        if (!result.success) {
-            console.error("API Key validation failed:", result.error);
-        }
-    }, []);
-
-    useEffect(() => {
-        localStorage.setItem('geminiApiKey', apiKey);
-        if (apiKey) {
-            handleValidateKey(apiKey);
-        } else {
-            setApiKeyStatus('unchecked');
-        }
-    }, [apiKey, handleValidateKey]);
     
     const handleAiSettingsChange = useCallback((updater: React.SetStateAction<AISettings>) => {
         if (!activeProject) return;
@@ -95,8 +71,7 @@ const AppContent: React.FC = () => {
         }
         if (currentStep === AppStep.SETTINGS) {
             return <SettingsView 
-               theme={theme} setTheme={setTheme} apiKey={apiKey} onApiKeyChange={setApiKey}
-               apiKeyStatus={apiKeyStatus} onValidateKey={() => handleValidateKey(apiKey)}
+               theme={theme} setTheme={setTheme}
                aiSettings={activeProject?.aiSettings}
                onAiSettingsChange={activeProject ? handleAiSettingsChange : undefined}
             />;
@@ -112,7 +87,7 @@ const AppContent: React.FC = () => {
                     onProjectExportWithOptions={handleProjectExportWithOptions}
                 />;
             }
-            return <GradingWorkflow apiKey={apiKey} setPrintPreviewConfig={setPrintPreviewConfig} />;
+            return <GradingWorkflow apiKey={""} setPrintPreviewConfig={setPrintPreviewConfig} />;
         }
         return <p>Invalid state</p>;
     };
@@ -147,7 +122,6 @@ const AppContent: React.FC = () => {
     }, [appMode, currentStep]);
 
     return (
-        // Changed w-screen h-screen to w-full h-full to respect parent container size and avoid overflow issues
         <div className="h-full w-full bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
             {isLoading && (
                  <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center">

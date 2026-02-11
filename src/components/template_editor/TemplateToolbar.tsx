@@ -2,89 +2,87 @@
 import React from 'react';
 import type { AreaType } from '../../types';
 import { AreaType as AreaTypeEnum } from '../../types';
-import { ZoomInIcon, ZoomOutIcon, MousePointer2Icon, HandIcon, Wand2Icon } from '../icons';
+import { ZoomInIcon, ZoomOutIcon, Wand2Icon, Undo2Icon, Redo2Icon, PlusIcon, MousePointer2Icon } from '../icons';
 import { areaTypeColors } from './TemplateSidebar';
 
 interface TemplateToolbarProps {
-    activeTool: AreaType | 'select' | 'pan' | 'magic-wand';
-    setActiveTool: (tool: AreaType | 'select' | 'pan' | 'magic-wand') => void;
-    zoom: number;
-    onZoomChange: (zoom: number) => void;
+    isAutoDetectMode: boolean;
+    setIsAutoDetectMode: (val: boolean) => void;
     wandTargetType: AreaType;
     setWandTargetType: (type: AreaType) => void;
+    manualDrawType: AreaType | null;
+    setManualDrawType: (type: AreaType | null) => void;
+    zoom: number;
+    onZoomChange: (zoom: number) => void;
+    undo: () => void;
+    redo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
 }
 
 const typeNameMap: Record<string, string> = {
-    [AreaTypeEnum.ANSWER]: '解答',
-    [AreaTypeEnum.MARK_SHEET]: 'マークシート',
-    [AreaTypeEnum.NAME]: '氏名',
-    [AreaTypeEnum.SUBTOTAL]: '小計',
-    [AreaTypeEnum.TOTAL]: '合計',
-    [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
-    [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク',
-    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
-    [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: '学籍番号基準(右)',
-    [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: '学籍番号基準(下)',
+    [AreaTypeEnum.ANSWER]: '解答', [AreaTypeEnum.MARK_SHEET]: 'マークシート', [AreaTypeEnum.NAME]: '氏名',
+    [AreaTypeEnum.SUBTOTAL]: '小計', [AreaTypeEnum.TOTAL]: '合計', [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
+    [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク', [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
 };
 
-export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, setActiveTool, zoom, onZoomChange, wandTargetType, setWandTargetType }) => {
+export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ 
+    isAutoDetectMode, setIsAutoDetectMode, wandTargetType, setWandTargetType,
+    manualDrawType, setManualDrawType, zoom, onZoomChange, undo, redo, canUndo, canRedo
+}) => {
     return (
-        <div className="flex-shrink-0 flex items-center bg-slate-100 dark:bg-slate-800 p-2 rounded-lg gap-2 overflow-hidden">
-            <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex-shrink-0 flex items-center bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 gap-3 overflow-hidden">
+            {/* History Controls */}
+            <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                <button onClick={undo} disabled={!canUndo} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="元に戻す (Ctrl+Z)"><Undo2Icon className="w-5 h-5"/></button>
+                <button onClick={redo} disabled={!canRedo} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30" title="やり直す (Ctrl+Y)"><Redo2Icon className="w-5 h-5"/></button>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+
+            {/* Smart Interaction Controls */}
+            <div className="flex items-center gap-2 shrink-0">
                 <button
-                    onClick={() => setActiveTool('select')}
-                    className={`p-2 rounded-md ${activeTool === 'select' ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700'}`}
-                    title="選択"
+                    onClick={() => { setIsAutoDetectMode(false); setManualDrawType(null); }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all font-bold text-sm ${!isAutoDetectMode && !manualDrawType ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                 >
-                    <MousePointer2Icon className="w-5 h-5" />
+                    <MousePointer2Icon className="w-4 h-4" />
+                    <span>通常ツール</span>
                 </button>
-                <button
-                    onClick={() => setActiveTool('pan')}
-                    className={`p-2 rounded-md ${activeTool === 'pan' ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700'}`}
-                    title="パン"
-                >
-                    <HandIcon className="w-5 h-5" />
-                </button>
-                <div className="flex items-center bg-white dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600">
-                    <button
-                        onClick={() => setActiveTool('magic-wand')}
-                        className={`p-2 rounded-l-md ${activeTool === 'magic-wand' ? 'bg-sky-500 text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-600'}`}
-                        title="自動認識ツール: 枠内をクリックして領域を作成"
-                    >
-                        <Wand2Icon className="w-5 h-5" />
+
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all font-bold text-sm border-2 ${isAutoDetectMode ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600'}`}>
+                    <button onClick={() => setIsAutoDetectMode(!isAutoDetectMode)} className="flex items-center gap-2">
+                        <Wand2Icon className="w-4 h-4" />
+                        <span>自動認識</span>
                     </button>
-                    {activeTool === 'magic-wand' && (
-                        <div className="flex items-center px-2 py-1 border-l border-slate-200 dark:border-slate-600 bg-sky-50 dark:bg-sky-900/30 rounded-r-md">
-                            <span className="text-xs font-bold text-sky-700 dark:text-sky-300 mr-2 whitespace-nowrap">作成タイプ:</span>
-                            <select 
-                                value={wandTargetType} 
-                                onChange={(e) => setWandTargetType(e.target.value as AreaType)}
-                                className="text-xs p-1 rounded border-none bg-transparent font-medium text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer"
-                            >
-                                {Object.values(AreaTypeEnum).map(t => (
-                                    <option key={t} value={t}>{typeNameMap[t] || t}</option>
-                                ))}
-                            </select>
-                        </div>
+                    {isAutoDetectMode && (
+                        <select 
+                            value={wandTargetType} 
+                            onChange={(e) => setWandTargetType(e.target.value as AreaType)}
+                            className="text-[10px] p-0 border-none bg-transparent font-bold focus:ring-0 cursor-pointer"
+                        >
+                            {Object.values(AreaTypeEnum).map(t => <option key={t} value={t}>{typeNameMap[t] || t}</option>)}
+                        </select>
                     )}
                 </div>
             </div>
 
-            <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2 flex-shrink-0"></div>
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 shrink-0"></div>
 
-            <div className="flex items-center flex-1 min-w-0 overflow-hidden gap-2">
-                <span className="text-sm font-medium flex-shrink-0">手動描画:</span>
-                <div className="flex gap-1 overflow-x-auto scrollbar-hide min-w-0 w-full items-center">
+            {/* Manual Draw Types - Selecting one prepares the tool to draw that specific type */}
+            <div className="flex items-center flex-1 min-w-0 gap-2 overflow-hidden">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">手動追加:</span>
+                <div className="flex gap-1 overflow-x-auto scrollbar-hide shrink-0 p-1">
                     {Object.values(AreaTypeEnum).map(type => (
                         <button
                             key={type}
-                            onClick={() => setActiveTool(type)}
+                            onClick={() => { setIsAutoDetectMode(false); setManualDrawType(manualDrawType === type ? null : type); }}
                             style={{
                                 borderColor: areaTypeColors[type].hex,
-                                color: activeTool === type ? 'white' : areaTypeColors[type].hex,
-                                backgroundColor: activeTool === type ? areaTypeColors[type].hex : ''
+                                color: manualDrawType === type ? 'white' : areaTypeColors[type].hex,
+                                backgroundColor: manualDrawType === type ? areaTypeColors[type].hex : ''
                             }}
-                            className={`px-2 py-1 text-xs rounded-md border-2 whitespace-nowrap flex-shrink-0 ${activeTool !== type ? 'bg-white dark:bg-slate-700' : ''}`}
+                            className={`px-3 py-1 text-[11px] font-bold rounded-lg border-2 whitespace-nowrap transition-all active:scale-95 ${manualDrawType !== type ? 'bg-white dark:bg-slate-900' : 'shadow-sm'}`}
                         >
                             {typeNameMap[type] || type}
                         </button>
@@ -92,10 +90,10 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({ activeTool, se
                 </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ZoomOutIcon className="w-5 h-5"/></button>
-                <span className="text-sm w-12 text-center">{(zoom * 100).toFixed(0)}%</span>
-                 <button onClick={() => onZoomChange(Math.min(3, zoom + 0.1))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ZoomInIcon className="w-5 h-5"/></button>
+            <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                <button onClick={() => onZoomChange(Math.max(0.1, zoom - 0.1))} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomOutIcon className="w-4 h-4"/></button>
+                <span className="text-[10px] font-mono font-bold w-12 text-center text-slate-600 dark:text-slate-400">{(zoom * 100).toFixed(0)}%</span>
+                <button onClick={() => onZoomChange(Math.min(5, zoom + 0.1))} className="p-2 rounded-md hover:bg-white dark:hover:bg-slate-700 transition-colors"><ZoomInIcon className="w-4 h-4"/></button>
             </div>
         </div>
     );

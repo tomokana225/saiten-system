@@ -1,38 +1,15 @@
-
 import React, { useState } from 'react';
-import { SunIcon, MoonIcon, InfoIcon, EyeIcon, EyeOffIcon, CheckCircle2Icon, XCircleIcon, SpinnerIcon } from './icons';
+import { SunIcon, MoonIcon, InfoIcon, SpinnerIcon } from './icons';
 import type { AISettings } from '../types';
 
 interface SettingsViewProps {
     theme: 'light' | 'dark';
     setTheme: React.Dispatch<React.SetStateAction<'light' | 'dark'>>;
-    apiKey: string;
-    onApiKeyChange: React.Dispatch<React.SetStateAction<string>>;
-    apiKeyStatus: 'unchecked' | 'validating' | 'valid' | 'invalid';
-    onValidateKey: () => void;
     aiSettings?: AISettings;
     onAiSettingsChange?: React.Dispatch<React.SetStateAction<AISettings>>;
 }
 
-export const SettingsView = ({ theme, setTheme, apiKey, onApiKeyChange, apiKeyStatus, onValidateKey, aiSettings, onAiSettingsChange }: SettingsViewProps) => {
-    const [showApiKey, setShowApiKey] = useState(false);
-
-    const getStatusIndicator = () => {
-        switch (apiKeyStatus) {
-            case 'validating':
-                return <span className="flex items-center gap-1 text-sm text-yellow-600 dark:text-yellow-400"><SpinnerIcon className="w-4 h-4" /> 認証中...</span>;
-            case 'valid':
-                return <span className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400"><CheckCircle2Icon className="w-4 h-4" /> 認証済み</span>;
-            case 'invalid':
-                return <span className="flex items-center gap-1 text-sm text-red-600 dark:text-red-400"><XCircleIcon className="w-4 h-4" /> 認証に失敗しました</span>;
-            case 'unchecked':
-            default:
-                 if (apiKey) {
-                    return <span className="text-sm text-slate-500 dark:text-slate-400">未認証</span>;
-                 }
-                 return null;
-        }
-    };
+export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }: SettingsViewProps) => {
 
     return (
         <div className="w-full max-w-4xl mx-auto space-y-8">
@@ -49,44 +26,6 @@ export const SettingsView = ({ theme, setTheme, apiKey, onApiKeyChange, apiKeySt
                     </button>
                 </div>
             </div>
-            
-            <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">Gemini API キー設定</h3>
-                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow space-y-3">
-                   <div>
-                       <label htmlFor="api-key-input" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                           APIキー
-                       </label>
-                       <div className="mt-1 relative rounded-md shadow-sm">
-                           <input
-                               id="api-key-input"
-                               type={showApiKey ? 'text' : 'password'}
-                               value={apiKey}
-                               onChange={(e) => onApiKeyChange(e.target.value)}
-                               className="block w-full p-2 pr-10 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700"
-                               placeholder="AIza..."
-                           />
-                           <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                               <button onClick={() => setShowApiKey(!showApiKey)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-                                   {showApiKey ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
-                               </button>
-                           </div>
-                       </div>
-                   </div>
-                   <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                           <button 
-                               onClick={() => onValidateKey()} 
-                               disabled={apiKeyStatus === 'validating' || !apiKey}
-                               className="px-4 py-2 text-sm bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:bg-slate-400"
-                           >
-                               保存して認証
-                           </button>
-                            {getStatusIndicator()}
-                        </div>
-                   </div>
-               </div>
-            </div>
 
             {aiSettings && onAiSettingsChange && (
                  <div className="space-y-4 pt-8 border-t border-slate-200 dark:border-slate-700">
@@ -102,16 +41,16 @@ export const SettingsView = ({ theme, setTheme, apiKey, onApiKeyChange, apiKeySt
                             使用モデル
                         </label>
                         <select
-                            value={aiSettings.aiModel || 'gemini-2.0-flash-exp'}
+                            value={aiSettings.aiModel || 'gemini-3-flash-preview'}
                             onChange={(e) => onAiSettingsChange(prev => ({ ...prev, aiModel: e.target.value }))}
                             className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700"
                         >
-                            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp (推奨: 高速・無料枠大)</option>
-                            <option value="gemini-1.5-flash-002">Gemini 1.5 Flash (安定版)</option>
-                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (最新・無料枠少)</option>
+                            <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (推奨: 高速)</option>
+                            <option value="gemini-3-pro-preview">Gemini 3 Pro Preview (高精度)</option>
+                            <option value="gemini-flash-lite-latest">Gemini Flash Lite (超高速・軽量)</option>
                         </select>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                            「制限超過 (429)」エラーが出る場合は、制限の緩い 2.0 Flash Exp を使用してください。
+                            モデルを変更することで採点の精度や処理速度を調整できます。
                         </p>
                     </div>
                     <div className="space-y-2">

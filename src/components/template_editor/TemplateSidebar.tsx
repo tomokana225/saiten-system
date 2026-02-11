@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Area, Template } from '../../types';
 import { AreaType, AreaType as AreaTypeEnum } from '../../types';
-import { SparklesIcon, Trash2Icon, InfoIcon } from '../icons';
+import { SparklesIcon, Trash2Icon, InfoIcon, ChevronDownIcon, ChevronUpIcon, SettingsIcon, Undo2Icon, Redo2Icon, Wand2Icon } from '../icons';
 import { findAlignmentMarks } from '../../utils';
+import { DetectionSettings } from '../TemplateEditor';
 
 export const areaTypeColors: { [key in AreaType]: { hex: string; bg: string; text: string; hover: string } } = {
     [AreaTypeEnum.ANSWER]: { hex: '#3b82f6', bg: 'bg-blue-100 dark:bg-blue-900/50', text: 'text-blue-800 dark:text-blue-300', hover: 'hover:bg-blue-200/50 dark:hover:bg-blue-800/50' },
@@ -27,15 +29,29 @@ interface TemplateSidebarProps {
     apiKey: string;
     template: Template;
     onTemplateChange: (templateUpdates: Partial<Template>) => void;
+    detSettings: DetectionSettings;
+    setDetSettings: React.Dispatch<React.SetStateAction<DetectionSettings>>;
+    undo: () => void;
+    redo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
 }
 
-export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ areas, setAreas, selectedAreaIds, setSelectedAreaIds, apiKey, template, onTemplateChange }) => {
+export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ 
+    areas, setAreas, selectedAreaIds, setSelectedAreaIds, apiKey, template, onTemplateChange, 
+    detSettings, setDetSettings, undo, redo, canUndo, canRedo 
+}) => {
     const [isDetecting, setIsDetecting] = useState(false);
+    const [isOptionsExpanded, setIsOptionsExpanded] = useState(false);
+    const listContainerRef = useRef<HTMLDivElement>(null);
     
     const handleDetectAlignmentMarks = async () => {
         setIsDetecting(true);
         try {
-            const result = await window.electronAPI.invoke('get-image-details', template.filePath);
+            const pageIndex = 0; // Currently assumes detection on page 1
+            const imagePath = template.pages?.[pageIndex]?.imagePath || template.filePath;
+            
+            const result = await window.electronAPI.invoke('get-image-details', imagePath);
             if (!result.success || !result.details?.url) {
                 throw new Error(result.error || 'Failed to get template image for alignment mark detection.');
             }
@@ -57,20 +73,21 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ areas, setArea
             if (marks) {
                 const existingMarkIds = new Set(areas.filter(a => a.type === AreaType.ALIGNMENT_MARK).map(a => a.id));
                 const newAreas = areas.filter(a => a.type !== AreaType.ALIGNMENT_MARK);
-                const markSize = Math.min(template.width, template.height) * 0.05;
+                // Adjust visualization box size to be smaller (3% instead of 5%) to better reflect detected mark
+                const markSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.03;
 
                 const markAreas: Area[] = [
-                    { id: Date.now(), name: '基準マーク TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+1, name: '基準マーク TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+2, name: '基準マーク BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
-                    { id: Date.now()+3, name: '基準マーク BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now(), name: '基準TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+1, name: '基準TR', type: AreaType.ALIGNMENT_MARK, x: marks.tr.x - markSize/2, y: marks.tr.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+2, name: '基準BR', type: AreaType.ALIGNMENT_MARK, x: marks.br.x - markSize/2, y: marks.br.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
+                    { id: Date.now()+3, name: '基準BL', type: AreaType.ALIGNMENT_MARK, x: marks.bl.x - markSize/2, y: marks.bl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
                 ];
 
                 setAreas([...newAreas, ...markAreas]);
                 onTemplateChange({ alignmentMarkIdealCorners: marks });
                 alert(`${markAreas.length}個の基準マークを検出しました。`);
             } else {
-                alert('基準マークを検出できませんでした。画像の四隅に明確な黒い四角形があるか確認してください。');
+                alert('基準マークを検出できませんでした。画像の四隅に明確な黒い図形（四角や点など）があるか確認してください。');
             }
         } catch (error) {
             console.error("Error detecting alignment marks:", error);
@@ -113,62 +130,163 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({ areas, setArea
         return [...markSheets, ...otherAreas];
     }, [areas]);
 
+    // Keep selected item in view after list re-orders
+    useEffect(() => {
+        if (selectedAreaIds.size === 1) {
+            const selectedId = Array.from(selectedAreaIds)[0];
+            const element = listContainerRef.current?.querySelector(`[data-area-id="${selectedId}"]`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+    }, [sortedAreas, selectedAreaIds]);
+
 
     return (
-        <aside className="w-80 flex-shrink-0 flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
-            <h3 className="text-lg font-semibold border-b pb-2 dark:border-slate-700">領域設定</h3>
-            <div className="space-y-2">
+        <aside className="w-80 flex-shrink-0 flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-lg shadow h-full overflow-hidden">
+            <h3 className="text-lg font-semibold border-b pb-2 dark:border-slate-700 flex justify-between items-center">
+                <span>領域設定</span>
+                <div className="flex gap-1">
+                    <button onClick={undo} disabled={!canUndo} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30" title="元に戻す"><Undo2Icon className="w-4 h-4"/></button>
+                    <button onClick={redo} disabled={!canRedo} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30" title="やり直す"><Redo2Icon className="w-4 h-4"/></button>
+                </div>
+            </h3>
+
+            <div className="space-y-3">
+                {/* Main Prominent Detection Button */}
                 <button
                     onClick={handleDetectAlignmentMarks}
                     disabled={isDetecting}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-red-500 text-white rounded-md hover:bg-red-600 disabled:bg-slate-400"
+                    className="w-full flex flex-col items-center justify-center gap-2 p-4 bg-gradient-to-br from-red-500 to-rose-600 text-white rounded-xl shadow-lg hover:from-red-600 hover:to-rose-700 transition-all active:scale-95 disabled:opacity-50 group"
                 >
-                    <SparklesIcon className="w-4 h-4" />
-                    {isDetecting ? '検出中...' : '基準マークを自動検出'}
+                    <div className="bg-white/20 p-2 rounded-full group-hover:scale-110 transition-transform">
+                        <SparklesIcon className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                        <div className="font-bold text-sm">基準マークを自動検出</div>
+                        <div className="text-[10px] opacity-80">スキャンのズレを自動補正します</div>
+                    </div>
                 </button>
+
+                {/* Collapsible Detection Options */}
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    <button 
+                        onClick={() => setIsOptionsExpanded(!isOptionsExpanded)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <SettingsIcon className="w-3.5 h-3.5" />
+                            認識精度の詳細設定
+                        </div>
+                        {isOptionsExpanded ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
+                    </button>
+                    
+                    {isOptionsExpanded && (
+                        <div className="p-3 space-y-4 border-t border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-1 duration-200">
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px]">
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">最小サイズ</label>
+                                    <span className="text-sky-600 font-mono">{detSettings.minSize}px</span>
+                                </div>
+                                <input 
+                                    type="range" min="5" max="100" value={detSettings.minSize} 
+                                    onChange={e => setDetSettings({...detSettings, minSize: parseInt(e.target.value)})}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                                />
+                                <p className="text-[9px] text-slate-400">小さすぎる枠を無視します（マークシート用）</p>
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px]">
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">線の濃さ/感度</label>
+                                    <span className="text-sky-600 font-mono">{detSettings.threshold}</span>
+                                </div>
+                                <input 
+                                    type="range" min="50" max="240" value={detSettings.threshold} 
+                                    onChange={e => setDetSettings({...detSettings, threshold: parseInt(e.target.value)})}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                                />
+                                <p className="text-[9px] text-slate-400">値が小さいほど、薄い線も認識します</p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px]">
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">認識余白</label>
+                                    <span className="text-sky-600 font-mono">{detSettings.padding}px</span>
+                                </div>
+                                <input 
+                                    type="range" min="-10" max="20" value={detSettings.padding} 
+                                    onChange={e => setDetSettings({...detSettings, padding: parseInt(e.target.value)})}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                                />
+                                <p className="text-[9px] text-slate-400">検出された枠を少し広げたり狭めたりします</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
-            <div className="flex justify-between items-center">
-                <h4 className="font-semibold">領域一覧</h4>
-                <button onClick={handleDeleteSelected} disabled={selectedAreaIds.size === 0} className="p-1 rounded-full text-slate-400 hover:text-red-500 disabled:opacity-50">
+
+            <div className="flex justify-between items-center mt-2">
+                <h4 className="font-semibold flex items-center gap-2">
+                    <InfoIcon className="w-4 h-4 text-slate-400" />
+                    領域一覧 ({areas.length})
+                </h4>
+                <button onClick={handleDeleteSelected} disabled={selectedAreaIds.size === 0} className="p-1.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors" title="選択した領域を削除">
                     <Trash2Icon className="w-5 h-5" />
                 </button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2 -mr-2">
+
+            <div ref={listContainerRef} className="flex-1 overflow-y-auto space-y-2 pr-1 -mr-1 scrollbar-thin">
                 {sortedAreas.map(area => {
                     const colors = areaTypeColors[area.type] || fallbackColor;
+                    const isSelected = selectedAreaIds.has(area.id);
                     return (
                         <div
                             key={area.id}
+                            data-area-id={area.id}
                             onClick={() => setSelectedAreaIds(new Set([area.id]))}
-                            className={`p-2 rounded-md cursor-pointer border-l-4 ${selectedAreaIds.has(area.id) ? 'bg-slate-100 dark:bg-slate-700' : ''} ${colors.hover}`}
-                            style={{ borderLeftColor: colors.hex }}
+                            className={`group p-2.5 rounded-xl cursor-pointer border-2 transition-all ${isSelected ? 'bg-white dark:bg-slate-700 border-sky-500 shadow-md ring-2 ring-sky-500/20' : `bg-slate-50 dark:bg-slate-900 border-transparent hover:border-slate-200 dark:hover:border-slate-700`}`}
                         >
-                            <div className="flex items-center justify-between">
-                                <input
-                                    type="text"
-                                    value={area.name}
-                                    onChange={(e) => {
-                                        e.stopPropagation();
-                                        handleAreaChange(area.id, 'name', e.target.value);
-                                    }}
-                                    className="font-medium bg-transparent border-b border-transparent focus:border-slate-300 outline-none w-full text-sm"
-                                    onClick={(e) => e.stopPropagation()}
-                                />
+                            <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: colors.hex }} />
+                                    <input
+                                        type="text"
+                                        value={area.name}
+                                        onChange={(e) => {
+                                            e.stopPropagation();
+                                            handleAreaChange(area.id, 'name', e.target.value);
+                                        }}
+                                        className="font-bold bg-transparent border-none focus:ring-0 p-0 outline-none w-full text-xs truncate"
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-400">{Math.round(area.width)}x{Math.round(area.height)}</span>
                             </div>
-                            <div className="flex justify-between items-center mt-1">
+                            <div className="flex justify-between items-center">
                                 <select
                                     value={area.type}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => handleAreaChange(area.id, 'type', e.target.value)}
-                                    className="text-xs p-1 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800"
+                                    className="text-[10px] py-0.5 px-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 font-medium text-slate-600 dark:text-slate-300"
                                 >
                                     {Object.values(AreaTypeEnum).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
-                                <span className="text-xs text-slate-400">{Math.round(area.width)}x{Math.round(area.height)}</span>
+                                {isSelected && (
+                                    <div className="flex gap-1">
+                                        <button onClick={(e) => {e.stopPropagation(); handleAreaChange(area.id, 'name', `${area.name} (コピー)`); }} className="p-1 text-slate-400 hover:text-sky-500"><SettingsIcon className="w-3 h-3"/></button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     );
                 })}
+                {areas.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-slate-400 opacity-60">
+                        <Wand2Icon className="w-12 h-12 mb-2" />
+                        <p className="text-xs text-center">枠をクリックするか<br/>自動検出ボタンを押してください</p>
+                    </div>
+                )}
             </div>
         </aside>
     );

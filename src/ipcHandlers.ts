@@ -10,7 +10,7 @@ declare const Buffer: {
 };
 
 // Create a dedicated persistent storage directory for this application
-const persistentStorageDir = path.join(app.getPath('userData'), 'batch-grader-files');
+const persistentStorageDir = path.join(app.getPath('getPath' in app ? 'userData' : ''), 'batch-grader-files');
 fs.mkdir(persistentStorageDir, { recursive: true }).catch(console.error);
 
 export const registerIpcHandlers = () => {
@@ -54,42 +54,16 @@ export const registerIpcHandlers = () => {
         }
     });
 
-    // A handler to check if the API key is valid
-    ipcMain.handle('gemini-validate-key', async (event, { apiKey }) => {
-        if (!apiKey) {
-            return { success: false, error: { message: 'APIキーが提供されていません。' } };
-        }
-        try {
-            const ai = new GoogleGenAI({ apiKey });
-            // A lightweight call to check if the key is valid and the service is reachable.
-            await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: 'hello'
-            });
-            return { success: true };
-        } catch (error) {
-            console.error('Gemini API key validation failed:', error);
-            return { success: false, error: { message: error.message } };
-        }
-    });
-
     // Content generation
-    ipcMain.handle('gemini-generate-content', async (event, { apiKey, model = 'gemini-2.5-flash', contents, config }) => {
-        if (!apiKey) {
-            return { success: false, error: { message: 'APIキーが設定されていません。設定画面でキーを入力してください。' } };
-        }
+    ipcMain.handle('gemini-generate-content', async (event, { model = 'gemini-3-flash-preview', contents, config }) => {
         try {
-            const ai = new GoogleGenAI({ apiKey });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({ model, contents, config });
             return { success: true, text: response.text };
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error calling Gemini API:', error);
-            let errorMessage = error.message;
-            if (error.message?.includes('API key not valid')) {
-                errorMessage = 'APIキーが無効です。設定画面で正しいキーを入力してください。';
-            }
-            return { success: false, error: { message: errorMessage } };
+            return { success: false, error: { message: error.message } };
         }
     });
 
@@ -107,7 +81,7 @@ export const registerIpcHandlers = () => {
         try {
             const data = await fs.readFile(filePaths[0], 'utf-8');
             return { success: true, data };
-        } catch (error) {
+        } catch (error: any) {
             return { success: false, error: error.message };
         }
     });
@@ -127,7 +101,7 @@ export const registerIpcHandlers = () => {
         try {
             await fs.writeFile(filePath, projectData, 'utf-8');
             return { success: true, path: filePath };
-        } catch (error) {
+        } catch (error: any) {
              return { success: false, error: error.message };
         }
     });
@@ -142,7 +116,7 @@ export const registerIpcHandlers = () => {
         try {
             const data = await fs.readFile(filePaths[0], 'utf-8');
             return { success: true, data: JSON.parse(data) };
-        } catch (error) {
+        } catch (error: any) {
             return { success: false, error: error.message };
         }
     });
@@ -158,7 +132,7 @@ export const registerIpcHandlers = () => {
         try {
             await fs.writeFile(filePath, JSON.stringify(layoutData, null, 2), 'utf-8');
             return { success: true, path: filePath };
-        } catch (error) {
+        } catch (error: any) {
             return { success: false, error: error.message };
         }
     });

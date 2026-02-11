@@ -1,9 +1,8 @@
-
 // FIX: Corrected import path for types from `./types` to `../types`.
 import { ScoringStatus, Type, Point } from '../types';
 
 // Used for TemplateEditor area detection
-export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-2.0-flash-exp') => {
+export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-3-flash-preview') => {
     // Define the schema for a single detected area
     const areaSchema = {
         type: Type.OBJECT,
@@ -30,7 +29,6 @@ export const callGeminiAPI = async (apiKey: string, prompt: string, imageBase64:
 
     try {
         const result = await window.electronAPI.invoke('gemini-generate-content', {
-            apiKey,
             model: model, // Using passed model or default
             contents: {
                 parts: [
@@ -57,14 +55,13 @@ interface StudentSnippet {
 
 // Used for GradingView batch scoring of descriptive answers
 export const callGeminiAPIBatch = async (
-    apiKey: string, 
     masterSnippet: string, 
     studentSnippets: StudentSnippet[], 
     point: Point,
     aiGradingMode?: 'auto' | 'strict', 
     answerFormat?: string,
     gradingSpeedMode?: 'quality' | 'speed',
-    model: string = 'gemini-2.0-flash-exp' // Default to 2.0 Flash Exp for better quota
+    model: string = 'gemini-3-flash-preview' // Default to Gemini 3 Flash
 ) => {
     
     const maxPoints = point.points;
@@ -130,8 +127,7 @@ export const callGeminiAPIBatch = async (
 
     try {
         const result = await window.electronAPI.invoke('gemini-generate-content', {
-            apiKey,
-            model: model, // Pass passed model
+            model: model, 
             contents,
             config,
         });

@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AppStep, ScoringStatus } from '../types';
 import type { GradingProject, Template, Area, StudentInfo, Student, Point, AllScores, StudentResult, Roster, SheetLayout, ExportImportOptions, ScoreData, AreaType } from '../types';
@@ -109,20 +108,13 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                         }
                     }
                     // Migration: Ensure aiSettings has model
-                    if (proj.aiSettings && (!proj.aiSettings.aiModel || proj.aiSettings.aiModel === 'gemini-1.5-flash')) {
-                        // Automatically migrate invalid 'gemini-1.5-flash' to 'gemini-2.0-flash-exp'
-                        proj.aiSettings.aiModel = 'gemini-2.0-flash-exp';
-                    } else if (proj.aiSettings && !proj.aiSettings.aiModel) {
-                        proj.aiSettings.aiModel = 'gemini-2.0-flash-exp';
+                    if (proj.aiSettings) {
+                        proj.aiSettings.aiModel = 'gemini-3-flash-preview';
                     }
-
-                    // Restore files from dataUrl if present (legacy mechanism)
-                    // ... (omitted similar logic as before for brevity but maintaining robustness)
                 }
                 setProjects(storedProjects);
                 setRosters(JSON.parse(localStorage.getItem('rosters') || '{}'));
                 const storedLayouts = JSON.parse(localStorage.getItem('sheetLayouts') || '{}');
-                // ... layout migration logic
                 setSheetLayouts(storedLayouts);
             } catch (error) {
                 console.error("Failed to initialize data:", error);
@@ -137,7 +129,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const persistProjects = () => {
             if (isLoading) return; // Don't save while initially loading
             try {
-                // Directly save the projects object, which contains file paths instead of large data URLs.
                 localStorage.setItem('gradingProjects', JSON.stringify(projects));
             } catch (error) {
                 if (error instanceof DOMException && error.name === 'QuotaExceededError') {
@@ -195,8 +186,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
             id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
-            // Use gemini-2.0-flash-exp as default for better free tier support and fewer 404s
-            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, aiModel: 'gemini-2.0-flash-exp' },
+            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, aiModel: 'gemini-3-flash-preview' },
             lastModified: Date.now(),
         };
         setProjects(prev => ({...prev, [newId]: newProject}));
@@ -226,17 +216,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (result.success && result.data) {
             try {
                 const importedData = JSON.parse(result.data);
-                // ... (Validation and Data URL conversion logic omitted for brevity but should be kept)
-                // Assuming importedData structure is migrated/valid
                 const newProject: GradingProject = {
                     ...importedData,
                     id: `proj_${Date.now()}`,
                     name: importedData.name + ' (インポート)',
                     lastModified: Date.now(),
                 };
-                // Ensure model exists if importing old project
-                if (newProject.aiSettings && !newProject.aiSettings.aiModel) {
-                    newProject.aiSettings.aiModel = 'gemini-2.0-flash-exp';
+                if (newProject.aiSettings) {
+                    newProject.aiSettings.aiModel = 'gemini-3-flash-preview';
                 }
                 setProjects(prev => ({ ...prev, [newProject.id]: newProject }));
                 alert(`プロジェクト「${newProject.name}」をインポートしました。`);
@@ -263,8 +250,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             delete (serializableProject as Partial<GradingProject>).scores;
         }
         
-        // ... (Data URL conversion for export logic omitted for brevity)
-        
         setIsLoading(false);
         const result = await window.electronAPI.invoke('export-project', {
             projectName: serializableProject.name,
@@ -278,10 +263,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (files.length === 0) return;
         setIsLoading(true);
         try {
-            // Support multi-page PDF or multiple images
             const newPages: { imagePath: string; width: number; height: number }[] = [];
-            
-            // Sort files by name to ensure order if multiple files selected at once
             const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
             for (const file of sortedFiles) {
@@ -305,7 +287,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
             if (newPages.length === 0) throw new Error("有効な画像またはPDFページが見つかりませんでした。");
 
-            // Merge with existing template pages if any
             const existingPages = activeProject?.template?.pages || [];
             const allPages = [...existingPages, ...newPages];
 
@@ -313,14 +294,13 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const newTemplate: Template = {
                 id: activeProject?.template?.id || firstFile.name,
                 name: activeProject?.template?.name || firstFile.name,
-                filePath: allPages[0].imagePath, // Backward compat
-                width: allPages[0].width, // Backward compat
-                height: allPages[0].height, // Backward compat
+                filePath: allPages[0].imagePath,
+                width: allPages[0].width,
+                height: allPages[0].height,
                 pages: allPages,
             };
             
             updateActiveProject(p => ({ ...p, template: newTemplate, lastModified: Date.now() }));
-            // REMOVED nextStep() to allow user to review/add more pages
         } catch (error) {
             console.error("Error processing template:", error);
             alert("テンプレート画像の処理中にエラーが発生しました。");
@@ -357,11 +337,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     const handleStudentSheetsUpload = async (files: File[]) => {
         if (files.length === 0 || !activeProject?.template) return;
-        // Logic moved to use the new raw uploader, but keeping this convenience method for standard behavior
         try {
             const allSheetImages = await uploadFilesRaw(files);
-
-            // Group images by template page count
             const pagesPerStudent = activeProject.template.pages.length;
             const newSheets: Student[] = [];
             
@@ -370,7 +347,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 if (studentImages.length === 0) continue;
                 
                 const imagePaths = studentImages.map(img => img.path);
-                // Pad with null if not enough pages found for the last student
                 while (imagePaths.length < pagesPerStudent) {
                     imagePaths.push(null);
                 }
@@ -378,7 +354,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 newSheets.push({
                     id: `${studentImages[0].name}-${Date.now()}-${i}`,
                     originalName: studentImages[0].name,
-                    filePath: imagePaths[0], // Backward compat
+                    filePath: imagePaths[0],
                     images: imagePaths
                 });
             }
@@ -395,8 +371,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!activeProject || activeProject.studentInfo.length === 0 || !activeProject.template) return [];
         
         const validPointIds = new Set(activeProject.points.map(p => p.id));
-        
-        // 1. Map to preliminary results (identifying presence/absence)
         const allStudentsWithDetails = activeProject.studentInfo.map((info, index) => {
             const studentScores = activeProject.scores[info.id] || {};
             const totalScore = Object.entries(studentScores).reduce((sum, [pointIdStr, scoreData]: [string, ScoreData]) => {
@@ -413,17 +387,13 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     .reduce((sum, p) => sum + (studentScores[p.id]?.score || 0), 0);
             });
 
-            // Determine if absent based on uploadedSheets existence and content
             const sheet = activeProject.uploadedSheets[index];
             const isAbsent = !sheet || !sheet.images || sheet.images.every(img => !img);
-            
-            // Safe sheet object for display purposes even if absent
             const displaySheet = sheet || { id: `missing-sheet-${index}`, originalName: 'N/A', filePath: null, images: [] };
 
             return { ...displaySheet, ...info, totalScore, subtotals, isAbsent };
         });
 
-        // 2. Calculate statistics ONLY for present students
         const presentStudents = allStudentsWithDetails.filter(s => !s.isAbsent);
         const presentScores = presentStudents.map(s => s.totalScore);
         const totalPresent = presentScores.length;
@@ -433,7 +403,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const variance = totalPresent > 0 ? presentScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / totalPresent : 0;
         const stdDev = Math.sqrt(variance);
 
-        // 3. Assign Ranks and Standard Scores
         let resultsWithRank = allStudentsWithDetails.map(student => {
             let standardScore = "50.0";
             if (!student.isAbsent) {
@@ -450,21 +419,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             };
         });
 
-        // Sort by score DESC to assign rank
-        // We temporarily filter out absent students to calculate rank, then merge back? 
-        // Or just sort everyone, but skip absent in rank counter.
-        
-        // Strategy: Separate present/absent, rank present, merge.
         const presentResults = resultsWithRank.filter(r => !r.isAbsent);
         const absentResults = resultsWithRank.filter(r => r.isAbsent);
 
         presentResults.sort((a, b) => b.totalScore - a.totalScore);
-        
         presentResults.forEach((result, index) => {
             result.rank = index > 0 && result.totalScore === presentResults[index-1].totalScore ? presentResults[index-1].rank : index + 1;
         });
 
-        // Handle class rank
         const resultsByClass: { [className: string]: typeof presentResults } = {};
         presentResults.forEach(result => {
             if (!resultsByClass[result.class]) resultsByClass[result.class] = [];
@@ -478,22 +440,12 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             });
         });
 
-        // Set null ranks for absent
         absentResults.forEach(r => {
             r.rank = null;
             r.classRank = null;
         });
 
-        // Combine back (order doesn't matter here as it will be sorted in view)
-        // But let's keep original roster order for stability if possible, 
-        // actually useProject returns this array, so typical usage re-sorts it anyway.
-        // We will return the full list.
-        const finalResults = [...presentResults, ...absentResults];
-        
-        // To maintain original index order (roster order) as a base, we can sort by their ID/index if needed,
-        // but since `results` are often sorted by user preference in view, simple concatenation is fine.
-        
-        return finalResults;
+        return [...presentResults, ...absentResults];
     }, [activeProject]);
 
     const studentsWithInfo = useMemo(() => {

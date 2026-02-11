@@ -61,6 +61,14 @@ export enum AreaType {
 
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;
 
+// --- Export/Import Utilities ---
+// Added ExportImportOptions interface to resolve missing member error
+export interface ExportImportOptions {
+    includeTemplate: boolean;
+    includeStudents: boolean;
+    includeAnswers: boolean;
+}
+
 // Core data structures
 export interface TemplatePage {
     imagePath: string;
@@ -71,11 +79,9 @@ export interface TemplatePage {
 export interface Template {
     id: string;
     name: string;
-    // Deprecated single file properties (kept for migration)
     filePath?: string;
     width?: number;
     height?: number;
-    // New multi-page support
     pages: TemplatePage[];
     alignmentMarkIdealCorners?: {
         tl: { x: number, y: number },
@@ -93,7 +99,7 @@ export interface Area {
     y: number;
     width: number;
     height: number;
-    pageIndex: number; // New: Which page this area belongs to (0-based)
+    pageIndex: number;
     questionNumber?: number;
 }
 
@@ -107,8 +113,8 @@ export interface StudentInfo {
 export interface Student {
     id: string;
     originalName: string;
-    filePath: string | null; // Deprecated, use images[0]
-    images: (string | null)[]; // New: Supports multiple pages. Index corresponds to Template.pages index.
+    filePath: string | null;
+    images: (string | null)[];
 }
 
 export interface Roster {
@@ -123,13 +129,11 @@ export interface Point {
     label: string;
     subtotalIds: number[];
     questionNumberAreaId?: number;
-    // For Mark Sheet type areas
     markSheetOptions?: number;
     markSheetLayout?: 'horizontal' | 'vertical';
     correctAnswerIndex?: number;
 }
 
-// Annotation types for grading
 export type AnnotationTool = 'pen' | 'wave' | 'circle' | 'text';
 
 interface BaseAnnotation {
@@ -168,7 +172,7 @@ export interface ScoreData {
     status: ScoringStatus;
     score: number | null;
     annotations?: Annotation[];
-    detectedMarkIndex?: number | number[]; // Supports multiple detected marks
+    detectedMarkIndex?: number | number[];
     manualPanOffset?: { x: number; y: number };
 }
 
@@ -179,7 +183,7 @@ export interface AISettings {
     delayBetweenBatches: number;
     gradingMode: 'quality' | 'speed';
     markSheetSensitivity: number;
-    aiModel: string; // Added model selection
+    aiModel: string;
 }
 
 export interface GradingProject {
@@ -195,7 +199,6 @@ export interface GradingProject {
     lastModified: number;
 }
 
-// Result and Statistics types
 export interface StudentResult extends Student, StudentInfo {
     totalScore: number;
     subtotals: { [subtotalAreaId: number]: number };
@@ -220,24 +223,8 @@ export interface QuestionStats {
     incorrectRate: number;
 }
 
-// UI State types
-export interface DrawState {
-    isDrawing: boolean;
-    isResizing: boolean;
-    isMoving: boolean;
-    startPoint: { x: number, y: number };
-    resizeHandle: string | null;
-    moveStartArea: Area | null;
-}
+export type NumberingStyle = '1' | '(1)' | '[1]' | '①' | 'A' | 'a' | 'I' | 'i' | 'ア' | 'none';
 
-// Export/Import types
-export interface ExportImportOptions {
-    includeTemplate: boolean;
-    includeStudents: boolean;
-    includeAnswers: boolean;
-}
-
-// Answer Sheet Creator types
 export interface SheetCell {
     text: string;
     rowSpan: number;
@@ -257,7 +244,7 @@ export interface SheetCell {
     };
     borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     borderColor?: string;
-    borderWidth?: number; // in pixels (approx)
+    borderWidth?: number;
     type?: 'text' | 'english-grid';
     metadata?: any;
 }
@@ -269,26 +256,23 @@ export interface HeaderElement {
     visible: boolean;
 }
 
-export type NumberingStyle = '1' | '(1)' | '[1]' | '①' | 'A' | 'a' | 'I' | 'i' | 'ア' | 'none';
-
-// Configuration for auto-generation logic
 export interface LayoutConfig {
     name: string;
     paperSize: 'A4' | 'B5' | 'A3';
     borderWidth: number;
     borderColor: string;
-    defaultRowHeight: number; // in mm
-    gapBetweenQuestions?: number; // Number of grid units (0 for no gap)
+    defaultRowHeight: number;
+    gapBetweenQuestions?: number;
     sections: {
         id: string;
         title: string;
-        numberingStyle?: NumberingStyle; // Added numbering style per section
+        numberingStyle?: NumberingStyle;
         questions: {
             id: string;
             type: 'text' | 'marksheet' | 'long_text' | 'english_word';
             widthRatio: number;
-            heightRatio: number; // 1.0 = standard row height
-            lineHeightRatio?: number; // New option for line height
+            heightRatio: number;
+            lineHeightRatio?: number;
             chars?: number;
             choices?: number;
             wordCount?: number;
@@ -296,9 +280,8 @@ export interface LayoutConfig {
             labelOverride?: string;
         }[];
     }[];
-    headerElements?: HeaderElement[]; // Ordered list of header elements
+    headerElements?: HeaderElement[];
     headerPosition?: 'top' | 'bottom';
-    // Legacy support
     headerSettings?: any;
 }
 
@@ -310,10 +293,9 @@ export interface SheetLayout {
     rowHeights: number[];
     colWidths: number[];
     cells: (SheetCell | null)[][];
-    config?: LayoutConfig; // Store the config to allow re-editing
+    config?: LayoutConfig;
 }
 
-// Print settings types
 export interface LayoutSettings {
     mark: {
         show: boolean;

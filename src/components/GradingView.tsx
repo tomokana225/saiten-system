@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { AllScores, ScoreData, GradingFilter, Annotation, Point } from '../types';
 import { AreaType, ScoringStatus } from '../types';
@@ -58,7 +57,6 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
                 const yStart = Math.floor(isHorizontal ? 0 : i * segmentHeight);
                 
                 // Define ROI: Center 50% of the segment to avoid borders and noise
-                // "1ブロックの中の中心に四角を作って"
                 const roiMarginX = segmentWidth * 0.25; 
                 const roiMarginY = segmentHeight * 0.25;
                 
@@ -90,8 +88,6 @@ const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<nu
             }
 
             // 2. Determine "Paper White" baseline
-            // We assume at least one option is NOT marked (empty). 
-            // The brightest option represents the paper color.
             const paperBrightness = Math.max(...roiAverages);
 
             // 3. Find thresholds
@@ -174,8 +170,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         return studentsWithInfo.filter(s => (scores[s.id]?.[selectedAreaId!]?.status || ScoringStatus.UNSCORED) === filter);
     }, [studentsWithInfo, filter, scores, selectedAreaId]);
 
-    // Removed auto-focus logic to prevent scroll interference. 
-    // Users must click to focus and enable image panning.
     useEffect(() => {
         setFocusedStudentId(null);
     }, [selectedAreaId, filter]);
@@ -185,14 +179,12 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         if(isGradingAllMode) setIsGradingAll(true);
         else setIsGrading(true);
         
-        // Filter out students who don't have images
         const studentsToGrade = studentsWithInfo.filter(s => s.images && s.images.length > 0);
         
         const totalGradingTasks = studentsToGrade.length * areaIds.length;
         let completedTasks = 0;
         setProgress({ current: 0, total: totalGradingTasks, message: '準備中...' });
 
-        // Ensure template has pages
         const templatePages = template.pages || (template.filePath ? [{ imagePath: template.filePath, width: template.width, height: template.height }] : []);
 
         for (const areaId of areaIds) {
@@ -209,9 +201,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
 
             setProgress(p => ({ ...p, message: `問題「${point.label}」を採点中...` }));
 
-            // Branch logic for different area types
             if (area.type === AreaType.MARK_SHEET) {
-                // Local Image Analysis for Mark Sheets
                 const updates: { studentId: string; areaId: number; scoreData: ScoreData }[] = [];
                 for (const student of studentsToGrade) {
                     const studentImage = student.images[pageIndex];
@@ -225,7 +215,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     let status = ScoringStatus.INCORRECT;
                     let detectedMarkIndex: number | number[] | undefined = undefined;
 
-                    // If single valid mark found
                     if (typeof detectedMarkResult === 'number') {
                         if (detectedMarkResult >= 0) {
                              if (detectedMarkResult === point.correctAnswerIndex) {
@@ -233,20 +222,16 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                              }
                              detectedMarkIndex = detectedMarkResult;
                         } else {
-                            // -1 (no mark)
                             status = ScoringStatus.INCORRECT;
                             detectedMarkIndex = undefined; 
                         }
                     } else if (Array.isArray(detectedMarkResult)) {
-                        // Multiple marks -> Incorrect
                         status = ScoringStatus.INCORRECT;
                         detectedMarkIndex = detectedMarkResult;
                     }
                         
                     const score = status === ScoringStatus.CORRECT ? point.points : 0;
-                    
                     updates.push({ studentId: student.id, areaId, scoreData: { status, score, detectedMarkIndex }});
-                    
                     completedTasks++;
                     setProgress(p => ({ ...p, current: completedTasks }));
                 }
@@ -259,7 +244,7 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                     return newScores;
                 });
 
-            } else { // AI Grading for Descriptive Answers
+            } else { 
                 if (!masterImage) {
                      completedTasks += studentsToGrade.length;
                      setProgress(p => ({ ...p, current: completedTasks }));
@@ -287,14 +272,13 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                 for (let i = 0; i < validSnippets.length; i += aiSettings.batchSize) {
                     const batch = validSnippets.slice(i, i + aiSettings.batchSize);
                     const result = await callGeminiAPIBatch(
-                        apiKey, 
                         masterSnippet, 
                         batch, 
                         point, 
                         aiGradingMode, 
                         answerFormat, 
                         aiSettings.gradingMode,
-                        aiSettings.aiModel || 'gemini-1.5-flash' // Pass configured model
+                        aiSettings.aiModel || 'gemini-3-flash-preview'
                     );
                     if (result.results) {
                         handleScoresChange(prevScores => {
@@ -386,7 +370,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                 case 'ArrowRight': 
                     nextIndex = findNextValid(currentIndex + 1);
                     if (nextIndex === -1 && currentIndex < filteredStudents.length - 1) {
-                        // If no more valid students, stay or wrap? Currently just stops at last valid.
                     } else if (nextIndex === -1) {
                         nextIndex = currentIndex;
                     }
@@ -401,11 +384,10 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                         if (isStudentValid(targetIndex)) {
                             nextIndex = targetIndex;
                         } else {
-                            // If target slot is invalid, search forward from there
                             nextIndex = findNextValid(targetIndex);
                         }
                     } else {
-                        nextIndex = currentIndex; // Stay if out of bounds
+                        nextIndex = currentIndex; 
                     }
                     break;
                 }
@@ -415,7 +397,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                         if (isStudentValid(targetIndex)) {
                             nextIndex = targetIndex;
                         } else {
-                            // If target slot is invalid, search backward from there
                             nextIndex = findPrevValid(targetIndex);
                         }
                     } else {

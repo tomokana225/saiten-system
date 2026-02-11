@@ -62,7 +62,7 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThres
             if (sx < 0) { sw += sx; sx = 0; } if (sy < 0) { sh += sy; sy = 0; }
             if (sx + sw > canvas.width) sw = canvas.width - sx; if (sy + sh > canvas.height) sh = canvas.height - sy;
             if (sw <= 0 || sh <= 0) return null;
-            return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, sh };
+            return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, h: sh };
         };
         const mainCrop = getCropData(mainArea);
         if (!mainCrop) return { indices: null, debugInfo };
@@ -96,42 +96,42 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThres
         if (refRightArea) {
             const refCrop = getCropData(refRightArea);
             if (refCrop) {
-                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'row');
-                rowCenters = findPeaksInProfile(profile, refCrop.sh, 0.30).map(y => (refCrop.sy + y) - mainCrop.sy);
-                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Right' });
+                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.h, 'row');
+                rowCenters = findPeaksInProfile(profile, refCrop.h, 0.30).map(y => (refCrop.sy + y) - mainCrop.sy);
+                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.h, label: 'User Ref Right' });
             }
         } else {
             const scanXStart = Math.floor(mainCrop.sw * 0.85);
-            const profile = getProjection(mainCrop.imageData, scanXStart, mainCrop.sw, 0, mainCrop.sh, 'row');
-            rowCenters = findPeaksInProfile(profile, mainCrop.sh, 0.35);
-            debugInfo.scanZones?.push({ x: scanXStart, y: 0, w: mainCrop.sw - scanXStart, h: mainCrop.sh, label: 'Auto Ref Right' });
+            const profile = getProjection(mainCrop.imageData, scanXStart, mainCrop.sw, 0, mainCrop.h, 'row');
+            rowCenters = findPeaksInProfile(profile, mainCrop.h, 0.35);
+            debugInfo.scanZones?.push({ x: scanXStart, y: 0, w: mainCrop.sw - scanXStart, h: mainCrop.h, label: 'Auto Ref Right' });
         }
 
         let colCenters: number[] = [];
         if (refBottomArea) {
             const refCrop = getCropData(refBottomArea);
             if (refCrop) {
-                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.sh, 'col');
+                const profile = getProjection(refCrop.imageData, 0, refCrop.sw, 0, refCrop.h, 'col');
                 colCenters = findPeaksInProfile(profile, refCrop.sw, 0.30).map(x => (refCrop.sx + x) - mainCrop.sx);
-                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.sh, label: 'User Ref Bottom' });
+                debugInfo.scanZones?.push({ x: refCrop.sx - mainCrop.sx, y: refCrop.sy - mainCrop.sy, w: refCrop.sw, h: refCrop.h, label: 'User Ref Bottom' });
             }
         } else {
-            const scanYStart = Math.floor(mainCrop.sh * 0.85);
-            const profile = getProjection(mainCrop.imageData, 0, mainCrop.sw, scanYStart, mainCrop.sh, 'col');
+            const scanYStart = Math.floor(mainCrop.h * 0.85);
+            const profile = getProjection(mainCrop.imageData, 0, mainCrop.sw, scanYStart, mainCrop.h, 'col');
             colCenters = findPeaksInProfile(profile, mainCrop.sw, 0.35);
-            debugInfo.scanZones?.push({ x: 0, y: scanYStart, w: mainCrop.sw, h: mainCrop.sh - scanYStart, label: 'Auto Ref Bottom' });
+            debugInfo.scanZones?.push({ x: 0, y: scanYStart, w: mainCrop.sw, h: mainCrop.h - scanYStart, label: 'Auto Ref Bottom' });
         }
 
-        if (rowCenters.length < 1) rowCenters = [mainCrop.sh / 6, mainCrop.sh / 2, mainCrop.sh * 5/6];
+        if (rowCenters.length < 1) rowCenters = [mainCrop.h / 6, mainCrop.h / 2, mainCrop.h * 5/6];
         if (colCenters.length < 1) for(let i=0; i<10; i++) colCenters.push(mainCrop.sw / 10 * i + mainCrop.sw / 20);
 
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
         if (rowCenters.length > 0) {
-            const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : (mainCrop.sh / rowCenters.length);
+            const firstStep = rowCenters.length > 1 ? (rowCenters[1] - rowCenters[0]) : (mainCrop.h / rowCenters.length);
             rowBoundaries.push(Math.max(0, rowCenters[0] - firstStep/2));
             for(let i=0; i < rowCenters.length - 1; i++) rowBoundaries.push((rowCenters[i] + rowCenters[i+1]) / 2);
-            rowBoundaries.push(mainCrop.sh);
+            rowBoundaries.push(mainCrop.h);
         }
         if (colCenters.length > 0) {
             const firstStep = colCenters.length > 1 ? (colCenters[1] - colCenters[0]) : (mainCrop.sw / colCenters.length);
@@ -145,7 +145,7 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThres
         const indices: number[] = [];
         for (let r = 0; r < rowCenters.length; r++) {
             const rowScores: {colIdx: number, darkness: number}[] = [];
-            const cellTop = rowBoundaries[r]; const cellHeight = (rowBoundaries[r+1] || mainCrop.sh) - cellTop;
+            const cellTop = rowBoundaries[r]; const cellHeight = (rowBoundaries[r+1] || mainCrop.h) - cellTop;
             for (let c = 0; c < colCenters.length; c++) {
                 const cellLeft = colBoundaries[c]; const cellWidth = (colBoundaries[c+1] || mainCrop.sw) - cellLeft;
                 const roiW = Math.max(2, cellWidth * 0.4); const roiH = Math.max(2, cellHeight * 0.4);
@@ -216,8 +216,6 @@ export const StudentVerificationEditor = () => {
     
     // Default to template pages, but allow user override for 1-sided template with 2-sided scans
     const [pagesPerStudentOverride, setPagesPerStudentOverride] = useState<number>(() => {
-        // Simple heuristic: if we have roughly 2x images as students, default to 2?
-        // But safe default is template pages.
         return template?.pages?.length || 1;
     });
 
@@ -232,13 +230,12 @@ export const StudentVerificationEditor = () => {
 
     // --- Image Manipulation Logic ---
 
-    // Reorder images for different scanning patterns
     const handleReorderImages = (mode: 'interleaved' | 'stacked' | 'stacked-reverse') => {
         const flatImages: string[] = [];
         uploadedSheets.forEach(s => s.images.forEach(img => { if (img) flatImages.push(img); }));
         
         const P = pagesPerStudent;
-        if (P <= 1) return; // No difference for 1 page/student
+        if (P <= 1) return;
 
         const N = flatImages.length;
         const S = Math.ceil(N / P);
@@ -246,7 +243,6 @@ export const StudentVerificationEditor = () => {
         const newSheets: Student[] = [];
 
         if (mode === 'interleaved') {
-            // Standard: Take P images for each student sequentially (1-1, 1-2, 2-1, 2-2...)
             for (let i = 0; i < N; i += P) {
                 const chunk = flatImages.slice(i, i + P);
                 while (chunk.length < P) chunk.push(null);
@@ -261,15 +257,12 @@ export const StudentVerificationEditor = () => {
                 });
             }
         } else {
-            // Stacked: Student s gets images [s, s+S, s+2S...]
             for (let s = 0; s < S; s++) {
                 const studentImages: (string | null)[] = [];
                 for (let p = 0; p < P; p++) {
                     const stackStart = p * S;
-                    let idx = stackStart + s; // Default: forward order for this stack
+                    let idx = stackStart + s;
 
-                    // If 'stacked-reverse' mode and it's a "back" side page (assuming alternating 1st=front, 2nd=back)
-                    // We treat odd index pages (1, 3...) as reversed stacks.
                     if (mode === 'stacked-reverse' && p % 2 !== 0) {
                         idx = stackStart + (S - 1 - s);
                     }
@@ -291,7 +284,6 @@ export const StudentVerificationEditor = () => {
 
     const handleChangeGrouping = (newStride: number) => {
         setPagesPerStudentOverride(newStride);
-        // If we change stride, we usually assume interleaved re-balance from current state
         const flatImages: (string | null)[] = [];
         uploadedSheets.forEach(s => flatImages.push(...s.images));
         
@@ -322,7 +314,6 @@ export const StudentVerificationEditor = () => {
             flatImages.splice(globalIndex, 1);
         }
         
-        // Re-apply current grouping
         const newSheets: Student[] = [];
         for (let i = 0; i < flatImages.length; i += pagesPerStudent) {
             const chunk = flatImages.slice(i, i + pagesPerStudent);
@@ -352,17 +343,14 @@ export const StudentVerificationEditor = () => {
     const handleAppendSheets = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         const files = Array.from(e.target.files) as File[];
-        e.target.value = ''; // Reset input to allow selecting same file again
+        e.target.value = '';
 
         try {
             const processedFiles = await uploadFilesRaw(files);
-            
-            // Create new student entries based on current page stride
             const newSheets: Student[] = [];
             for (let i = 0; i < processedFiles.length; i += pagesPerStudent) {
                 const chunk = processedFiles.slice(i, i + pagesPerStudent);
                 const images = chunk.map(f => f.path);
-                // Pad if necessary
                 while (images.length < pagesPerStudent) images.push(null);
                 
                 newSheets.push({
@@ -373,7 +361,6 @@ export const StudentVerificationEditor = () => {
                 });
             }
 
-            // Append to existing
             const updatedSheets = [...uploadedSheets, ...newSheets];
             handleStudentSheetsChange(updatedSheets);
         } catch (err) {
@@ -426,25 +413,20 @@ export const StudentVerificationEditor = () => {
             alert('テンプレート編集画面で「学籍番号」エリアを設定してください。');
             return;
         }
-        // Collect ALL valid images from the current state
         const allImages = uploadedSheets.flatMap(s => s.images).filter(img => img !== null);
         if (allImages.length === 0) return;
 
         setIsSorting(true);
         setDebugInfos({}); 
-        setMovedStudentIndices(new Set()); // Reset highlights
+        setMovedStudentIndices(new Set());
 
         let matchCount = 0;
         const newMovedIndices = new Set<number>();
 
         try {
-            // 1. Analyze EVERY image independently
             const analyzedImages = await Promise.all(allImages.map(async (image) => {
                 if (!image) return { image, indices: null };
-                
-                // We search for ID on every image using the ID area definition.
-                // We ignore pageIndex here and apply the geometry to *every* image to check for marks.
-                const { indices, debugInfo } = await analyzeStudentIdMark(
+                const { indices } = await analyzeStudentIdMark(
                     image, 
                     studentIdArea,
                     markThreshold,
@@ -454,7 +436,6 @@ export const StudentVerificationEditor = () => {
                 return { image, indices };
             }));
 
-            // 2. Buckets for each student index
             const studentImageBuckets: Record<number, string[]> = {};
             const unmatchedImages: string[] = [];
 
@@ -462,7 +443,6 @@ export const StudentVerificationEditor = () => {
                 if (!image) return;
 
                 if (indices) {
-                    // Try to match this detected ID to a student in the roster
                     const detectedId_TypeA = indices.map(i => i.toString()).join(''); 
                     const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); 
                     const candidates = [detectedId_TypeA, detectedId_TypeB];
@@ -495,7 +475,6 @@ export const StudentVerificationEditor = () => {
                 }
             });
 
-            // 3. Reconstruct Student objects using current grouping
             const newSheets: Student[] = studentInfoList.map((info, index) => {
                 const assignedImages = studentImageBuckets[index] || [];
                 
@@ -520,7 +499,6 @@ export const StudentVerificationEditor = () => {
                 };
             });
 
-            // 4. Append unmatched images as new rows
             for (let i = 0; i < unmatchedImages.length; i += pagesPerStudent) {
                 const chunk = unmatchedImages.slice(i, i + pagesPerStudent);
                 while (chunk.length < pagesPerStudent) chunk.push(null);
@@ -696,7 +674,7 @@ export const StudentVerificationEditor = () => {
                             return (
                                 <div 
                                     key={sheet?.id || `empty-sheet-${studentIdx}`}
-                                    className={`relative flex items-stretch gap-2 p-2 rounded-md border transition-all min-h-[140px] ${
+                                    className={`relative flex items-stretch gap-2 p-2 rounded-md border transition-all h-[140px] flex-shrink-0 ${
                                         isMoved 
                                             ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-500' 
                                             : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
@@ -721,15 +699,10 @@ export const StudentVerificationEditor = () => {
                                         {Array.from({ length: pagesPerStudent }).map((_, pageIdx) => {
                                             const image = sheet?.images[pageIdx];
                                             
-                                            // Determine the area to show
-                                            // 1. Name area on this page?
                                             let targetArea = areas.find(a => a.type === AreaType.NAME && (a.pageIndex || 0) === pageIdx);
-                                            // 2. ID area on this page?
                                             if (!targetArea) targetArea = areas.find(a => a.type === AreaType.STUDENT_ID_MARK && (a.pageIndex || 0) === pageIdx);
-                                            // 3. Fallback to full page
                                             if (!targetArea) targetArea = fullPageArea(pageIdx);
 
-                                            // If debug is on and we are on ID page, force ID area
                                             if (showDebugGrid && studentIdArea && studentIdArea.pageIndex === pageIdx) {
                                                 targetArea = studentIdArea;
                                             }
@@ -756,7 +729,6 @@ export const StudentVerificationEditor = () => {
                                                                     imageSrc={image} 
                                                                     area={targetArea} 
                                                                     template={template}
-                                                                    // Add more padding if it's the Name area to give context, but 0 for full page
                                                                     padding={targetArea.type === AreaType.NAME ? 10 : 0} 
                                                                 >
                                                                     {isDebugTarget && debugInfo && (
@@ -765,7 +737,6 @@ export const StudentVerificationEditor = () => {
                                                                         </div>
                                                                     )}
                                                                 </AnswerSnippet>
-                                                                {/* Overlay Controls for easier access */}
                                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
                                                             </>
                                                         ) : (
@@ -793,7 +764,7 @@ export const StudentVerificationEditor = () => {
                         ))}
                     </div>
 
-                    {/* Right Column: Student Info (Fixed height matching the left side roughly, simplified) */}
+                    {/* Right Column: Student Info */}
                     <div className="flex-1 flex flex-col gap-2">
                         <div className="h-10 flex items-center justify-center font-semibold text-center bg-slate-200 dark:bg-slate-700 rounded-md sticky top-0 z-10">生徒情報 ({studentInfoList.length})</div>
                         {Array.from({ length: Math.max(studentInfoList.length, numRows) }).map((_, index) => {
