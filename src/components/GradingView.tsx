@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { AllScores, ScoreData, GradingFilter, Annotation, Point } from '../types';
+import type { AllScores, ScoreData, GradingFilter, Annotation, Point, Area } from '../types';
 import { AreaType, ScoringStatus } from '../types';
 import { callGeminiAPIBatch } from '../api/gemini';
 import { QuestionSidebar } from './grading/QuestionSidebar';
@@ -31,88 +32,123 @@ const cropImage = async (imagePath: string, area: import('../types').Area): Prom
     });
 };
 
-const analyzeMarkSheetSnippet = async (base64: string, point: Point): Promise<number | number[]> => {
-    return new Promise((resolve) => {
+const findPeaksInProfile = (profile: number[], thresholdRatio: number = 0.35): number[] => {
+    const peaks: number[] = [];
+    let inPeak = false; let peakSum = 0; let peakMass = 0;
+    const maxVal = Math.max(...profile); const threshold = Math.max(5, maxVal * thresholdRatio);
+    for (let i = 0; i < profile.length; i++) {
+        const val = profile[i];
+        if (val > threshold) {
+            if (!inPeak) { inPeak = true; peakSum = 0; peakMass = 0; }
+            peakSum += i * val; peakMass += val;
+        } else {
+            if (inPeak) { inPeak = false; if (peakMass > 0) peaks.push(peakSum / peakMass); }
+        }
+    }
+    if (inPeak && peakMass > 0) peaks.push(peakSum / peakMass);
+    return peaks;
+};
+
+const analyzeMarkSheetSnippetAdvanced = async (
+    imagePath: string, 
+    mainArea: Area, 
+    point: Point, 
+    refRightArea?: Area, 
+    refBottomArea?: Area,
+    markThreshold: number = 160
+): Promise<{ index: number | number[], positions: {x: number, y: number}[] }> => {
+    return new Promise(async (resolve) => {
+        const result = await window.electronAPI.invoke('get-image-details', imagePath);
+        if (!result.success || !result.details?.url) return resolve({ index: -1, positions: [] });
+        
         const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (!ctx) return resolve(-1);
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, img.width, img.height);
-            const data = imageData.data;
+        img.src = result.details.url;
+        await new Promise((res) => { img.onload = res; img.onerror = res; });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return resolve({ index: -1, positions: [] });
+        ctx.drawImage(img, 0, 0);
 
-            const options = point.markSheetOptions || 4;
-            const isHorizontal = point.markSheetLayout === 'horizontal';
-            const segmentWidth = isHorizontal ? img.width / options : img.width;
-            const segmentHeight = isHorizontal ? img.height : img.height / options;
-            
-            const roiAverages: number[] = [];
-
-            // 1. Calculate average brightness for the CENTER ROI of each option
-            for (let i = 0; i < options; i++) {
-                const xStart = Math.floor(isHorizontal ? i * segmentWidth : 0);
-                const yStart = Math.floor(isHorizontal ? 0 : i * segmentHeight);
-                
-                // Define ROI: Center 50% of the segment to avoid borders and noise
-                const roiMarginX = segmentWidth * 0.25; 
-                const roiMarginY = segmentHeight * 0.25;
-                
-                const roiX = Math.floor(xStart + roiMarginX);
-                const roiY = Math.floor(yStart + roiMarginY);
-                const roiW = Math.ceil(segmentWidth * 0.5);
-                const roiH = Math.ceil(segmentHeight * 0.5);
-
-                let totalBrightness = 0;
-                let pixelCount = 0;
-
-                for (let y = roiY; y < roiY + roiH; y++) {
-                    for (let x = roiX; x < roiX + roiW; x++) {
-                        // Boundary check
-                        if (x < 0 || x >= img.width || y < 0 || y >= img.height) continue;
-
-                        const idx = (y * img.width + x) * 4;
-                        const r = data[idx];
-                        const g = data[idx + 1];
-                        const b = data[idx + 2];
-                        // Simple grayscale
-                        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                        totalBrightness += gray;
-                        pixelCount++;
+        const getProjection = (area: Area, direction: 'row' | 'col') => {
+            const data = ctx.getImageData(area.x, area.y, area.width, area.height).data;
+            const size = direction === 'row' ? area.height : area.width;
+            const profile = new Array(size).fill(0);
+            for (let y = 0; y < area.height; y++) {
+                for (let x = 0; x < area.width; x++) {
+                    const idx = (y * area.width + x) * 4;
+                    const gray = 0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2];
+                    if (gray < markThreshold) {
+                        if (direction === 'row') profile[y]++; else profile[x]++;
                     }
                 }
-                
-                roiAverages[i] = pixelCount > 0 ? totalBrightness / pixelCount : 255;
             }
-
-            // 2. Determine "Paper White" baseline
-            const paperBrightness = Math.max(...roiAverages);
-
-            // 3. Find thresholds
-            const thresholdRatio = 0.80; 
-            const minDiff = 30;
-
-            const markedIndices: number[] = [];
-            
-            roiAverages.forEach((brightness, index) => {
-                const isDarkEnough = (brightness < paperBrightness * thresholdRatio) && ((paperBrightness - brightness) > minDiff);
-                if (isDarkEnough) {
-                    markedIndices.push(index);
-                }
-            });
-
-            if (markedIndices.length === 0) {
-                resolve(-1); // No mark detected
-            } else if (markedIndices.length === 1) {
-                resolve(markedIndices[0]); // Single mark
-            } else {
-                resolve(markedIndices); // Multiple marks
-            }
+            return profile;
         };
-        img.onerror = () => resolve(-1);
-        img.src = `data:image/png;base64,${base64}`;
+
+        const options = point.markSheetOptions || 4;
+        const isHorizontal = point.markSheetLayout === 'horizontal';
+        
+        // 1. Determine Grid Coordinates
+        let rowCenters: number[] = [];
+        let colCenters: number[] = [];
+
+        if (isHorizontal) {
+            // Horizontal layout: usually 1 row, multiple columns
+            rowCenters = [mainArea.y + mainArea.height / 2];
+            if (refBottomArea) {
+                const profile = getProjection(refBottomArea, 'col');
+                colCenters = findPeaksInProfile(profile, 0.3).map(x => refBottomArea.x + x);
+            } else {
+                for(let i=0; i<options; i++) colCenters.push(mainArea.x + (mainArea.width / options) * (i + 0.5));
+            }
+        } else {
+            // Vertical layout: multiple rows, 1 column
+            colCenters = [mainArea.x + mainArea.width / 2];
+            if (refRightArea) {
+                const profile = getProjection(refRightArea, 'row');
+                rowCenters = findPeaksInProfile(profile, 0.3).map(y => refRightArea.y + y);
+            } else {
+                for(let i=0; i<options; i++) rowCenters.push(mainArea.y + (mainArea.height / options) * (i + 0.5));
+            }
+        }
+
+        // Ensure we have correct number of centers
+        if (!isHorizontal && rowCenters.length !== options) {
+            rowCenters = []; for(let i=0; i<options; i++) rowCenters.push(mainArea.y + (mainArea.height / options) * (i + 0.5));
+        }
+        if (isHorizontal && colCenters.length !== options) {
+            colCenters = []; for(let i=0; i<options; i++) colCenters.push(mainArea.x + (mainArea.width / options) * (i + 0.5));
+        }
+
+        // 2. Sample Each Point
+        const scanPositions: {x: number, y: number}[] = [];
+        const darknessScores: number[] = [];
+        const roiSize = 6;
+
+        for (let i = 0; i < options; i++) {
+            const cx = isHorizontal ? colCenters[i] : colCenters[0];
+            const cy = isHorizontal ? rowCenters[0] : rowCenters[i];
+            scanPositions.push({ x: cx, y: cy });
+
+            let darkCount = 0;
+            const roiData = ctx.getImageData(cx - roiSize/2, cy - roiSize/2, roiSize, roiSize).data;
+            for(let k=0; k < roiData.length; k+=4) {
+                const gray = 0.299 * roiData[k] + 0.587 * roiData[k+1] + 0.114 * roiData[k+2];
+                if (gray < markThreshold) darkCount++;
+            }
+            darknessScores.push(darkCount);
+        }
+
+        // 3. Evaluate results
+        const marks: number[] = [];
+        const fillThreshold = (roiSize * roiSize) * 0.3; // 30% fill
+        darknessScores.forEach((s, idx) => { if (s > fillThreshold) marks.push(idx); });
+
+        if (marks.length === 1) resolve({ index: marks[0], positions: scanPositions });
+        else if (marks.length > 1) resolve({ index: marks, positions: scanPositions });
+        else resolve({ index: -1, positions: scanPositions });
     });
 };
 
@@ -180,7 +216,6 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         else setIsGrading(true);
         
         const studentsToGrade = studentsWithInfo.filter(s => s.images && s.images.length > 0);
-        
         const totalGradingTasks = studentsToGrade.length * areaIds.length;
         let completedTasks = 0;
         setProgress({ current: 0, total: totalGradingTasks, message: '準備中...' });
@@ -202,36 +237,23 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
             setProgress(p => ({ ...p, message: `問題「${point.label}」を採点中...` }));
 
             if (area.type === AreaType.MARK_SHEET) {
+                const refRight = point.markRefRightAreaId ? areas.find(a => a.id === point.markRefRightAreaId) : undefined;
+                const refBottom = point.markRefBottomAreaId ? areas.find(a => a.id === point.markRefBottomAreaId) : undefined;
+
                 const updates: { studentId: string; areaId: number; scoreData: ScoreData }[] = [];
                 for (const student of studentsToGrade) {
                     const studentImage = student.images[pageIndex];
                     if (!studentImage) continue;
                     
-                    const studentSnippet = await cropImage(studentImage, area);
-                    if (!studentSnippet) continue;
-                    
-                    const detectedMarkResult = await analyzeMarkSheetSnippet(studentSnippet, point);
+                    const { index: detectedIndex, positions } = await analyzeMarkSheetSnippetAdvanced(
+                        studentImage, area, point, refRight, refBottom
+                    );
                     
                     let status = ScoringStatus.INCORRECT;
-                    let detectedMarkIndex: number | number[] | undefined = undefined;
-
-                    if (typeof detectedMarkResult === 'number') {
-                        if (detectedMarkResult >= 0) {
-                             if (detectedMarkResult === point.correctAnswerIndex) {
-                                 status = ScoringStatus.CORRECT;
-                             }
-                             detectedMarkIndex = detectedMarkResult;
-                        } else {
-                            status = ScoringStatus.INCORRECT;
-                            detectedMarkIndex = undefined; 
-                        }
-                    } else if (Array.isArray(detectedMarkResult)) {
-                        status = ScoringStatus.INCORRECT;
-                        detectedMarkIndex = detectedMarkResult;
-                    }
+                    if (typeof detectedIndex === 'number' && detectedIndex === point.correctAnswerIndex) status = ScoringStatus.CORRECT;
                         
                     const score = status === ScoringStatus.CORRECT ? point.points : 0;
-                    updates.push({ studentId: student.id, areaId, scoreData: { status, score, detectedMarkIndex }});
+                    updates.push({ studentId: student.id, areaId, scoreData: { status, score, detectedMarkIndex: detectedIndex, detectedPositions: positions }});
                     completedTasks++;
                     setProgress(p => ({ ...p, current: completedTasks }));
                 }
@@ -245,61 +267,30 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
                 });
 
             } else { 
-                if (!masterImage) {
-                     completedTasks += studentsToGrade.length;
-                     setProgress(p => ({ ...p, current: completedTasks }));
-                     continue;
-                }
-                
+                if (!masterImage) { completedTasks += studentsToGrade.length; setProgress(p => ({ ...p, current: completedTasks })); continue; }
                 const masterSnippet = await cropImage(masterImage, area);
-                if (!masterSnippet) {
-                    completedTasks += studentsToGrade.length;
-                    setProgress(p => ({ ...p, current: completedTasks }));
-                    continue;
-                }
+                if (!masterSnippet) { completedTasks += studentsToGrade.length; setProgress(p => ({ ...p, current: completedTasks })); continue; }
                 const studentSnippets = await Promise.all(
-                    studentsToGrade.map(async (student) => {
-                        const studentImage = student.images[pageIndex];
-                        return {
-                            studentId: student.id,
-                            base64: studentImage ? await cropImage(studentImage, area) : null
-                        };
-                    })
+                    studentsToGrade.map(async (student) => ({ studentId: student.id, base64: student.images[pageIndex] ? await cropImage(student.images[pageIndex]!, area) : null }))
                 );
-                
                 const validSnippets = studentSnippets.filter(s => s.base64 !== null) as { studentId: string, base64: string }[];
 
                 for (let i = 0; i < validSnippets.length; i += aiSettings.batchSize) {
                     const batch = validSnippets.slice(i, i + aiSettings.batchSize);
-                    const result = await callGeminiAPIBatch(
-                        masterSnippet, 
-                        batch, 
-                        point, 
-                        aiGradingMode, 
-                        answerFormat, 
-                        aiSettings.gradingMode,
-                        aiSettings.aiModel || 'gemini-3-flash-preview'
-                    );
+                    const result = await callGeminiAPIBatch(masterSnippet, batch, point, aiGradingMode, answerFormat, aiSettings.gradingMode, aiSettings.aiModel || 'gemini-3-flash-preview');
                     if (result.results) {
                         handleScoresChange(prevScores => {
                             const newScores = { ...prevScores };
-                            result.results.forEach((res: any) => {
-                                const { studentId, status, score } = res;
-                                if (!newScores[studentId]) newScores[studentId] = {};
-                                newScores[studentId][areaId] = { status, score };
-                            });
+                            result.results.forEach((res: any) => { if (!newScores[res.studentId]) newScores[res.studentId] = {}; newScores[res.studentId][areaId] = { status: res.status, score: res.score }; });
                             return newScores;
                         });
-                    } else {
-                        console.error("AI grading batch failed:", result.error);
                     }
                     completedTasks += batch.length;
                     setProgress(p => ({ ...p, current: completedTasks }));
                 }
             }
         }
-        if(isGradingAllMode) setIsGradingAll(false);
-        else setIsGrading(false);
+        if(isGradingAllMode) setIsGradingAll(false); else setIsGrading(false);
         setProgress({ current: 0, total: 0, message: '' });
     };
 
@@ -338,117 +329,37 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (annotatingStudent || (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
             if (!focusedStudentId || !selectedAreaId) return;
-            
             const area = areas.find(a => a.id === selectedAreaId);
             const pageIndex = area?.pageIndex || 0;
-
-            const isStudentValid = (idx: number) => {
-                if (idx < 0 || idx >= filteredStudents.length) return false;
-                const s = filteredStudents[idx];
-                return s && s.images && !!s.images[pageIndex];
-            };
-
-            const findNextValid = (startIndex: number): number => {
-                for (let i = startIndex; i < filteredStudents.length; i++) {
-                    if (isStudentValid(i)) return i;
-                }
-                return -1;
-            };
-
-            const findPrevValid = (startIndex: number): number => {
-                for (let i = startIndex; i >= 0; i--) {
-                    if (isStudentValid(i)) return i;
-                }
-                return -1;
-            };
-
+            const isStudentValid = (idx: number) => { if (idx < 0 || idx >= filteredStudents.length) return false; const s = filteredStudents[idx]; return s && s.images && !!s.images[pageIndex]; };
+            const findNextValid = (startIndex: number): number => { for (let i = startIndex; i < filteredStudents.length; i++) if (isStudentValid(i)) return i; return -1; };
+            const findPrevValid = (startIndex: number): number => { for (let i = startIndex; i >= 0; i--) if (isStudentValid(i)) return i; return -1; };
             const currentIndex = filteredStudents.findIndex(s => s.id === focusedStudentId);
             if (currentIndex === -1) return;
-            
             let nextIndex = -1;
             switch (e.key) {
-                case 'ArrowRight': 
-                    nextIndex = findNextValid(currentIndex + 1);
-                    if (nextIndex === -1 && currentIndex < filteredStudents.length - 1) {
-                    } else if (nextIndex === -1) {
-                        nextIndex = currentIndex;
-                    }
-                    break;
-                case 'ArrowLeft': 
-                    nextIndex = findPrevValid(currentIndex - 1);
-                    if (nextIndex === -1) nextIndex = currentIndex;
-                    break;
-                case 'ArrowDown': {
-                    const targetIndex = currentIndex + columnCount;
-                    if (targetIndex < filteredStudents.length) {
-                        if (isStudentValid(targetIndex)) {
-                            nextIndex = targetIndex;
-                        } else {
-                            nextIndex = findNextValid(targetIndex);
-                        }
-                    } else {
-                        nextIndex = currentIndex; 
-                    }
-                    break;
-                }
-                case 'ArrowUp': {
-                    const targetIndex = currentIndex - columnCount;
-                    if (targetIndex >= 0) {
-                        if (isStudentValid(targetIndex)) {
-                            nextIndex = targetIndex;
-                        } else {
-                            nextIndex = findPrevValid(targetIndex);
-                        }
-                    } else {
-                        nextIndex = currentIndex;
-                    }
-                    break;
-                }
-                case 'j': case 'J': 
-                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.CORRECT, score: points.find(p => p.id === selectedAreaId)?.points || 0 });
-                    nextIndex = findNextValid(currentIndex + 1);
-                    break;
-                case 'f': case 'F': 
-                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.INCORRECT, score: 0 });
-                    nextIndex = findNextValid(currentIndex + 1);
-                    break;
+                case 'ArrowRight': nextIndex = findNextValid(currentIndex + 1); if (nextIndex === -1) nextIndex = currentIndex; break;
+                case 'ArrowLeft': nextIndex = findPrevValid(currentIndex - 1); if (nextIndex === -1) nextIndex = currentIndex; break;
+                case 'ArrowDown': { const targetIndex = currentIndex + columnCount; if (targetIndex < filteredStudents.length) nextIndex = isStudentValid(targetIndex) ? targetIndex : findNextValid(targetIndex); else nextIndex = currentIndex; break; }
+                case 'ArrowUp': { const targetIndex = currentIndex - columnCount; if (targetIndex >= 0) nextIndex = isStudentValid(targetIndex) ? targetIndex : findPrevValid(targetIndex); else nextIndex = currentIndex; break; }
+                case 'j': case 'J': updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.CORRECT, score: points.find(p => p.id === selectedAreaId)?.points || 0 }); nextIndex = findNextValid(currentIndex + 1); break;
+                case 'f': case 'F': updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.INCORRECT, score: 0 }); nextIndex = findNextValid(currentIndex + 1); break;
                 case 'a': case 'A': e.preventDefault(); setAnnotatingStudent({ studentId: focusedStudentId, areaId: selectedAreaId }); break;
                 case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': {
-                    e.preventDefault();
-                    const newInput = partialScoreInput + e.key;
-                    const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
-                    const newScore = Math.min(parseInt(newInput, 10), maxPoints);
-                    
-                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: newScore });
-                    setPartialScoreInput(newInput);
-                    break;
+                    e.preventDefault(); const newInput = partialScoreInput + e.key; const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
+                    updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: Math.min(parseInt(newInput, 10), maxPoints) }); setPartialScoreInput(newInput); break;
                 }
                 case 'Backspace': {
-                    e.preventDefault();
-                    const croppedInput = partialScoreInput.slice(0, -1);
-                    setPartialScoreInput(croppedInput);
-                    
+                    e.preventDefault(); const croppedInput = partialScoreInput.slice(0, -1); setPartialScoreInput(croppedInput);
                     const maxPoints = points.find(p => p.id === selectedAreaId)?.points || 0;
-                    if (croppedInput === '') {
-                        updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: null });
-                    } else {
-                        const newScore = Math.min(parseInt(croppedInput, 10), maxPoints);
-                        updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: newScore });
-                    }
-                    break;
+                    if (croppedInput === '') updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: null });
+                    else updateScore(focusedStudentId, selectedAreaId, { status: ScoringStatus.PARTIAL, score: Math.min(parseInt(croppedInput, 10), maxPoints) }); break;
                 }
-                case 'Enter':
-                    if (partialScoreInput) {
-                        setPartialScoreInput('');
-                        nextIndex = findNextValid(currentIndex + 1);
-                    }
-                    break;
+                case 'Enter': if (partialScoreInput) { setPartialScoreInput(''); nextIndex = findNextValid(currentIndex + 1); } break;
                 default: return;
             }
             if (nextIndex !== -1 && nextIndex !== currentIndex && nextIndex < filteredStudents.length) {
-                e.preventDefault();
-                const nextStudentId = filteredStudents[nextIndex].id;
-                setFocusedStudentId(nextStudentId);
+                e.preventDefault(); const nextStudentId = filteredStudents[nextIndex].id; setFocusedStudentId(nextStudentId);
                 document.getElementById(`student-card-${nextStudentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         };
@@ -467,56 +378,14 @@ export const GradingView: React.FC<GradingViewProps> = ({ apiKey }) => {
         return { student, area, initialAnnotations };
     }, [annotatingStudent, studentsWithInfo, areas, scores]);
 
-    if (!selectedAreaId) {
-        return <div className="flex items-center justify-center h-full">問題を選択してください。</div>;
-    }
+    if (!selectedAreaId) return <div className="flex items-center justify-center h-full">問題を選択してください。</div>;
 
     return (
         <div className="flex h-full gap-4">
             <QuestionSidebar answerAreas={answerAreas} points={points} scores={scores} students={studentsWithInfo} selectedAreaId={selectedAreaId} onSelectArea={setSelectedAreaId} isDisabled={isGrading || isGradingAll} />
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                <GradingHeader 
-                    selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
-                    onStartAIGrading={handleStartAIGrading} 
-                    onStartMarkSheetGrading={handleStartMarkSheetGrading} 
-                    onStartAIGradingAll={handleStartAIGradingAll} 
-                    isGrading={isGrading} 
-                    isGradingAll={isGradingAll} 
-                    progress={progress} 
-                    filter={filter} 
-                    onFilterChange={setFilter} 
-                    apiKey={apiKey} 
-                    columnCount={columnCount} 
-                    onColumnCountChange={setColumnCount} 
-                    onBulkScore={handleBulkScore} 
-                    aiGradingMode={aiGradingMode} 
-                    onAiGradingModeChange={setAiGradingMode} 
-                    answerFormat={answerFormat} 
-                    onAnswerFormatChange={setAnswerFormat} 
-                    isImageEnhanced={isImageEnhanced} 
-                    onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} 
-                    autoAlign={autoAlign}
-                    onToggleAutoAlign={() => setAutoAlign(!autoAlign)}
-                />
-                <StudentAnswerGrid 
-                    students={filteredStudents} 
-                    selectedAreaId={selectedAreaId} 
-                    template={template} 
-                    areas={areas} 
-                    points={points} 
-                    scores={scores} 
-                    onScoreChange={updateScore} 
-                    onStartAnnotation={(studentId, areaId) => setAnnotatingStudent({ studentId, areaId })} 
-                    onPanCommit={handlePanCommit} 
-                    gradingStatus={{}} 
-                    columnCount={columnCount} 
-                    focusedStudentId={focusedStudentId} 
-                    onStudentFocus={setFocusedStudentId} 
-                    partialScoreInput={partialScoreInput} 
-                    correctedImages={correctedImages} 
-                    isImageEnhanced={isImageEnhanced} 
-                    autoAlign={autoAlign}
-                />
+                <GradingHeader selectedArea={answerAreas.find(a => a.id === selectedAreaId)} onStartAIGrading={handleStartAIGrading} onStartMarkSheetGrading={handleStartMarkSheetGrading} onStartAIGradingAll={handleStartAIGradingAll} isGrading={isGrading} isGradingAll={isGradingAll} progress={progress} filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={handleBulkScore} aiGradingMode={aiGradingMode} onAiGradingModeChange={setAiGradingMode} answerFormat={answerFormat} onAnswerFormatChange={setAnswerFormat} isImageEnhanced={isImageEnhanced} onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} autoAlign={autoAlign} onToggleAutoAlign={() => setAutoAlign(!autoAlign)} />
+                <StudentAnswerGrid students={filteredStudents} selectedAreaId={selectedAreaId} template={template} areas={areas} points={points} scores={scores} onScoreChange={updateScore} onStartAnnotation={(studentId, areaId) => setAnnotatingStudent({ studentId, areaId })} onPanCommit={handlePanCommit} gradingStatus={{}} columnCount={columnCount} focusedStudentId={focusedStudentId} onStudentFocus={setFocusedStudentId} partialScoreInput={partialScoreInput} correctedImages={correctedImages} isImageEnhanced={isImageEnhanced} autoAlign={autoAlign} />
             </main>
             {annotatingStudentData && (
                  <AnnotationEditor student={annotatingStudentData.student} area={annotatingStudentData.area} template={template!} initialAnnotations={annotatingStudentData.initialAnnotations} onSave={handleSaveAnnotations} onClose={() => setAnnotatingStudent(null)} />

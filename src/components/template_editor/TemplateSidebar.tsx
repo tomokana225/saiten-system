@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Area, Template } from '../../types';
 import { AreaType, AreaType as AreaTypeEnum } from '../../types';
-import { SparklesIcon, Trash2Icon, InfoIcon, ChevronDownIcon, ChevronUpIcon, SettingsIcon, Undo2Icon, Redo2Icon, Wand2Icon } from '../icons';
+// FIX: Added SpinnerIcon to imports
+import { SparklesIcon, Trash2Icon, InfoIcon, ChevronDownIcon, ChevronUpIcon, SettingsIcon, Undo2Icon, Redo2Icon, Wand2Icon, SpinnerIcon } from '../icons';
 import { findAlignmentMarks } from '../../utils';
 import { DetectionSettings } from '../TemplateEditor';
 
@@ -68,13 +69,18 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-            const marks = findAlignmentMarks(imageData);
+            // Pass user settings to the detection algorithm
+            const marks = findAlignmentMarks(imageData, {
+                minSize: detSettings.minSize,
+                threshold: detSettings.threshold,
+                padding: detSettings.padding
+            });
 
             if (marks) {
                 const existingMarkIds = new Set(areas.filter(a => a.type === AreaType.ALIGNMENT_MARK).map(a => a.id));
                 const newAreas = areas.filter(a => a.type !== AreaType.ALIGNMENT_MARK);
-                // Adjust visualization box size to be smaller (3% instead of 5%) to better reflect detected mark
-                const markSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.03;
+                // Mark display size: use the actual minSize setting or proportional
+                const markSize = Math.max(detSettings.minSize, Math.min(img.naturalWidth, img.naturalHeight) * 0.03);
 
                 const markAreas: Area[] = [
                     { id: Date.now(), name: '基準TL', type: AreaType.ALIGNMENT_MARK, x: marks.tl.x - markSize/2, y: marks.tl.y - markSize/2, width: markSize, height: markSize, pageIndex: 0 },
@@ -87,7 +93,7 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                 onTemplateChange({ alignmentMarkIdealCorners: marks });
                 alert(`${markAreas.length}個の基準マークを検出しました。`);
             } else {
-                alert('基準マークを検出できませんでした。画像の四隅に明確な黒い図形（四角や点など）があるか確認してください。');
+                alert('基準マークを検出できませんでした。「詳細設定」の「感度」や「最小サイズ」を調整してみてください。');
             }
         } catch (error) {
             console.error("Error detecting alignment marks:", error);
@@ -153,19 +159,14 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
             </h3>
 
             <div className="space-y-3">
-                {/* Main Prominent Detection Button */}
+                {/* Standard Sized Detection Button */}
                 <button
                     onClick={handleDetectAlignmentMarks}
                     disabled={isDetecting}
-                    className="w-full flex flex-col items-center justify-center gap-2 p-4 bg-gradient-to-br from-red-500 to-rose-600 text-white rounded-xl shadow-lg hover:from-red-600 hover:to-rose-700 transition-all active:scale-95 disabled:opacity-50 group"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg shadow-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 font-bold text-sm"
                 >
-                    <div className="bg-white/20 p-2 rounded-full group-hover:scale-110 transition-transform">
-                        <SparklesIcon className="w-6 h-6" />
-                    </div>
-                    <div className="text-center">
-                        <div className="font-bold text-sm">基準マークを自動検出</div>
-                        <div className="text-[10px] opacity-80">スキャンのズレを自動補正します</div>
-                    </div>
+                    {isDetecting ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                    <span>基準マークを自動検出</span>
                 </button>
 
                 {/* Collapsible Detection Options */}
@@ -185,7 +186,7 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                         <div className="p-3 space-y-4 border-t border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-1 duration-200">
                             <div className="space-y-1.5">
                                 <div className="flex justify-between text-[10px]">
-                                    <label className="font-bold text-slate-600 dark:text-slate-400">最小サイズ</label>
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">マークの最小サイズ</label>
                                     <span className="text-sky-600 font-mono">{detSettings.minSize}px</span>
                                 </div>
                                 <input 
@@ -193,12 +194,12 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                                     onChange={e => setDetSettings({...detSettings, minSize: parseInt(e.target.value)})}
                                     className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
                                 />
-                                <p className="text-[9px] text-slate-400">小さすぎる枠を無視します（マークシート用）</p>
+                                <p className="text-[9px] text-slate-400">これより小さい塊を無視します</p>
                             </div>
                             
                             <div className="space-y-1.5">
                                 <div className="flex justify-between text-[10px]">
-                                    <label className="font-bold text-slate-600 dark:text-slate-400">線の濃さ/感度</label>
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">感度 (閾値)</label>
                                     <span className="text-sky-600 font-mono">{detSettings.threshold}</span>
                                 </div>
                                 <input 
@@ -206,12 +207,12 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                                     onChange={e => setDetSettings({...detSettings, threshold: parseInt(e.target.value)})}
                                     className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
                                 />
-                                <p className="text-[9px] text-slate-400">値が小さいほど、薄い線も認識します</p>
+                                <p className="text-[9px] text-slate-400">値が大きいほど、薄いマークも拾います</p>
                             </div>
 
                             <div className="space-y-1.5">
                                 <div className="flex justify-between text-[10px]">
-                                    <label className="font-bold text-slate-600 dark:text-slate-400">認識余白</label>
+                                    <label className="font-bold text-slate-600 dark:text-slate-400">検出の余白</label>
                                     <span className="text-sky-600 font-mono">{detSettings.padding}px</span>
                                 </div>
                                 <input 
@@ -219,7 +220,7 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
                                     onChange={e => setDetSettings({...detSettings, padding: parseInt(e.target.value)})}
                                     className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
                                 />
-                                <p className="text-[9px] text-slate-400">検出された枠を少し広げたり狭めたりします</p>
+                                <p className="text-[9px] text-slate-400">検出された枠の拡張/縮小</p>
                             </div>
                         </div>
                     )}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
@@ -14,6 +15,8 @@ export const PointAllocator = () => {
     const relevantAreas = useMemo(() => answerAndMarkSheetAreas(areas), [areas]);
     const subtotalAreas = useMemo(() => areas.filter(a => a.type === AreaType.SUBTOTAL), [areas]);
     const questionNumberAreas = useMemo(() => areas.filter(a => a.type === AreaType.QUESTION_NUMBER), [areas]);
+    const alignmentAreas = useMemo(() => areas.filter(a => a.type === AreaType.ALIGNMENT_MARK), [areas]);
+    
     const [isDetecting, setIsDetecting] = useState(false);
     const [showImages, setShowImages] = useState(true);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -67,9 +70,6 @@ export const PointAllocator = () => {
         if (!template) return;
         setIsDetecting(true);
         try {
-            // NOTE: Only detects on the FIRST page for now, or we need to iterate all relevant pages.
-            // Simplified: iterating points and loading corresponding page.
-            
             const markSheetPoints = internalPoints.filter(p => {
                 const area = areas.find(a => a.id === p.id);
                 return area?.type === AreaType.MARK_SHEET;
@@ -84,7 +84,6 @@ export const PointAllocator = () => {
             const updatedPoints = [...internalPoints];
             let detectedCount = 0;
             
-            // Group by page to minimize image loading
             const pointsByPage: Record<number, Point[]> = {};
             markSheetPoints.forEach(p => {
                 const area = areas.find(a => a.id === p.id);
@@ -116,16 +115,7 @@ export const PointAllocator = () => {
 
                 for (const point of pointsOnPage) {
                     const area = areas.find(a => a.id === point.id)!;
-                    
-                    let sx = Math.floor(area.x);
-                    let sy = Math.floor(area.y);
-                    let sw = Math.floor(area.width);
-                    let sh = Math.floor(area.height);
-
-                    if (sx < 0) { sw += sx; sx = 0; }
-                    if (sy < 0) { sh += sy; sy = 0; }
-                    if (sx + sw > mainCanvas.width) sw = mainCanvas.width - sx;
-                    if (sy + sh > mainCanvas.height) sh = mainCanvas.height - sy;
+                    let sx = Math.floor(area.x); let sy = Math.floor(area.y); let sw = Math.floor(area.width); let sh = Math.floor(area.height);
 
                     if (sw <= 0 || sh <= 0) continue;
 
@@ -136,60 +126,38 @@ export const PointAllocator = () => {
                     
                     const segmentWidth = isHorizontal ? sw / options : sw;
                     const segmentHeight = isHorizontal ? sh : sh / options;
-                    
                     const darknessScores = Array(options).fill(0);
 
                     for (let i = 0; i < options; i++) {
                         const xStart = isHorizontal ? i * segmentWidth : 0;
                         const yStart = isHorizontal ? 0 : i * segmentHeight;
-                        
                         const roiMargin = 0.25;
                         const roiXStart = Math.floor(xStart + segmentWidth * roiMargin);
                         const roiYStart = Math.floor(yStart + segmentHeight * roiMargin);
                         const roiXEnd = Math.ceil(xStart + segmentWidth * (1 - roiMargin));
                         const roiYEnd = Math.ceil(yStart + segmentHeight * (1 - roiMargin));
                         let invertedGraySum = 0;
-                        
                         for (let y = roiYStart; y < roiYEnd; y++) {
                             for (let x = roiXStart; x < roiXEnd; x++) {
                                 if (x < 0 || x >= sw || y < 0 || y >= sh) continue;
                                 const idx = (y * sw + x) * 4;
-                                const r = data[idx];
-                                const g = data[idx + 1];
-                                const b = data[idx + 2];
-                                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                                invertedGraySum += (255 - gray);
+                                invertedGraySum += (255 - (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]));
                             }
                         }
                         darknessScores[i] = invertedGraySum;
                     }
 
                     if (darknessScores.every(score => score === 0)) continue;
-
-                    const scoresWithIndices = darknessScores.map((score, index) => ({ score, index }));
-                    scoresWithIndices.sort((a, b) => b.score - a.score);
-
-                    const winner = scoresWithIndices[0];
-                    const runnerUp = scoresWithIndices[1];
-                    
-                    const roiW = segmentWidth * (1 - 2 * 0.25);
-                    const roiH = segmentHeight * (1 - 2 * 0.25);
-                    const roiArea = roiW * roiH;
-                    
+                    const scoresWithIndices = darknessScores.map((score, index) => ({ score, index })).sort((a, b) => b.score - a.score);
+                    const winner = scoresWithIndices[0]; const runnerUp = scoresWithIndices[1];
+                    const roiArea = (segmentWidth * 0.5) * (segmentHeight * 0.5);
                     const minThreshold = roiArea * 255 * 0.015; 
-                    const isConfidentWinner = winner.score > minThreshold && 
-                                            (!runnerUp || winner.score > runnerUp.score * 1.05);
-
-                    if (isConfidentWinner) {
+                    if (winner.score > minThreshold && (!runnerUp || winner.score > runnerUp.score * 1.05)) {
                         const pointIndex = updatedPoints.findIndex(p => p.id === point.id);
-                        if (pointIndex !== -1) {
-                            updatedPoints[pointIndex] = { ...updatedPoints[pointIndex], correctAnswerIndex: winner.index };
-                            detectedCount++;
-                        }
+                        if (pointIndex !== -1) { updatedPoints[pointIndex] = { ...updatedPoints[pointIndex], correctAnswerIndex: winner.index }; detectedCount++; }
                     }
                 }
             }
-
             setInternalPoints(updatedPoints);
             alert(`${markSheetPoints.length}件のマークシート問題のうち、${detectedCount}件の正解を認識しました。`);
         } catch (error) {
@@ -209,11 +177,8 @@ export const PointAllocator = () => {
             prevPoints.map(p => {
                 if (p.id === pointId) {
                     const currentIds = p.subtotalIds || [];
-                    if (isChecked) {
-                        return { ...p, subtotalIds: [...new Set([...currentIds, subtotalAreaId])] };
-                    } else {
-                        return { ...p, subtotalIds: currentIds.filter(id => id !== subtotalAreaId) };
-                    }
+                    if (isChecked) { return { ...p, subtotalIds: [...new Set([...currentIds, subtotalAreaId])] }; }
+                    else { return { ...p, subtotalIds: currentIds.filter(id => id !== subtotalAreaId) }; }
                 }
                 return p;
             })
@@ -224,36 +189,27 @@ export const PointAllocator = () => {
     const toggleSelect = (id: number) => {
         setSelectedIds(prev => {
             const newSet = new Set(prev);
-            if (newSet.has(id)) newSet.delete(id);
-            else newSet.add(id);
+            if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
             return newSet;
         });
     };
 
     const toggleSelectAll = () => {
-        if (selectedIds.size === internalPoints.length) {
-            setSelectedIds(new Set());
-        } else {
-            setSelectedIds(new Set(internalPoints.map(p => p.id)));
-        }
+        if (selectedIds.size === internalPoints.length) { setSelectedIds(new Set()); }
+        else { setSelectedIds(new Set(internalPoints.map(p => p.id))); }
     };
 
     const applyBulkPoints = () => {
-        const pts = parseInt(bulkPoints);
-        if (isNaN(pts)) return;
+        const pts = parseInt(bulkPoints); if (isNaN(pts)) return;
         setInternalPoints(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, points: pts } : p));
     };
 
     const applyBulkOptions = () => {
-        const opts = parseInt(bulkChoices);
-        if (isNaN(opts) || opts < 2 || opts > 10) return;
+        const opts = parseInt(bulkChoices); if (isNaN(opts) || opts < 2 || opts > 10) return;
         setInternalPoints(prev => prev.map(p => {
             if (selectedIds.has(p.id)) {
-                // Only apply if it's a mark sheet area
                 const area = relevantAreas.find(a => a.id === p.id);
-                if (area?.type === AreaType.MARK_SHEET) {
-                    return { ...p, markSheetOptions: opts };
-                }
+                if (area?.type === AreaType.MARK_SHEET) return { ...p, markSheetOptions: opts };
             }
             return p;
         }));
@@ -263,9 +219,7 @@ export const PointAllocator = () => {
         setInternalPoints(prev => prev.map(p => {
             if (selectedIds.has(p.id)) {
                 const area = relevantAreas.find(a => a.id === p.id);
-                if (area?.type === AreaType.MARK_SHEET) {
-                    return { ...p, markSheetLayout: layout };
-                }
+                if (area?.type === AreaType.MARK_SHEET) return { ...p, markSheetLayout: layout };
             }
             return p;
         }));
@@ -333,12 +287,7 @@ export const PointAllocator = () => {
 
                         {showImages && template && (
                             <div className="mb-4 h-24 w-full bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-600 overflow-hidden relative group" onClick={(e) => e.stopPropagation()}>
-                                <AnswerSnippet
-                                    imageSrc={imageSrc}
-                                    area={area}
-                                    template={template}
-                                    pannable={true}
-                                />
+                                <AnswerSnippet imageSrc={imageSrc} area={area} template={template} pannable={true} />
                             </div>
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4" onClick={(e) => e.stopPropagation()}>
@@ -371,10 +320,43 @@ export const PointAllocator = () => {
                             </div>
                         </div>
                         {area.type === AreaType.MARK_SHEET && (
-                             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4" onClick={(e) => e.stopPropagation()}>
-                                <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">選択肢の数</label><input type="number" min="2" max="10" value={point.markSheetOptions || 4} onChange={e => handlePointPropChange(point.id, 'markSheetOptions', parseInt(e.target.value) || 2)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" /></div>
-                                <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">レイアウト</label><div className="flex items-center gap-2 p-1 bg-slate-200 dark:bg-slate-900/50 rounded-lg w-fit"><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'horizontal')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'horizontal' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>横並び</button><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'vertical')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'vertical' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>縦並び</button></div></div>
-                                <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">正解の選択肢</label><div className="flex flex-wrap items-center gap-1">{Array.from({ length: point.markSheetOptions || 0 }).map((_, i) => (<button key={i} onClick={() => handlePointPropChange(point.id, 'correctAnswerIndex', i)} className={`w-8 h-8 rounded-md text-xs font-mono ${point.correctAnswerIndex === i ? 'bg-sky-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300'}`}>{String.fromCharCode(65 + i)}</button>))}</div></div>
+                             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">選択肢の数</label><input type="number" min="2" max="10" value={point.markSheetOptions || 4} onChange={e => handlePointPropChange(point.id, 'markSheetOptions', parseInt(e.target.value) || 2)} className="w-24 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-2 text-sm" /></div>
+                                    <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">レイアウト</label><div className="flex items-center gap-2 p-1 bg-slate-200 dark:bg-slate-900/50 rounded-lg w-fit"><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'horizontal')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'horizontal' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>横並び</button><button onClick={() => handlePointPropChange(point.id, 'markSheetLayout', 'vertical')} className={`px-3 py-1 text-xs rounded-md ${point.markSheetLayout === 'vertical' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}>縦並び</button></div></div>
+                                    <div className="space-y-2"><label className="block text-sm font-medium text-slate-500">正解の選択肢</label><div className="flex flex-wrap items-center gap-1">{Array.from({ length: point.markSheetOptions || 0 }).map((_, i) => (<button key={i} onClick={() => handlePointPropChange(point.id, 'correctAnswerIndex', i)} className={`w-8 h-8 rounded-md text-xs font-mono ${point.correctAnswerIndex === i ? 'bg-sky-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300'}`}>{String.fromCharCode(65 + i)}</button>))}</div></div>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/30 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">位置基準点 (オプション)</label>
+                                        <div className="flex gap-2">
+                                            <div className="flex-1">
+                                                <span className="text-[10px] text-slate-400">縦の基準点 (右列など):</span>
+                                                <select 
+                                                    value={point.markRefRightAreaId || ''} 
+                                                    onChange={e => handlePointPropChange(point.id, 'markRefRightAreaId', e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    className="w-full bg-white dark:bg-slate-800 border-none rounded p-1 text-[11px]"
+                                                >
+                                                    <option value="">(未選択: 均等分割)</option>
+                                                    {alignmentAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="flex-1">
+                                                <span className="text-[10px] text-slate-400">横の基準点 (下行など):</span>
+                                                <select 
+                                                    value={point.markRefBottomAreaId || ''} 
+                                                    onChange={e => handlePointPropChange(point.id, 'markRefBottomAreaId', e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    className="w-full bg-white dark:bg-slate-800 border-none rounded p-1 text-[11px]"
+                                                >
+                                                    <option value="">(未選択: 均等分割)</option>
+                                                    {alignmentAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-500 italic mt-1">基準点を指定すると、スキャンの傾き等に関わらず正確な位置でマークを読み取ります。</p>
+                                    </div>
+                                </div>
                              </div>
                         )}
                     </div>
@@ -387,25 +369,10 @@ export const PointAllocator = () => {
                 <div className="absolute bottom-20 left-0 right-0 mx-auto w-max max-w-[90%] bg-slate-800 text-white p-3 rounded-xl shadow-xl flex flex-wrap items-center gap-4 z-50 animate-in slide-in-from-bottom-4">
                     <span className="text-sm font-bold bg-slate-700 px-2 py-1 rounded">{selectedIds.size} 件選択中</span>
                     <div className="h-6 w-px bg-slate-600"></div>
-                    
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs">配点:</span>
-                        <input type="number" min="0" placeholder="-" className="w-16 p-1 text-black rounded text-sm" value={bulkPoints} onChange={e => setBulkPoints(e.target.value)} />
-                        <button onClick={applyBulkPoints} disabled={!bulkPoints} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button>
-                    </div>
-
+                    <div className="flex items-center gap-2"><span className="text-xs">配点:</span><input type="number" min="0" placeholder="-" className="w-16 p-1 text-black rounded text-sm" value={bulkPoints} onChange={e => setBulkPoints(e.target.value)} /><button onClick={applyBulkPoints} disabled={!bulkPoints} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button></div>
                     <div className="h-6 w-px bg-slate-600"></div>
-
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs">選択肢数:</span>
-                        <input type="number" min="2" max="10" placeholder="-" className="w-12 p-1 text-black rounded text-sm" value={bulkChoices} onChange={e => setBulkChoices(e.target.value)} />
-                        <button onClick={applyBulkOptions} disabled={!bulkChoices} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button>
-                    </div>
-
-                    <div className="flex items-center gap-1 bg-slate-700 p-1 rounded">
-                        <button onClick={() => applyBulkLayout('horizontal')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">横並び</button>
-                        <button onClick={() => applyBulkLayout('vertical')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">縦並び</button>
-                    </div>
+                    <div className="flex items-center gap-2"><span className="text-xs">選択肢数:</span><input type="number" min="2" max="10" placeholder="-" className="w-12 p-1 text-black rounded text-sm" value={bulkChoices} onChange={e => setBulkChoices(e.target.value)} /><button onClick={applyBulkOptions} disabled={!bulkChoices} className="px-2 py-1 bg-sky-600 hover:bg-sky-500 rounded text-xs disabled:opacity-50">適用</button></div>
+                    <div className="flex items-center gap-1 bg-slate-700 p-1 rounded"><button onClick={() => applyBulkLayout('horizontal')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">横並び</button><button onClick={() => applyBulkLayout('vertical')} className="px-2 py-1 text-xs hover:bg-slate-600 rounded">縦並び</button></div>
                 </div>
             )}
 

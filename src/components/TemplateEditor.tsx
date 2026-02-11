@@ -57,7 +57,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [selectedAreaIds, setSelectedAreaIds] = useState<Set<number>>(new Set());
     const [zoom, setZoom] = useState(1);
     
-    // Smart Tool: Only one tool state, but we can toggle "Auto-detect click" mode
     const [isAutoDetectMode, setIsAutoDetectMode] = useState(false);
     const [wandTargetType, setWandTargetType] = useState<AreaType>(AreaTypeEnum.ANSWER);
     const [manualDrawType, setManualDrawType] = useState<AreaType | null>(null);
@@ -80,6 +79,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const interactionThrottle = useRef<number | null>(null);
     const targetScrollRef = useRef<{left: number, top: number} | null>(null);
     const zoomRef = useRef(zoom);
+
+    // Dynamic cursor state
+    const [canvasCursor, setCanvasCursor] = useState<'default' | 'crosshair' | 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize' | 'move' | 'pointer'>('default');
 
     useEffect(() => {
         const migrated = migrateAreas(initialAreas);
@@ -117,7 +119,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         if (historyIndex < history.length - 1) {
             const nextState = history[historyIndex + 1];
             isHistoryAction.current = true;
-            setHistoryIndex(prev => prev + 1);
+            setHistoryIndex(prev => prev - 1);
             setAreas(nextState);
             handleAreasChange(nextState);
         }
@@ -128,14 +130,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const getResizeHandle = useCallback((area: Area, x: number, y: number) => {
         const handleSize = RESIZE_HANDLE_SIZE / zoom;
         const handles = [
-            { name: 'top-left', x: area.x, y: area.y, cursor: 'nwse-resize' },
-            { name: 'top-right', x: area.x + area.width, y: area.y, cursor: 'nesw-resize' },
-            { name: 'bottom-left', x: area.x, y: area.y + area.height, cursor: 'nesw-resize' },
-            { name: 'bottom-right', x: area.x + area.width, y: area.y + area.height, cursor: 'nwse-resize' },
-            { name: 'top', x: area.x + area.width / 2, y: area.y, cursor: 'ns-resize' },
-            { name: 'bottom', x: area.x + area.width / 2, y: area.y + area.height, cursor: 'ns-resize' },
-            { name: 'left', x: area.x, y: area.y + area.height / 2, cursor: 'ew-resize' },
-            { name: 'right', x: area.x + area.width, y: area.y + area.height / 2, cursor: 'ew-resize' },
+            { name: 'top-left', x: area.x, y: area.y, cursor: 'nwse-resize' as const },
+            { name: 'top-right', x: area.x + area.width, y: area.y, cursor: 'nesw-resize' as const },
+            { name: 'bottom-left', x: area.x, y: area.y + area.height, cursor: 'nesw-resize' as const },
+            { name: 'bottom-right', x: area.x + area.width, y: area.y + area.height, cursor: 'nwse-resize' as const },
+            { name: 'top', x: area.x + area.width / 2, y: area.y, cursor: 'ns-resize' as const },
+            { name: 'bottom', x: area.x + area.width / 2, y: area.y + area.height, cursor: 'ns-resize' as const },
+            { name: 'left', x: area.x, y: area.y + area.height / 2, cursor: 'ew-resize' as const },
+            { name: 'right', x: area.x + area.width, y: area.y + area.height / 2, cursor: 'ew-resize' as const },
         ];
 
         for (const handle of handles) {
@@ -197,30 +199,15 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
      useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
-
-            if (e.code === 'Space') {
-                e.preventDefault();
-                setIsSpacePressed(true);
-            }
-
+            if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-                if (e.shiftKey) redo(); else undo();
-            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-                e.preventDefault(); redo();
-            }
-
-            if (e.key === 'Escape') {
-                setSelectedAreaIds(new Set());
-                setManualDrawType(null);
-            } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedAreaIds.size > 0) {
-                    commitAreas(areas.filter(a => !selectedAreaIds.has(a.id)));
-                    setSelectedAreaIds(new Set());
-                }
+                e.preventDefault(); if (e.shiftKey) redo(); else undo();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+            if (e.key === 'Escape') { setSelectedAreaIds(new Set()); setManualDrawType(null); }
+            else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedAreaIds.size > 0) { commitAreas(areas.filter(a => !selectedAreaIds.has(a.id))); setSelectedAreaIds(new Set()); }
             } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-                e.preventDefault();
-                if (selectedAreaIds.size > 0) setClipboard(areas.filter(a => selectedAreaIds.has(a.id)));
+                e.preventDefault(); if (selectedAreaIds.size > 0) setClipboard(areas.filter(a => selectedAreaIds.has(a.id)));
             } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
                 e.preventDefault();
                 if (clipboard.length > 0) {
@@ -229,18 +216,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     if (hasQuestion) {
                          const existingNumbers = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER).map(a => {
                              if (a.questionNumber !== undefined) return a.questionNumber;
-                             const match = a.name.match(/問(\d+)/);
-                             return match ? parseInt(match[1], 10) : 0;
+                             const match = a.name.match(/問(\d+)/); return match ? parseInt(match[1], 10) : 0;
                          });
                          maxQuestionNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
                     }
-
                     const pastedAreas: Area[] = clipboard.map((area, index) => {
                          const newArea = { ...area, id: Date.now() + index, name: `${area.name} (コピー)`, x: area.x + 10, y: area.y + 10, pageIndex: activePageIndex };
-                        if (area.type === AreaTypeEnum.MARK_SHEET || area.type === AreaTypeEnum.ANSWER) {
-                            newArea.questionNumber = ++maxQuestionNumber;
-                            newArea.name = `問${newArea.questionNumber}`;
-                        }
+                        if (area.type === AreaTypeEnum.MARK_SHEET || area.type === AreaTypeEnum.ANSWER) { newArea.questionNumber = ++maxQuestionNumber; newArea.name = `問${newArea.questionNumber}`; }
                         return newArea;
                     });
                     commitAreas([...areas, ...pastedAreas]);
@@ -249,19 +231,16 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             }
         };
         const handleKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') setIsSpacePressed(false); };
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
         return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
     }, [selectedAreaIds, areas, commitAreas, clipboard, activePageIndex, undo, redo]);
 
     useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
+        const container = containerRef.current; if (!container) return;
         const onWheel = (e: WheelEvent) => {
             if (e.ctrlKey) {
                 e.preventDefault(); e.stopPropagation();
-                const currentZoom = zoomRef.current;
-                const rect = container.getBoundingClientRect();
+                const currentZoom = zoomRef.current; const rect = container.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
                 const pointX = (container.scrollLeft + mouseX) / currentZoom;
                 const pointY = (container.scrollTop + mouseY) / currentZoom;
@@ -282,28 +261,22 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         }
     }, [zoom]);
 
-    const getRelativeCoords = (e: React.MouseEvent): { x: number, y: number } => {
+    const getRelativeCoords = (e: React.MouseEvent | MouseEvent): { x: number, y: number } => {
         const rect = canvasRef.current!.getBoundingClientRect();
         return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
     };
 
     const detectBoxFromPoint = (startX: number, startY: number): { x: number, y: number, w: number, h: number } | null => {
         if (!imageRef.current) return null;
-        const img = imageRef.current;
-        const tempCanvas = document.createElement('canvas');
+        const img = imageRef.current; const tempCanvas = document.createElement('canvas');
         tempCanvas.width = img.naturalWidth; tempCanvas.height = img.naturalHeight;
-        const ctx = tempCanvas.getContext('2d');
-        if (!ctx) return null;
-        ctx.drawImage(img, 0, 0);
-        const x = Math.floor(startX); const y = Math.floor(startY);
+        const ctx = tempCanvas.getContext('2d'); if (!ctx) return null;
+        ctx.drawImage(img, 0, 0); const x = Math.floor(startX); const y = Math.floor(startY);
         if (x < 0 || x >= img.naturalWidth || y < 0 || y >= img.naturalHeight) return null;
         const imageData = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
-        const data = imageData.data;
-        const width = imageData.width; const height = imageData.height;
-        const visited = new Uint8Array(width * height);
-        const queue = [x, y]; visited[y * width + x] = 1;
-        let minX = x, maxX = x, minY = y, maxY = y;
-        let pixelCount = 0; const MAX_PIXELS = width * height * 0.5;
+        const data = imageData.data; const width = imageData.width; const height = imageData.height;
+        const visited = new Uint8Array(width * height); const queue = [x, y]; visited[y * width + x] = 1;
+        let minX = x, maxX = x, minY = y, maxY = y; let pixelCount = 0; const MAX_PIXELS = width * height * 0.5;
         const THRESHOLD = detSettings.threshold; 
         const isLight = (px: number, py: number) => {
             const idx = (py * width + px) * 4;
@@ -312,28 +285,23 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         };
         if (!isLight(x, y)) return null;
         while (queue.length > 0) {
-            const cy = queue.pop()!; const cx = queue.pop()!;
-            pixelCount++; if (pixelCount > MAX_PIXELS) return null;
-            if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
-            if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+            const cy = queue.pop()!; const cx = queue.pop()!; pixelCount++; if (pixelCount > MAX_PIXELS) return null;
+            if (cx < minX) minX = cx; if (cx > maxX) maxX = cx; if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
             const neighbors = [cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1];
             for (let i = 0; i < neighbors.length; i += 2) {
                 const nx = neighbors[i]; const ny = neighbors[i+1];
                 if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                    const idx = ny * width + nx;
-                    if (visited[idx] === 0) { visited[idx] = 1; if (isLight(nx, ny)) queue.push(nx, ny); }
+                    const idx = ny * width + nx; if (visited[idx] === 0) { visited[idx] = 1; if (isLight(nx, ny)) queue.push(nx, ny); }
                 }
             }
         }
         const padding = detSettings.padding; const minS = detSettings.minSize;
         const w = (maxX - minX + 1) + (padding * 2); const h = (maxY - minY + 1) + (padding * 2);
-        if (w < minS || h < minS) return null;
-        return { x: minX - padding, y: minY - padding, w, h };
+        if (w < minS || h < minS) return null; return { x: minX - padding, y: minY - padding, w, h };
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        const isMiddleClick = e.button === 1;
-        const isSpacePan = e.button === 0 && isSpacePressed;
+        const isMiddleClick = e.button === 1; const isSpacePan = e.button === 0 && isSpacePressed;
         if (isMiddleClick || isSpacePan) {
             if (containerRef.current) setPanState({ isPanning: true, startX: e.clientX, startY: e.clientY, scrollLeft: containerRef.current.scrollLeft, scrollTop: containerRef.current.scrollTop });
             return;
@@ -349,18 +317,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 if (wandTargetType === AreaTypeEnum.MARK_SHEET || wandTargetType === AreaTypeEnum.ANSWER) {
                     const existingNumbers = areas.filter(a => a.type === AreaTypeEnum.MARK_SHEET || a.type === AreaTypeEnum.ANSWER).map(a => {
                         if (a.questionNumber !== undefined) return a.questionNumber;
-                        const match = a.name.match(/問(\d+)/);
-                        return match ? parseInt(match[1], 10) : 0;
+                        const match = a.name.match(/問(\d+)/); return match ? parseInt(match[1], 10) : 0;
                     });
-                    questionNumber = (existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0) + 1;
-                    newName = `問${questionNumber}`;
+                    questionNumber = (existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0) + 1; newName = `問${questionNumber}`;
                 } else {
-                    const prefix = wandTargetType; const count = areas.filter(a => a.type === wandTargetType).length;
-                    newName = `${prefix}${count + 1}`;
+                    const prefix = wandTargetType; const count = areas.filter(a => a.type === wandTargetType).length; newName = `${prefix}${count + 1}`;
                 }
                 const newArea: Area = { id: Date.now(), name: newName, type: wandTargetType, x: detected.x, y: detected.y, width: detected.w, height: detected.h, questionNumber, pageIndex: activePageIndex };
-                commitAreas([...areas, newArea]);
-                setSelectedAreaIds(new Set([newArea.id]));
+                commitAreas([...areas, newArea]); setSelectedAreaIds(new Set([newArea.id]));
             }
             return;
         }
@@ -368,10 +332,10 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
         const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
         
         if (clickedArea) {
-            const resizeHandleData = selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
+            const handle = selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
             
             if (isDoubleClick) {
-                // Unified: Double click starts moving the whole box
+                // Unified: Double click starts moving (maintaining size)
                 const moveStartPositions = new Map<number, { x: number; y: number }>();
                 const targetIds = selectedAreaIds.has(clickedArea.id) ? selectedAreaIds : new Set([clickedArea.id]);
                 setSelectedAreaIds(targetIds);
@@ -380,25 +344,25 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     if (area) moveStartPositions.set(id, { x: area.x, y: area.y });
                 });
                 setDrawState({ isResizing: false, isMoving: true, isDrawing: false, startPoint: pos, resizeHandle: null, moveStartArea: clickedArea, moveStartPositions });
-            } else if (resizeHandleData) {
-                // Unified: Single click on handle starts resizing
-                setDrawState({ isResizing: true, isMoving: false, isDrawing: false, startPoint: pos, resizeHandle: resizeHandleData.name, moveStartArea: clickedArea });
+            } else if (handle) {
+                // Single click on handle: Resize
+                setDrawState({ isResizing: true, isMoving: false, isDrawing: false, startPoint: pos, resizeHandle: handle.name, moveStartArea: clickedArea });
             } else {
-                // Unified: Single click inside selects (or starts sizing if handle near)
+                // Single click in area: Select (default resize mode if dragged)
                 if (e.shiftKey) {
-                    const newSet = new Set(selectedAreaIds);
-                    if (newSet.has(clickedArea.id)) newSet.delete(clickedArea.id); else newSet.add(clickedArea.id);
+                    const newSet = new Set(selectedAreaIds); if (newSet.has(clickedArea.id)) newSet.delete(clickedArea.id); else newSet.add(clickedArea.id);
                     setSelectedAreaIds(newSet);
                 } else {
                     setSelectedAreaIds(new Set([clickedArea.id]));
                 }
-                // Also allow single-click drag on edge to resize
+                // Allow resizing by dragging area if not double-clicked
                 setDrawState({ isResizing: true, isMoving: false, isDrawing: false, startPoint: pos, resizeHandle: 'bottom-right', moveStartArea: clickedArea });
             }
         } else {
-            // Click on empty space -> Draw new box if manual type is set, or clear selection
+            // Click on empty space: Draw if manual draw type selected
             if (manualDrawType) {
                 setDrawState({ isDrawing: true, isResizing: false, isMoving: false, startPoint: pos, resizeHandle: null, moveStartArea: null });
+                setCanvasCursor('crosshair');
             } else {
                 setSelectedAreaIds(new Set());
             }
@@ -406,7 +370,30 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     };
     
     const handleInteractionMove = (e: React.MouseEvent) => {
-        if (panState && panState.isPanning && containerRef.current) {
+        const pos = getRelativeCoords(e);
+        
+        // Dynamic cursor updates when NOT dragging
+        if (!drawState && !panState) {
+            if (isSpacePressed) {
+                setCanvasCursor('pointer');
+            } else {
+                const clickedArea = currentPageAreas.slice().reverse().find(a => pos.x >= a.x && pos.x <= a.x + a.width && pos.y >= a.y && pos.y <= a.y + a.height);
+                if (clickedArea) {
+                    const handle = selectedAreaIds.has(clickedArea.id) ? getResizeHandle(clickedArea, pos.x, pos.y) : null;
+                    if (handle) {
+                        setCanvasCursor(handle.cursor);
+                    } else {
+                        setCanvasCursor('pointer');
+                    }
+                } else if (manualDrawType) {
+                    setCanvasCursor('crosshair');
+                } else {
+                    setCanvasCursor('default');
+                }
+            }
+        }
+
+        if (panState?.isPanning && containerRef.current) {
             const dx = e.clientX - panState.startX; const dy = e.clientY - panState.startY;
             containerRef.current.scrollLeft = panState.scrollLeft - dx;
             containerRef.current.scrollTop = panState.scrollTop - dy;
@@ -415,21 +402,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
 
         if (!drawState) return;
         const performUpdate = () => {
-            const pos = getRelativeCoords(e);
             if (drawState.isResizing && drawState.moveStartArea) {
                 setAreas(currentAreas => currentAreas.map(area => {
                     if (area.id !== drawState.moveStartArea!.id) return area;
                     const newArea = { ...area }; const { resizeHandle } = drawState;
                     if (resizeHandle?.includes('right')) newArea.width = Math.max(MIN_AREA_SIZE, pos.x - newArea.x);
                     if (resizeHandle?.includes('bottom')) newArea.height = Math.max(MIN_AREA_SIZE, pos.y - newArea.y);
-                    if (resizeHandle?.includes('left')) {
-                        const newWidth = newArea.x + newArea.width - pos.x;
-                        if (newWidth > MIN_AREA_SIZE) { newArea.width = newWidth; newArea.x = pos.x; }
-                    }
-                    if (resizeHandle?.includes('top')) {
-                        const newHeight = newArea.y + newArea.height - pos.y;
-                        if (newHeight > MIN_AREA_SIZE) { newArea.height = newHeight; newArea.y = pos.y; }
-                    }
+                    if (resizeHandle?.includes('left')) { const newWidth = newArea.x + newArea.width - pos.x; if (newWidth > MIN_AREA_SIZE) { newArea.width = newWidth; newArea.x = pos.x; } }
+                    if (resizeHandle?.includes('top')) { const newHeight = newArea.y + newArea.height - pos.y; if (newHeight > MIN_AREA_SIZE) { newArea.height = newHeight; newArea.y = pos.y; } }
                     return newArea;
                 }));
             } else if (drawState.isMoving && drawState.moveStartPositions) {
@@ -448,8 +428,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     ctx.clearRect(0,0,canvasRef.current!.width, canvasRef.current!.height);
                     currentPageAreas.forEach(area => {
                         ctx.strokeStyle = areaTypeColors[area.type]?.hex || '#000000';
-                        ctx.lineWidth = selectedAreaIds.has(area.id) ? 4 : 2;
-                        ctx.strokeRect(area.x, area.y, area.width, area.height);
+                        ctx.lineWidth = selectedAreaIds.has(area.id) ? 4 : 2; ctx.strokeRect(area.x, area.y, area.width, area.height);
                     });
                     ctx.strokeStyle = areaTypeColors[manualDrawType!]?.hex || '#0ea5e9';
                     ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
@@ -471,15 +450,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                         if (a.questionNumber !== undefined) return a.questionNumber;
                         const match = a.name.match(/問(\d+)/); return match ? parseInt(match[1], 10) : 0;
                     });
-                    questionNumber = (existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0) + 1;
-                    newName = `問${questionNumber}`;
+                    questionNumber = (existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0) + 1; newName = `問${questionNumber}`;
                 } else {
-                    const prefix = manualDrawType; const count = areas.filter(a => a.type === manualDrawType).length;
-                    newName = `${prefix}${count + 1}`;
+                    const prefix = manualDrawType; const count = areas.filter(a => a.type === manualDrawType).length; newName = `${prefix}${count + 1}`;
                 }
                 const newArea: Area = { id: Date.now(), name: newName, type: manualDrawType, x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y), width, height, questionNumber, pageIndex: activePageIndex };
-                commitAreas([...areas, newArea]);
-                setSelectedAreaIds(new Set([newArea.id]));
+                commitAreas([...areas, newArea]); setSelectedAreaIds(new Set([newArea.id]));
             }
         } else if(drawState?.isMoving || drawState?.isResizing) {
             commitAreas(areas);
@@ -521,7 +497,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                             <img ref={imageRef} src={activePage.imagePath} alt="Template" className="block pointer-events-none select-none" style={{ width: activePage.width, height: activePage.height }}/>
                             <canvas 
                                 ref={canvasRef} 
-                                className="absolute top-0 left-0 cursor-crosshair"
+                                className="absolute top-0 left-0"
+                                style={{ cursor: canvasCursor }}
                                 onMouseDown={handleMouseDown}
                                 onMouseMove={handleInteractionMove}
                                 onMouseUp={handleMouseUp}
@@ -534,9 +511,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     <div className="flex gap-4">
                         <span>描画: ドラッグして枠を作成</span>
                         <span>移動: 枠をダブルクリックしてドラッグ</span>
-                        <span>サイズ: 枠の角や端をドラッグ</span>
+                        <span>リサイズ: 枠をドラッグ、またはハンドルのドラッグ</span>
                     </div>
-                    <div>パン: Space + ドラッグ</div>
+                    <div>パン: Space + ドラッグ / マウス中ボタン</div>
                 </div>
             </main>
         </div>

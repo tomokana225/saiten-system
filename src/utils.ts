@@ -74,45 +74,30 @@ interface Corners { tl: Point; tr: Point; br: Point; bl: Point; }
 
 /**
  * Finds the four corner alignment marks (fiducial markers) in an image.
- * Enhanced to detect smaller marks more reliably.
+ * Now accepts settings to refine detection.
  */
-export const findAlignmentMarks = (imageData: ImageData): Corners | null => {
+export const findAlignmentMarks = (
+    imageData: ImageData, 
+    settings: { minSize: number, threshold: number, padding: number } = { minSize: 15, threshold: 120, padding: 0 }
+): Corners | null => {
     const { data, width, height } = imageData;
-    // Increase search area to 30% of width/height to handle significant shifts
-    const cornerSizeW = Math.floor(width * 0.30);
-    const cornerSizeH = Math.floor(height * 0.30);
+    
+    // Constraint: Only search in the outer 15% of the page to avoid misidentifying content in the center.
+    const cornerSizeW = Math.floor(width * 0.15);
+    const cornerSizeH = Math.floor(height * 0.15);
 
-    const getCornerCentroid = (startX: number, startY: number, endX: number, endY: number, label: string): Point | null => {
-        let totalBrightness = 0;
-        let pixelCount = 0;
-
-        // Sampling to determine background brightness in the corner
-        for (let y = startY; y < endY; y += 8) {
-            for (let x = startX; x < endX; x += 8) {
-                const idx = (y * width + x) * 4;
-                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-                totalBrightness += gray;
-                pixelCount++;
-            }
-        }
-        
-        if (pixelCount === 0) return null;
-        const avgBrightness = totalBrightness / pixelCount;
-        // Use a dynamic threshold based on background brightness
-        // Marks are expected to be significantly darker than the paper
-        const threshold = Math.min(120, avgBrightness * 0.6);
-
-        let maxBlob = { size: 0, sumX: 0, sumY: 0 };
+    const getCornerCentroid = (startX: number, startY: number, endX: number, endY: number): Point | null => {
+        let maxBlob = { size: 0, sumX: 0, sumY: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
         const cornerW = endX - startX;
-        const visited = new Uint8Array(cornerW * (endY - startY));
+        const cornerH = endY - startY;
+        const visited = new Uint8Array(cornerW * cornerH);
 
         const getVisited = (x: number, y: number) => visited[(y - startY) * cornerW + (x - startX)];
         const setVisited = (x: number, y: number) => visited[(y - startY) * cornerW + (x - startX)] = 1;
 
-        // Lower minBlobSize to detect smaller marks (e.g. 10x10 pixels)
-        // Set an absolute minimum of 9 pixels (3x3 area)
-        const minBlobSize = Math.max(9, (width * height) * 0.000005); 
-        const maxBlobSize = (width * height) * 0.02; // Ignore too large blobs (borders, etc.)
+        // Apply user-defined minSize (area equivalent)
+        const minBlobArea = settings.minSize * settings.minSize;
+        const userThreshold = settings.threshold;
 
         for (let y = startY; y < endY; y += 1) {
             for (let x = startX; x < endX; x += 1) {
@@ -121,10 +106,13 @@ export const findAlignmentMarks = (imageData: ImageData): Corners | null => {
                 const idx = (y * width + x) * 4;
                 const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
 
-                if (gray < threshold) {
+                // Check if pixel is dark enough based on UI slider
+                if (gray < userThreshold) {
                     let currentSize = 0;
                     let currentSumX = 0;
                     let currentSumY = 0;
+                    let cMinX = x, cMaxX = x, cMinY = y, cMaxY = y;
+                    
                     const stack = [[x, y]];
                     setVisited(x, y);
 
@@ -133,25 +121,31 @@ export const findAlignmentMarks = (imageData: ImageData): Corners | null => {
                         currentSize++;
                         currentSumX += cx;
                         currentSumY += cy;
+                        
+                        if (cx < cMinX) cMinX = cx; if (cx > cMaxX) cMaxX = cx;
+                        if (cy < cMinY) cMinY = cy; if (cy > cMaxY) cMaxY = cy;
 
-                        // 4-neighbor connectivity
                         const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
                         for (const [nx, ny] of neighbors) {
                             if (nx >= startX && nx < endX && ny >= startY && ny < endY && !getVisited(nx, ny)) {
                                 const nIdx = (ny * width + nx) * 4;
                                 const nGray = 0.299 * data[nIdx] + 0.587 * data[nIdx + 1] + 0.114 * data[nIdx + 2];
-                                if (nGray < threshold) {
+                                if (nGray < userThreshold) {
                                     setVisited(nx, ny);
                                     stack.push([nx, ny]);
                                 }
                             }
                         }
-                        // Limit stack size to prevent crashes on extremely large noisy areas
-                        if (currentSize > maxBlobSize) break;
+                        if (currentSize > (width * height * 0.01)) break; // Safety cap
                     }
 
-                    if (currentSize > maxBlob.size && currentSize > minBlobSize && currentSize < maxBlobSize) {
-                        maxBlob = { size: currentSize, sumX: currentSumX, sumY: currentSumY };
+                    // Validate blob: size should match settings and it shouldn't be too elongated (like a long line)
+                    const blobW = cMaxX - cMinX + 1;
+                    const blobH = cMaxY - cMinY + 1;
+                    const aspectRatio = Math.max(blobW, blobH) / Math.min(blobW, blobH);
+
+                    if (currentSize > maxBlob.size && currentSize >= minBlobArea && aspectRatio < 3) {
+                        maxBlob = { size: currentSize, sumX: currentSumX, sumY: currentSumY, minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY };
                     }
                 }
             }
@@ -163,10 +157,10 @@ export const findAlignmentMarks = (imageData: ImageData): Corners | null => {
         return null;
     };
 
-    const tl = getCornerCentroid(0, 0, cornerSizeW, cornerSizeH, 'TL');
-    const tr = getCornerCentroid(width - cornerSizeW, 0, width, cornerSizeH, 'TR');
-    const br = getCornerCentroid(width - cornerSizeW, height - cornerSizeH, width, height, 'BR');
-    const bl = getCornerCentroid(0, height - cornerSizeH, cornerSizeW, height, 'BL');
+    const tl = getCornerCentroid(0, 0, cornerSizeW, cornerSizeH);
+    const tr = getCornerCentroid(width - cornerSizeW, 0, width, cornerSizeH);
+    const br = getCornerCentroid(width - cornerSizeW, height - cornerSizeH, width, height);
+    const bl = getCornerCentroid(0, height - cornerSizeH, cornerSizeW, height);
 
     if (tl && tr && br && bl) return { tl, tr, br, bl };
     return null;
@@ -292,7 +286,8 @@ export const detectAndWarpCrop = async (
         if (!ctx) return { url: null };
         ctx.drawImage(img, 0, 0);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const found = findAlignmentMarks(imageData);
+        // Default settings for grid-wide detection
+        const found = findAlignmentMarks(imageData, { minSize: 10, threshold: 160, padding: 0 });
         if (found) srcCorners = found;
     }
 

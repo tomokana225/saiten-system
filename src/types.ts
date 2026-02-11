@@ -62,7 +62,6 @@ export enum AreaType {
 export type GradingFilter = 'ALL' | 'SCORED' | ScoringStatus;
 
 // --- Export/Import Utilities ---
-// Added ExportImportOptions interface to resolve missing member error
 export interface ExportImportOptions {
     includeTemplate: boolean;
     includeStudents: boolean;
@@ -132,6 +131,8 @@ export interface Point {
     markSheetOptions?: number;
     markSheetLayout?: 'horizontal' | 'vertical';
     correctAnswerIndex?: number;
+    markRefRightAreaId?: number;
+    markRefBottomAreaId?: number;
 }
 
 export type AnnotationTool = 'pen' | 'wave' | 'circle' | 'text';
@@ -173,6 +174,7 @@ export interface ScoreData {
     score: number | null;
     annotations?: Annotation[];
     detectedMarkIndex?: number | number[];
+    detectedPositions?: { x: number, y: number }[];
     manualPanOffset?: { x: number; y: number };
 }
 
