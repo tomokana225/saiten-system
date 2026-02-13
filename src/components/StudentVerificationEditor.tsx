@@ -214,11 +214,14 @@ export const StudentVerificationEditor = () => {
     const [markThreshold, setMarkThreshold] = useState(130);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({}); // Key: "sheetId-pageIndex"
     const [sheetMessages, setSheetMessages] = useState<Record<string, string>>({}); // Key: sheetId
-    const [detectedIds, setDetectedIds] = useState<Record<string, string>>({}); // Key: sheetId, Value: detected number string
+    const [detectedIds, setDetectedIds] = useState<Record<string, string>>({}); // Key: sheetId, Value: detected number string (aggregated)
+    const [pageDetectedIds, setPageDetectedIds] = useState<Record<string, Record<number, string>>>({}); // Key: sheetId -> pageIdx -> detected ID string
     const [movedStudentIndices, setMovedStudentIndices] = useState<Set<number>>(new Set());
     
-    // Manual assignment inputs for unmatched sheets
+    // Manual assignment inputs for unmatched sheets (Row Level)
     const [manualAssignInputs, setManualAssignInputs] = useState<Record<string, { class: string, number: string }>>({});
+    // Manual assignment inputs for specific pages (Page Level)
+    const [pageAssignInputs, setPageAssignInputs] = useState<Record<string, Record<number, { class: string, number: string }>>>({});
 
     // Default to template pages, but allow user override for 1-sided template with 2-sided scans
     const [pagesPerStudentOverride, setPagesPerStudentOverride] = useState<number>(() => {
@@ -421,6 +424,61 @@ export const StudentVerificationEditor = () => {
         setMovedStudentIndices(prev => new Set([...prev, targetStudentIndex]));
     };
 
+    const handlePageManualAssign = (sheetIndex: number, pageIndex: number) => {
+        const sheet = uploadedSheets[sheetIndex];
+        if (!sheet) return;
+        const input = pageAssignInputs[sheet.id]?.[pageIndex];
+        if (!input || !input.class || !input.number) return;
+
+        const targetClass = input.class.trim();
+        const targetNumber = input.number.trim();
+
+        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+
+        if (targetStudentIndex === -1) {
+            alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
+            return;
+        }
+
+        const newSheets = [...uploadedSheets];
+        // Ensure array is long enough
+        while (newSheets.length <= targetStudentIndex) {
+            newSheets.push({ id: `empty-fill-${newSheets.length}`, originalName: 'Empty', filePath: null, images: Array(pagesPerStudent).fill(null) });
+        }
+
+        const sourceSheet = { ...newSheets[sheetIndex], images: [...newSheets[sheetIndex].images] };
+        const targetSheet = { ...newSheets[targetStudentIndex], images: [...newSheets[targetStudentIndex].images] };
+        
+        // Move image from source to target
+        const imageToMove = sourceSheet.images[pageIndex];
+        const imageAtTarget = targetSheet.images[pageIndex];
+
+        if (imageAtTarget) {
+            if (!confirm(`${targetClass}組 ${targetNumber}番 の ${pageIndex + 1}ページ目には既に画像があります。入れ替えますか？`)) {
+                return;
+            }
+        }
+
+        // Swap images at this page index
+        sourceSheet.images[pageIndex] = imageAtTarget;
+        targetSheet.images[pageIndex] = imageToMove;
+
+        newSheets[sheetIndex] = sourceSheet;
+        newSheets[targetStudentIndex] = targetSheet;
+
+        handleStudentSheetsChange(newSheets);
+        
+        // Clear input
+        setPageAssignInputs(prev => {
+            const next = { ...prev };
+            if (next[sheet.id]) {
+                delete next[sheet.id][pageIndex];
+            }
+            return next;
+        });
+        setMovedStudentIndices(prev => new Set([...prev, targetStudentIndex]));
+    };
+
     // --- Info Operations ---
 
     const handleInsertBlankInfo = (index: number) => {
@@ -486,6 +544,7 @@ export const StudentVerificationEditor = () => {
         setMovedStudentIndices(new Set());
         setSheetMessages({}); // Clear previous messages
         setDetectedIds({}); // Clear detected IDs
+        setPageDetectedIds({});
 
         let matchCount = 0;
         let mismatchCount = 0;
@@ -493,6 +552,7 @@ export const StudentVerificationEditor = () => {
         const newMovedIndices = new Set<number>();
         const newSheetMessages: Record<string, string> = {};
         const newDetectedIds: Record<string, string> = {};
+        const newPageDetectedIds: Record<string, Record<number, string>> = {};
 
         // Get numbering base setting
         const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
@@ -501,6 +561,7 @@ export const StudentVerificationEditor = () => {
             // 3. Analyze all ID areas in each chunk (multi-page scan)
             const analyzedChunks = await Promise.all(chunks.map(async (chunk) => {
                 const detectedResults: number[][] = [];
+                const pageSpecificIds: Record<number, string> = {};
                 
                 // Scan every defined ID area (could be on different pages)
                 for (const area of studentIdAreas) {
@@ -515,11 +576,23 @@ export const StudentVerificationEditor = () => {
                             refRight, 
                             refBottom
                         );
-                        if (indices) detectedResults.push(indices);
+                        if (indices) {
+                            detectedResults.push(indices);
+                            
+                            // Format page specific ID
+                            const rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
+                            let detectedIdStr = rawIdStr;
+                            if (rawIdStr.length >= 3) {
+                                const markNumber = rawIdStr.slice(-2);
+                                const markClass = rawIdStr.slice(0, -2);
+                                detectedIdStr = `${markClass}-${markNumber}`;
+                            }
+                            pageSpecificIds[pIdx] = detectedIdStr;
+                        }
                     }
                 }
 
-                if (detectedResults.length === 0) return { chunk, indices: null, isMismatch: false };
+                if (detectedResults.length === 0) return { chunk, indices: null, isMismatch: false, pageSpecificIds };
 
                 // Consistency Check: Ensure all detected IDs on different pages match
                 // We compare the raw index arrays (e.g. [1, 2, 3] for ID 123)
@@ -527,14 +600,14 @@ export const StudentVerificationEditor = () => {
                 const isConsistent = detectedResults.every(res => res.join(',') === firstIdStr);
 
                 // IMPORTANT: Return indices even if mismatched so we can show "Mismatch: 123" (using first page)
-                return { chunk, indices: detectedResults[0], isMismatch: !isConsistent }; 
+                return { chunk, indices: detectedResults[0], isMismatch: !isConsistent, pageSpecificIds }; 
             }));
 
-            const studentAssignedChunks: Record<number, { images: (string | null)[], detectedId: string }> = {};
-            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string, reason?: 'mismatch' | 'duplicate' | 'not_found' }[] = [];
+            const studentAssignedChunks: Record<number, { images: (string | null)[], detectedId: string, pageIds: Record<number, string> }> = {};
+            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string, reason?: 'mismatch' | 'duplicate' | 'not_found', pageIds: Record<number, string> }[] = [];
             const assignedRosterIndices = new Set<number>();
 
-            analyzedChunks.forEach(({ chunk, indices, isMismatch }) => {
+            analyzedChunks.forEach(({ chunk, indices, isMismatch, pageSpecificIds }) => {
                 let detectedIdStr = "";
                 let rawIdStr = "";
 
@@ -554,12 +627,12 @@ export const StudentVerificationEditor = () => {
 
                 if (isMismatch) {
                     mismatchCount++;
-                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'mismatch' });
+                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'mismatch', pageIds: pageSpecificIds });
                     return;
                 }
 
                 if (!indices) {
-                    unmatchedChunks.push({ chunk, reason: 'not_found' });
+                    unmatchedChunks.push({ chunk, reason: 'not_found', pageIds: pageSpecificIds });
                     return;
                 }
 
@@ -587,15 +660,15 @@ export const StudentVerificationEditor = () => {
                 if (matchIndex !== -1) {
                     if (assignedRosterIndices.has(matchIndex)) {
                         // This student already has an assigned sheet -> Duplicate
-                        unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'duplicate' });
+                        unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'duplicate', pageIds: pageSpecificIds });
                         duplicateCount++;
                     } else {
                         // Assign to student
-                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr };
+                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr, pageIds: pageSpecificIds };
                         assignedRosterIndices.add(matchIndex);
                     }
                 } else {
-                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'not_found' });
+                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'not_found', pageIds: pageSpecificIds });
                 }
             });
 
@@ -608,6 +681,7 @@ export const StudentVerificationEditor = () => {
                     newMovedIndices.add(index);
                     const sheetId = `sorted-${info.id}-${Date.now()}`;
                     newDetectedIds[sheetId] = assignment.detectedId;
+                    newPageDetectedIds[sheetId] = assignment.pageIds;
                     return {
                         id: sheetId,
                         originalName: `${info.class}-${info.number}`,
@@ -627,7 +701,7 @@ export const StudentVerificationEditor = () => {
 
             // 5. Append unmatched chunks at the end
             for (let i = 0; i < unmatchedChunks.length; i++) {
-                const { chunk, detectedId, reason } = unmatchedChunks[i];
+                const { chunk, detectedId, reason, pageIds } = unmatchedChunks[i];
                 const sheetId = `unmatched-${Date.now()}-${i}`;
                 newSheets.push({
                     id: sheetId,
@@ -635,6 +709,8 @@ export const StudentVerificationEditor = () => {
                     filePath: chunk[0],
                     images: chunk
                 });
+                newPageDetectedIds[sheetId] = pageIds;
+                
                 if (detectedId) {
                     let msg = "";
                     if (reason === 'mismatch') msg = `不整合: ${detectedId}`;
@@ -650,6 +726,7 @@ export const StudentVerificationEditor = () => {
             setMovedStudentIndices(newMovedIndices);
             setSheetMessages(newSheetMessages);
             setDetectedIds(newDetectedIds);
+            setPageDetectedIds(newPageDetectedIds);
             
             let message = `全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`;
             if (mismatchCount > 0) {
@@ -675,13 +752,17 @@ export const StudentVerificationEditor = () => {
     const handleRefreshDebug = async () => {
         if (studentIdAreas.length === 0) return;
         const newDebugInfos: Record<string, DetectionDebugInfo> = {};
+        // We also want to refresh pageDetectedIds during debug refresh to keep them in sync
+        const newPageDetectedIds: Record<string, Record<number, string>> = {...pageDetectedIds};
+        const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
+
         for (const sheet of uploadedSheets) {
             for (const area of studentIdAreas) {
                 const pIdx = area.pageIndex || 0;
                 const targetImage = sheet.images[pIdx];
                 if (targetImage) {
                     const { refRight, refBottom } = getRefsForArea(area);
-                    const { debugInfo } = await analyzeStudentIdMark(
+                    const { debugInfo, indices } = await analyzeStudentIdMark(
                         targetImage, 
                         area,
                         markThreshold,
@@ -690,10 +771,24 @@ export const StudentVerificationEditor = () => {
                     );
                     // Store debug info with page index as key suffix to handle multi-page visualization
                     newDebugInfos[`${sheet.id}-${pIdx}`] = debugInfo;
+
+                    // Update page detected ID if found
+                    if (indices) {
+                        const rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
+                        let detectedIdStr = rawIdStr;
+                        if (rawIdStr.length >= 3) {
+                            const markNumber = rawIdStr.slice(-2);
+                            const markClass = rawIdStr.slice(0, -2);
+                            detectedIdStr = `${markClass}-${markNumber}`;
+                        }
+                        if (!newPageDetectedIds[sheet.id]) newPageDetectedIds[sheet.id] = {};
+                        newPageDetectedIds[sheet.id][pIdx] = detectedIdStr;
+                    }
                 }
             }
         }
         setDebugInfos(newDebugInfos);
+        setPageDetectedIds(newPageDetectedIds);
     };
 
     useEffect(() => {
@@ -906,6 +1001,7 @@ export const StudentVerificationEditor = () => {
                                             
                                             const isDebugTarget = (showDebugGrid && !!idAreaForPage && targetArea.type === AreaType.STUDENT_ID_MARK);
                                             const debugInfo = sheet && isDebugTarget ? debugInfos[`${sheet.id}-${pageIdx}`] : undefined;
+                                            const pageDetectedId = sheet ? pageDetectedIds[sheet.id]?.[pageIdx] : null;
 
                                             return (
                                                 <div key={pageIdx} className="flex-1 min-w-[120px] flex flex-col gap-1">
@@ -923,6 +1019,11 @@ export const StudentVerificationEditor = () => {
                                                     <div className="flex-1 relative bg-slate-100 dark:bg-slate-900 rounded overflow-hidden border border-slate-200 dark:border-slate-700 group">
                                                         {image ? (
                                                             <>
+                                                                {pageDetectedId && (
+                                                                    <div className="absolute top-1 left-1 bg-sky-500 text-white text-[9px] px-1 py-0.5 rounded shadow-sm font-mono font-bold z-20 pointer-events-none">
+                                                                        {pageDetectedId}
+                                                                    </div>
+                                                                )}
                                                                 <AnswerSnippet 
                                                                     imageSrc={image} 
                                                                     area={targetArea} 
@@ -935,7 +1036,28 @@ export const StudentVerificationEditor = () => {
                                                                         </div>
                                                                     )}
                                                                 </AnswerSnippet>
-                                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
+                                                                <div className="absolute inset-x-0 bottom-0 p-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-30">
+                                                                    <input 
+                                                                        className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
+                                                                        placeholder="組"
+                                                                        value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.class || '') : ''}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: e.target.value}}}))}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                    />
+                                                                    <input 
+                                                                        className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
+                                                                        placeholder="番"
+                                                                        value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.number || '') : ''}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: e.target.value}}}))}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                    />
+                                                                    <button 
+                                                                        className="flex-1 bg-sky-500 text-white text-[9px] rounded hover:bg-sky-600"
+                                                                        onClick={(e) => { e.stopPropagation(); handlePageManualAssign(studentIdx, pageIdx); }}
+                                                                    >
+                                                                        移動
+                                                                    </button>
+                                                                </div>
                                                             </>
                                                         ) : (
                                                             <div className="flex items-center justify-center h-full text-xs text-slate-400">
