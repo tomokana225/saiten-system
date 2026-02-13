@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { UsersIcon, ArrowRightIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
+import { toHalfWidth } from '../utils';
 
 export const StudentInfoInput = () => {
     const { activeProject, handleStudentInfoChange, rosters, updateActiveProject, nextStep } = useProject();
@@ -11,7 +12,7 @@ export const StudentInfoInput = () => {
     // Extract unique classes from the selected roster
     const availableClasses = useMemo(() => {
         if (!selectedRosterId || !rosters[selectedRosterId]) return [];
-        const classes = new Set(rosters[selectedRosterId].students.map(s => s.class));
+        const classes = new Set(rosters[selectedRosterId].students.map(s => toHalfWidth(s.class)));
         return Array.from(classes).sort();
     }, [selectedRosterId, rosters]);
 
@@ -20,11 +21,13 @@ export const StudentInfoInput = () => {
 
         const roster = rosters[selectedRosterId];
         // Filter students by selected class
-        const targetStudents = roster.students.filter(s => s.class === selectedClass);
+        const targetStudents = roster.students.filter(s => toHalfWidth(s.class) === selectedClass);
         
         // Map to student list with unique IDs
         const studentList = targetStudents.map((s, i) => ({
             ...s,
+            class: toHalfWidth(s.class),
+            number: toHalfWidth(s.number),
             id: `roster-${roster.id}-${selectedClass}-${i}-${Date.now()}`
         }));
 

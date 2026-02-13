@@ -9,6 +9,7 @@ import {
     RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon, BoxSelectIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
+import { toHalfWidth } from '../utils';
 
 // Type to store debug information about the grid detection
 interface DetectionDebugInfo {
@@ -211,7 +212,7 @@ export const StudentVerificationEditor = () => {
     const [isSorting, setIsSorting] = useState(false);
     const [showDebugGrid, setShowDebugGrid] = useState(false);
     const [showMovedHighlight, setShowMovedHighlight] = useState(true);
-    const [markThreshold, setMarkThreshold] = useState(130);
+    const [markThreshold, setMarkThreshold] = useState(aiSettings.markSheetSensitivity || 1.5);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({}); // Key: "sheetId-pageIndex"
     const [sheetMessages, setSheetMessages] = useState<Record<string, string>>({}); // Key: sheetId
     const [detectedIds, setDetectedIds] = useState<Record<string, string>>({}); // Key: sheetId, Value: detected number string (aggregated)
@@ -388,10 +389,10 @@ export const StudentVerificationEditor = () => {
         const input = manualAssignInputs[sheet.id];
         if (!input || !input.class || !input.number) return;
 
-        const targetClass = input.class.trim();
-        const targetNumber = input.number.trim();
+        const targetClass = toHalfWidth(input.class.trim());
+        const targetNumber = toHalfWidth(input.number.trim());
 
-        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+        const targetStudentIndex = studentInfoList.findIndex(s => toHalfWidth(s.class) === targetClass && toHalfWidth(s.number) === targetNumber);
 
         if (targetStudentIndex === -1) {
             alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
@@ -430,10 +431,10 @@ export const StudentVerificationEditor = () => {
         const input = pageAssignInputs[sheet.id]?.[pageIndex];
         if (!input || !input.class || !input.number) return;
 
-        const targetClass = input.class.trim();
-        const targetNumber = input.number.trim();
+        const targetClass = toHalfWidth(input.class.trim());
+        const targetNumber = toHalfWidth(input.number.trim());
 
-        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+        const targetStudentIndex = studentInfoList.findIndex(s => toHalfWidth(s.class) === targetClass && toHalfWidth(s.number) === targetNumber);
 
         if (targetStudentIndex === -1) {
             alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
@@ -498,7 +499,13 @@ export const StudentVerificationEditor = () => {
         while (newInfo.length <= index) {
             newInfo.push({ id: `new-info-${Date.now()}-${Math.random()}`, class: '', number: '', name: '' });
         }
-        newInfo[index] = { ...newInfo[index], [field]: value };
+        
+        let val = value;
+        if (field === 'class' || field === 'number') {
+            val = toHalfWidth(val);
+        }
+        
+        newInfo[index] = { ...newInfo[index], [field]: val };
         handleStudentInfoChange(newInfo);
     };
 
@@ -524,172 +531,147 @@ export const StudentVerificationEditor = () => {
             return;
         }
         
-        // 1. Flatten all current images (remove nulls to allow clean regrouping)
-        const allImages = uploadedSheets.flatMap(s => s.images).filter((img): img is string => img !== null);
-        if (allImages.length === 0) return;
-
-        // 2. Regroup into chunks based on current pagesPerStudent setting
-        const chunks: (string | null)[][] = [];
-        for (let i = 0; i < allImages.length; i += pagesPerStudent) {
-            const chunk = allImages.slice(i, i + pagesPerStudent);
-            // Pad with null if the last chunk is incomplete
-            while (chunk.length < pagesPerStudent) chunk.push(null);
-            chunks.push(chunk);
-        }
-
-        if (chunks.length === 0) return;
-
         setIsSorting(true);
         setDebugInfos({}); 
         setMovedStudentIndices(new Set());
-        setSheetMessages({}); // Clear previous messages
-        setDetectedIds({}); // Clear detected IDs
+        setSheetMessages({}); 
+        setDetectedIds({});
         setPageDetectedIds({});
-
-        let matchCount = 0;
-        let mismatchCount = 0;
-        let duplicateCount = 0;
-        const newMovedIndices = new Set<number>();
-        const newSheetMessages: Record<string, string> = {};
-        const newDetectedIds: Record<string, string> = {};
-        const newPageDetectedIds: Record<string, Record<number, string>> = {};
 
         // Get numbering base setting
         const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
 
         try {
-            // 3. Analyze all ID areas in each chunk (multi-page scan)
-            const analyzedChunks = await Promise.all(chunks.map(async (chunk) => {
-                const detectedResults: number[][] = [];
-                const pageSpecificIds: Record<number, string> = {};
-                
-                // Scan every defined ID area (could be on different pages)
-                for (const area of studentIdAreas) {
-                    const pIdx = area.pageIndex || 0;
-                    const targetImage = chunk[pIdx];
-                    if (targetImage) {
-                        const { refRight, refBottom } = getRefsForArea(area);
-                        const { indices } = await analyzeStudentIdMark(
-                            targetImage, 
-                            area, 
-                            markThreshold, 
-                            refRight, 
-                            refBottom
-                        );
-                        if (indices) {
-                            detectedResults.push(indices);
-                            
-                            // Format page specific ID
-                            const rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
-                            let detectedIdStr = rawIdStr;
-                            if (rawIdStr.length >= 3) {
-                                const markNumber = rawIdStr.slice(-2);
-                                const markClass = rawIdStr.slice(0, -2);
-                                detectedIdStr = `${markClass}-${markNumber}`;
-                            }
-                            pageSpecificIds[pIdx] = detectedIdStr;
-                        }
-                    }
+            // Bucket images by Student Index and Page Index
+            // rosterMap: StudentIndex -> [Page0_Image, Page1_Image, ...]
+            const rosterMap: Record<number, (string | null)[]> = {};
+            // Initialize with empty arrays
+            studentInfoList.forEach((_, i) => rosterMap[i] = Array(pagesPerStudent).fill(null));
+            
+            const unmatchedImages: { url: string, reason: string, detectedId?: string, pageIndex: number }[] = [];
+            const newMovedIndices = new Set<number>();
+            const newSheetMessages: Record<string, string> = {};
+            const newDetectedIds: Record<string, string> = {};
+            const newPageDetectedIds: Record<string, Record<number, string>> = {};
+
+            let matchCount = 0;
+            let duplicateCount = 0;
+            let notFoundCount = 0;
+
+            // Iterate over each PAGE column independently
+            for (let pageIdx = 0; pageIdx < pagesPerStudent; pageIdx++) {
+                // Get all images currently in this page column
+                // We use the current sheet index as a temp identifier, but we will ignore it for the final assignment
+                const columnImages = uploadedSheets.map(s => s.images[pageIdx]).filter((img): img is string => img !== null);
+
+                if (columnImages.length === 0) continue;
+
+                const areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+
+                if (!areaForPage) {
+                    // No ID mark for this page, treat as unmatched/manual for now
+                    columnImages.forEach(img => unmatchedImages.push({ url: img, reason: 'no_id_area', pageIndex: pageIdx }));
+                    continue;
                 }
 
-                if (detectedResults.length === 0) return { chunk, indices: null, isMismatch: false, pageSpecificIds };
+                const { refRight, refBottom } = getRefsForArea(areaForPage);
 
-                // Consistency Check: Ensure all detected IDs on different pages match
-                // We compare the raw index arrays (e.g. [1, 2, 3] for ID 123)
-                const firstIdStr = detectedResults[0].join(',');
-                const isConsistent = detectedResults.every(res => res.join(',') === firstIdStr);
+                // Analyze entire column
+                const results = await Promise.all(columnImages.map(async (imagePath) => {
+                    const { indices, debugInfo } = await analyzeStudentIdMark(
+                        imagePath, 
+                        areaForPage, 
+                        markThreshold, 
+                        refRight, 
+                        refBottom
+                    );
+                    return { imagePath, indices, debugInfo };
+                }));
 
-                // IMPORTANT: Return indices even if mismatched so we can show "Mismatch: 123" (using first page)
-                return { chunk, indices: detectedResults[0], isMismatch: !isConsistent, pageSpecificIds }; 
-            }));
+                // Process results for this page column
+                results.forEach((res) => {
+                    if (!res.indices) {
+                        unmatchedImages.push({ url: res.imagePath, reason: 'unrecognized', pageIndex: pageIdx });
+                        return;
+                    }
 
-            const studentAssignedChunks: Record<number, { images: (string | null)[], detectedId: string, pageIds: Record<number, string> }> = {};
-            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string, reason?: 'mismatch' | 'duplicate' | 'not_found', pageIds: Record<number, string> }[] = [];
-            const assignedRosterIndices = new Set<number>();
+                    // Format detected ID
+                    const rawIdStr = res.indices.map(i => ((i + numberingBase) % 10).toString()).join('');
+                    let detectedIdStr = rawIdStr;
+                    let markNumber = rawIdStr;
+                    let markClass = "";
 
-            analyzedChunks.forEach(({ chunk, indices, isMismatch, pageSpecificIds }) => {
-                let detectedIdStr = "";
-                let rawIdStr = "";
-
-                if (indices) {
-                    // Convert indices based on numberingBase setting
-                    rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
-                    
-                    // Format: Class-Number (last 2 digits are number)
                     if (rawIdStr.length >= 3) {
-                        const markNumber = rawIdStr.slice(-2);
-                        const markClass = rawIdStr.slice(0, -2);
+                        markNumber = rawIdStr.slice(-2);
+                        markClass = rawIdStr.slice(0, -2);
                         detectedIdStr = `${markClass}-${markNumber}`;
-                    } else {
-                        detectedIdStr = rawIdStr;
                     }
-                }
 
-                if (isMismatch) {
-                    mismatchCount++;
-                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'mismatch', pageIds: pageSpecificIds });
-                    return;
-                }
+                    // Find student in roster (Normalize before comparing)
+                    const matchIndex = studentInfoList.findIndex(info => {
+                        const infoNum = toHalfWidth(info.number).replace(/[^0-9]/g, '');
+                        const infoClass = toHalfWidth(info.class).replace(/[^0-9]/g, '');
+                        
+                        if (rawIdStr.length < 3) return false; 
+                        
+                        // Pad roster number to 2 digits for comparison
+                        const paddedInfoNum = infoNum.padStart(2, '0');
+                        
+                        return parseInt(paddedInfoNum) === parseInt(markNumber) && parseInt(infoClass) === parseInt(markClass);
+                    });
 
-                if (!indices) {
-                    unmatchedChunks.push({ chunk, reason: 'not_found', pageIds: pageSpecificIds });
-                    return;
-                }
+                    if (matchIndex !== -1) {
+                        // Put in the correct slot for this student and page
+                        if (!rosterMap[matchIndex][pageIdx]) {
+                            rosterMap[matchIndex][pageIdx] = res.imagePath;
+                            matchCount++;
+                            newMovedIndices.add(matchIndex);
+                            
+                            // Track detected ID for UI display (store temporarily by student index key)
+                            const tempKey = `sorted-${matchIndex}`;
+                            if (!newPageDetectedIds[tempKey]) newPageDetectedIds[tempKey] = {};
+                            newPageDetectedIds[tempKey][pageIdx] = detectedIdStr;
+                            
+                            // Use first detected ID as generic label if needed
+                            if (!newDetectedIds[tempKey]) newDetectedIds[tempKey] = detectedIdStr;
 
-                // Match Logic
-                const matchIndex = studentInfoList.findIndex(info => {
-                    const infoNum = info.number.replace(/[^0-9]/g, '');
-                    const infoClass = info.class.replace(/[^0-9]/g, '');
-                    
-                    if (rawIdStr.length < 3) return false; // Need at least 1 digit for class + 2 for number
-                    
-                    const markNumber = rawIdStr.slice(-2);
-                    const markClass = rawIdStr.slice(0, -2);
-                    
-                    // Pad roster number to 2 digits for comparison (e.g. "5" -> "05")
-                    const paddedInfoNum = infoNum.padStart(2, '0');
-                    // Assumes markNumber is already digit string from detection
-                    
-                    // Strict Match
-                    const isNumMatch = parseInt(paddedInfoNum) === parseInt(markNumber);
-                    const isClassMatch = parseInt(infoClass) === parseInt(markClass);
-                    
-                    return isNumMatch && isClassMatch;
+                        } else {
+                            unmatchedImages.push({ url: res.imagePath, reason: 'duplicate', detectedId: detectedIdStr, pageIndex: pageIdx });
+                            duplicateCount++;
+                        }
+                    } else {
+                        unmatchedImages.push({ url: res.imagePath, reason: 'not_found', detectedId: detectedIdStr, pageIndex: pageIdx });
+                        notFoundCount++;
+                    }
                 });
+            }
 
-                if (matchIndex !== -1) {
-                    if (assignedRosterIndices.has(matchIndex)) {
-                        // This student already has an assigned sheet -> Duplicate
-                        unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'duplicate', pageIds: pageSpecificIds });
-                        duplicateCount++;
-                    } else {
-                        // Assign to student
-                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr, pageIds: pageSpecificIds };
-                        assignedRosterIndices.add(matchIndex);
-                    }
-                } else {
-                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'not_found', pageIds: pageSpecificIds });
-                }
-            });
-
-            // 4. Construct new sheet list
+            // 4. Construct new sheet list from buckets
             const newSheets: Student[] = studentInfoList.map((info, index) => {
-                const assignment = studentAssignedChunks[index];
+                const images = rosterMap[index];
+                const hasImages = images.some(img => img !== null);
                 
-                if (assignment) {
-                    matchCount++;
-                    newMovedIndices.add(index);
-                    const sheetId = `sorted-${info.id}-${Date.now()}`;
-                    newDetectedIds[sheetId] = assignment.detectedId;
-                    newPageDetectedIds[sheetId] = assignment.pageIds;
+                // Transfer detected ID maps to the final sheet ID
+                const sheetId = `sorted-${info.id}-${Date.now()}`;
+                const tempKey = `sorted-${index}`;
+                
+                if (newDetectedIds[tempKey]) {
+                    newDetectedIds[sheetId] = newDetectedIds[tempKey];
+                    delete newDetectedIds[tempKey];
+                }
+                if (newPageDetectedIds[tempKey]) {
+                    newPageDetectedIds[sheetId] = newPageDetectedIds[tempKey];
+                    delete newPageDetectedIds[tempKey];
+                }
+
+                if (hasImages) {
                     return {
                         id: sheetId,
                         originalName: `${info.class}-${info.number}`,
-                        filePath: assignment.images[0],
-                        images: assignment.images
+                        filePath: images.find(img => img !== null) || null,
+                        images: images
                     };
                 } else {
-                    // Empty student
                     return {
                         id: `empty-${info.id}-${Date.now()}`,
                         originalName: 'Unassigned',
@@ -699,28 +681,37 @@ export const StudentVerificationEditor = () => {
                 }
             });
 
-            // 5. Append unmatched chunks at the end
-            for (let i = 0; i < unmatchedChunks.length; i++) {
-                const { chunk, detectedId, reason, pageIds } = unmatchedChunks[i];
+            // 5. Append unmatched images
+            // We need to group unmatched images into rows as best as possible, or just dump them linearly
+            // Since they are unmatched, we can't link Page 1 and Page 2.
+            // We will create new rows for them.
+            unmatchedImages.forEach((item, i) => {
                 const sheetId = `unmatched-${Date.now()}-${i}`;
+                const images = Array(pagesPerStudent).fill(null);
+                images[item.pageIndex] = item.url; 
+
                 newSheets.push({
                     id: sheetId,
                     originalName: 'Unmatched',
-                    filePath: chunk[0],
-                    images: chunk
+                    filePath: item.url,
+                    images: images
                 });
-                newPageDetectedIds[sheetId] = pageIds;
-                
-                if (detectedId) {
-                    let msg = "";
-                    if (reason === 'mismatch') msg = `不整合: ${detectedId}`;
-                    else if (reason === 'duplicate') msg = `重複: ${detectedId}`;
-                    else msg = `名簿なし: ${detectedId}`; // reason === 'not_found'
 
+                if (item.detectedId) {
+                    newDetectedIds[sheetId] = item.detectedId;
+                    // Also set page level ID for visualization
+                    if (!newPageDetectedIds[sheetId]) newPageDetectedIds[sheetId] = {};
+                    newPageDetectedIds[sheetId][item.pageIndex] = item.detectedId;
+
+                    let msg = "";
+                    if (item.reason === 'duplicate') msg = `重複: ${item.detectedId}`;
+                    else if (item.reason === 'not_found') msg = `名簿なし: ${item.detectedId}`;
+                    else if (item.reason === 'no_id_area') msg = `ID領域なし`;
+                    else msg = `読取不可`;
+                    
                     newSheetMessages[sheetId] = msg;
-                    newDetectedIds[sheetId] = detectedId;
                 }
-            }
+            });
 
             handleStudentSheetsChange(newSheets);
             setMovedStudentIndices(newMovedIndices);
@@ -728,17 +719,10 @@ export const StudentVerificationEditor = () => {
             setDetectedIds(newDetectedIds);
             setPageDetectedIds(newPageDetectedIds);
             
-            let message = `全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`;
-            if (mismatchCount > 0) {
-                message += `\n\n⚠️ ${mismatchCount}件のページ不整合が見つかりました。\n(認識されたIDがページ間で異なります)`;
-            }
-            if (duplicateCount > 0) {
-                message += `\n\n⚠️ ${duplicateCount}件の重複が見つかりました。\n未割当リストで「重複」と表示されているものを確認してください。`;
-            }
-            const notFoundCount = unmatchedChunks.filter(u => u.reason === 'not_found').length;
-            if (notFoundCount > 0) {
-                message += `\n\n⚠️ ${notFoundCount}件の名簿未登録IDが見つかりました。`;
-            }
+            let message = `全画像をスキャンし、${matchCount}枚の画像を割り当てました。`;
+            if (duplicateCount > 0) message += `\n\n⚠️ ${duplicateCount}件の重複ページが見つかりました（未割当リストを確認してください）。`;
+            if (notFoundCount > 0) message += `\n\n⚠️ ${notFoundCount}件の名簿未登録IDが見つかりました。`;
+            
             alert(message);
 
         } catch (error) {
@@ -945,13 +929,13 @@ export const StudentVerificationEditor = () => {
                                                 className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
                                                 placeholder="組"
                                                 value={manualAssignInputs[sheet!.id]?.class || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: e.target.value}}))}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: toHalfWidth(e.target.value)}}))}
                                             />
                                             <input 
                                                 className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
                                                 placeholder="番"
                                                 value={manualAssignInputs[sheet!.id]?.number || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: e.target.value}}))}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: toHalfWidth(e.target.value)}}))}
                                             />
                                             <button 
                                                 onClick={() => handleManualAssign(studentIdx)}
@@ -1041,14 +1025,14 @@ export const StudentVerificationEditor = () => {
                                                                         className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
                                                                         placeholder="組"
                                                                         value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.class || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: e.target.value}}}))}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: toHalfWidth(e.target.value)}}}))}
                                                                         onClick={e => e.stopPropagation()}
                                                                     />
                                                                     <input 
                                                                         className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
                                                                         placeholder="番"
                                                                         value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.number || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: e.target.value}}}))}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: toHalfWidth(e.target.value)}}}))}
                                                                         onClick={e => e.stopPropagation()}
                                                                     />
                                                                     <button 
