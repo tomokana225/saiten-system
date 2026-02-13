@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { PlusIcon, Trash2Icon } from './icons';
 import type { Roster, StudentInfo } from '../types';
-import { toHalfWidth } from '../utils';
 
 interface RosterManagementViewProps {
     rosters: Record<string, Roster>;
@@ -88,11 +86,7 @@ export const RosterManagementView = ({ rosters, setRosters }: RosterManagementVi
 
     // FIX: Update id type to string.
     const handleRosterStudentChange = (id: string, field: keyof Omit<StudentInfo, 'id'>, value: string) => {
-        let val = value;
-        if (field === 'class' || field === 'number') {
-            val = toHalfWidth(val);
-        }
-        setEditingStudents(prev => prev.map(s => s.id === id ? { ...s, [field]: val } : s));
+        setEditingStudents(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
     };
 
     const handleAddRosterStudent = () => {
@@ -110,8 +104,8 @@ export const RosterManagementView = ({ rosters, setRosters }: RosterManagementVi
             const [studentClass = '', studentNumber = '', studentName = ''] = line.split('\t');
             return {
                 id: `pasted-roster-${Date.now()}-${index}`,
-                class: toHalfWidth(studentClass.trim()),
-                number: toHalfWidth(studentNumber.trim()),
+                class: studentClass.trim(),
+                number: studentNumber.trim(),
                 name: studentName.trim()
             };
         });

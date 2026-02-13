@@ -7,12 +7,6 @@ if (typeof window !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://aistudiocdn.com/pdfjs-dist@4.0.379/build/pdf.worker.mjs';
 }
 
-export const toHalfWidth = (str: string): string => {
-    return str.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) {
-        return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
-    });
-};
-
 export const fileToArrayBuffer = (file: File): Promise<ArrayBuffer> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();

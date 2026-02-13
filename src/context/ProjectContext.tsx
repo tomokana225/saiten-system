@@ -286,32 +286,40 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             scores: {}
         };
 
+        const extraSheets: Student[] = [];
+
         // Merge data from all selected projects
         projectIds.forEach(pid => {
             const p = projects[pid];
             if (!p) return;
             
-            // Concatenate students
+            // 1. Info
             mergedProject.studentInfo.push(...p.studentInfo);
             
-            // Concatenate sheets - Ensure we handle potential mismatches if indices were used, 
-            // but here we just append. Logic relies on index sync between info and sheets.
-            // If p.uploadedSheets has gaps relative to p.studentInfo, we might need filling?
-            // Assuming data integrity: uploadedSheets length >= studentInfo length usually.
-            // Safe merge:
-            const sheetCount = Math.max(p.studentInfo.length, p.uploadedSheets.length);
-            for(let i=0; i<sheetCount; i++) {
+            // 2. Sheets (Aligned)
+            // Ensure strict alignment: index i of studentInfo matches index i of uploadedSheets
+            const alignedCount = p.studentInfo.length;
+            for(let i=0; i<alignedCount; i++) {
                 mergedProject.uploadedSheets.push(p.uploadedSheets[i] || {
-                    id: `empty-merge-${pid}-${i}`,
+                    id: `empty-${pid}-${i}`,
                     originalName: 'Missing',
                     filePath: null,
                     images: []
                 });
             }
 
-            // Merge scores
+            // 3. Sheets (Extras/Unassigned)
+            // Any sheets beyond the student count are considered "unassigned" and appended at the end
+            if (p.uploadedSheets.length > alignedCount) {
+                extraSheets.push(...p.uploadedSheets.slice(alignedCount));
+            }
+
+            // 4. Scores
             mergedProject.scores = { ...mergedProject.scores, ...p.scores };
         });
+
+        // Append extras at the very end
+        mergedProject.uploadedSheets.push(...extraSheets);
 
         setProjects(prev => ({ ...prev, [mergedProject.id]: mergedProject }));
         alert(`「${newName}」として結合しました。`);
