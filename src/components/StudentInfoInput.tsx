@@ -1,83 +1,13 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import type { StudentInfo, Roster } from '../types';
-import { Trash2Icon, PlusIcon, UsersIcon } from './icons';
+import React, { useState, useMemo } from 'react';
+import { UsersIcon, ArrowRightIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 
-const StudentListTable = React.memo(({ studentList, handleInputChange, handleDelete }: {
-    studentList: StudentInfo[];
-    handleInputChange: (id: string, field: string, value: string) => void;
-    handleDelete: (id: string) => void;
-}) => {
-    return (
-        <table className="w-full text-sm text-left">
-            <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-200 dark:bg-slate-700 sticky top-0 z-10">
-                <tr>
-                    <th className="px-4 py-2">組</th>
-                    <th className="px-4 py-2">番号</th>
-                    <th className="px-4 py-2">氏名</th>
-                    <th className="px-4 py-2 w-16"></th>
-                </tr>
-            </thead>
-            <tbody>
-                {studentList.map(student => (
-                    <tr key={student.id} className="border-b border-slate-200 dark:border-slate-700">
-                        <td className="px-2 py-1 align-middle"><input type="text" value={student.class} onChange={(e) => handleInputChange(student.id, 'class', e.target.value)} className="w-full bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded p-1"/></td>
-                        <td className="px-2 py-1 align-middle"><input type="text" value={student.number} onChange={(e) => handleInputChange(student.id, 'number', e.target.value)} className="w-full bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded p-1"/></td>
-                        <td className="px-2 py-1 align-middle"><input type="text" value={student.name} onChange={(e) => handleInputChange(student.id, 'name', e.target.value)} className="w-full bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded p-1"/></td>
-                        <td className="px-2 py-1 text-center align-middle">
-                            <button onClick={() => handleDelete(student.id)} className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors"><Trash2Icon className="w-5 h-5"/></button>
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    );
-});
-
-
 export const StudentInfoInput = () => {
-    const { activeProject, handleStudentInfoChange, rosters } = useProject();
-    const [studentList, setStudentList] = useState<StudentInfo[]>(activeProject?.studentInfo || []);
-    const [pasteData, setPasteData] = useState('');
+    const { activeProject, handleStudentInfoChange, rosters, updateActiveProject, nextStep } = useProject();
     const [selectedRosterId, setSelectedRosterId] = useState('');
-    const [selectedClassesToImport, setSelectedClassesToImport] = useState<Set<string>>(new Set());
+    const [selectedClass, setSelectedClass] = useState<string>('');
 
-    useEffect(() => {
-        setStudentList(activeProject?.studentInfo || []);
-    }, [activeProject?.studentInfo]);
-
-    useEffect(() => {
-        handleStudentInfoChange(studentList);
-    }, [studentList, handleStudentInfoChange]);
-
-    const handleInputChange = (id: string, field: string, value: string) => {
-        setStudentList(studentList.map(s => s.id === id ? { ...s, [field]: value } : s));
-    };
-
-    const handlePasteApply = () => {
-        const lines = pasteData.trim().split('\n');
-        const newStudents = lines.map((line, index) => {
-            const [studentClass = '', studentNumber = '', studentName = ''] = line.split('\t');
-            return {
-                id: `pasted-${Date.now()}-${index}`,
-                class: studentClass.trim(),
-                number: studentNumber.trim(),
-                name: studentName.trim()
-            };
-        });
-        setStudentList(newStudents);
-        setPasteData('');
-    };
-    
-    const handleDelete = (id: string) => {
-        setStudentList(studentList.filter(s => s.id !== id));
-    };
-
-    const handleAddRow = () => {
-        setStudentList([...studentList, { id: `new-${Date.now()}`, class: '', number: '', name: ''}]);
-    };
-    
     // Extract unique classes from the selected roster
     const availableClasses = useMemo(() => {
         if (!selectedRosterId || !rosters[selectedRosterId]) return [];
@@ -85,103 +15,105 @@ export const StudentInfoInput = () => {
         return Array.from(classes).sort();
     }, [selectedRosterId, rosters]);
 
-    // Reset selected classes when roster changes
-    useEffect(() => {
-        setSelectedClassesToImport(new Set());
-    }, [selectedRosterId]);
+    const handleConfirmSelection = () => {
+        if (!selectedRosterId || !rosters[selectedRosterId] || !selectedClass) return;
 
-    const toggleClassSelection = (className: string) => {
-        setSelectedClassesToImport(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(className)) newSet.delete(className);
-            else newSet.add(className);
-            return newSet;
-        });
-    };
+        const roster = rosters[selectedRosterId];
+        // Filter students by selected class
+        const targetStudents = roster.students.filter(s => s.class === selectedClass);
+        
+        // Map to student list with unique IDs
+        const studentList = targetStudents.map((s, i) => ({
+            ...s,
+            id: `roster-${roster.id}-${selectedClass}-${i}-${Date.now()}`
+        }));
 
-    const handleLoadRoster = () => {
-        if (selectedRosterId && rosters[selectedRosterId]) {
-            let targetStudents = rosters[selectedRosterId].students;
-            
-            // Filter by selected classes if any are selected
-            if (selectedClassesToImport.size > 0) {
-                targetStudents = targetStudents.filter(s => selectedClassesToImport.has(s.class));
-            }
-
-            const rosterStudents = targetStudents.map((s, i) => ({
-                ...s,
-                id: `roster-${selectedRosterId}-${i}-${Date.now()}`
-            }));
-            setStudentList(rosterStudents);
+        // Update project name to include class name for clarity if it's generic
+        if (activeProject && !activeProject.name.includes(selectedClass)) {
+             updateActiveProject(p => ({
+                 ...p,
+                 name: `${p.name} - ${selectedClass}組`,
+                 studentInfo: studentList
+             }));
+        } else {
+            handleStudentInfoChange(studentList);
         }
+        
+        nextStep();
     };
 
     return (
-        <div className="w-full flex flex-col lg:flex-row gap-8">
-            <div className="flex-1 space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">生徒情報の入力</h3>
-                <div className="max-h-[60vh] overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-2 rounded-md">
-                   <StudentListTable studentList={studentList} handleInputChange={handleInputChange} handleDelete={handleDelete} />
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 p-6 rounded-lg">
+            <div className="max-w-xl w-full bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-sky-100 dark:bg-sky-900 rounded-full">
+                        <UsersIcon className="w-8 h-8 text-sky-600 dark:text-sky-400" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">採点するクラスを選択</h2>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">あらかじめ登録された名簿から選択してください</p>
+                    </div>
                 </div>
-                <button onClick={handleAddRow} className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors">
-                    <PlusIcon className="w-4 h-4" />
-                    <span>行を追加</span>
-                </button>
-            </div>
-            <div className="lg:w-1/3 space-y-6">
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                        <UsersIcon className="w-5 h-5"/>
-                        名簿から読み込み
-                    </h3>
-                    <div className="space-y-4 mt-3">
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                            1. 名簿（学年）を選択
+                        </label>
                         <select
                             value={selectedRosterId}
-                            onChange={(e) => setSelectedRosterId(e.target.value)}
-                            className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-900"
+                            onChange={(e) => { setSelectedRosterId(e.target.value); setSelectedClass(''); }}
+                            className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all text-lg"
                         >
-                            <option value="">名簿を選択...</option>
+                            <option value="">選択してください...</option>
                             {Object.values(rosters).map(roster => (
                                 <option key={roster.id} value={roster.id}>{roster.name}</option>
                             ))}
                         </select>
+                        {Object.keys(rosters).length === 0 && (
+                            <p className="text-xs text-red-500 mt-2">
+                                ※名簿が登録されていません。ホーム画面の「名簿管理」から作成してください。
+                            </p>
+                        )}
+                    </div>
 
-                        {availableClasses.length > 0 && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">読み込む組を選択 (未選択ですべて)</label>
-                                <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto p-1">
-                                    {availableClasses.map(cls => (
-                                        <label key={cls} className={`flex items-center justify-center px-2 py-1 border rounded cursor-pointer text-xs transition-colors ${selectedClassesToImport.has(cls) ? 'bg-sky-100 border-sky-400 text-sky-800 font-bold' : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 hover:bg-slate-50'}`}>
-                                            <input 
-                                                type="checkbox" 
-                                                className="hidden"
-                                                checked={selectedClassesToImport.has(cls)}
-                                                onChange={() => toggleClassSelection(cls)}
-                                            />
-                                            {cls}
-                                        </label>
-                                    ))}
-                                </div>
+                    <div className={`transition-all duration-300 ${selectedRosterId ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                            2. 採点する組を選択
+                        </label>
+                        {availableClasses.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-3">
+                                {availableClasses.map(cls => (
+                                    <button
+                                        key={cls}
+                                        onClick={() => setSelectedClass(cls)}
+                                        className={`p-3 rounded-lg border font-bold text-lg transition-all ${
+                                            selectedClass === cls
+                                                ? 'bg-sky-500 text-white border-sky-500 shadow-md transform scale-105'
+                                                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30'
+                                        }`}
+                                    >
+                                        {cls}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="p-4 text-center text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-lg">
+                                名簿を選択するとクラスが表示されます
                             </div>
                         )}
+                    </div>
 
-                        <button onClick={handleLoadRoster} disabled={!selectedRosterId} className="w-full px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm transition-colors">
-                            {selectedClassesToImport.size > 0 ? `${selectedClassesToImport.size}クラス分を読み込み` : '名簿全体を読み込み'}
+                    <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+                        <button
+                            onClick={handleConfirmSelection}
+                            disabled={!selectedClass}
+                            className="w-full flex items-center justify-center gap-2 py-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                        >
+                            <span>このクラスで採点を開始</span>
+                            <ArrowRightIcon className="w-5 h-5" />
                         </button>
                     </div>
-                </div>
-                
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Excelから一括貼り付け</h3>
-                    <textarea
-                        value={pasteData}
-                        onChange={(e) => setPasteData(e.target.value)}
-                        className="w-full h-32 bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-600 rounded p-2 text-sm mt-2 border"
-                        placeholder="組, 番号, 氏名の順でタブ区切りで貼り付け...&#10;例:&#10;A組	1	山田 太郎&#10;A組	2	鈴木 花子"
-                    ></textarea>
-                    <button onClick={handlePasteApply} className="w-full mt-2 px-4 py-2 bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors font-medium">
-                        貼り付けデータを反映
-                    </button>
                 </div>
             </div>
         </div>

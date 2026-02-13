@@ -1,7 +1,8 @@
+
 import React, { useMemo, useState } from 'react';
 import type { StudentResult, Area, Point, AllScores, QuestionStats } from '../types';
 import { AreaType, ScoringStatus } from '../types';
-import { FileDownIcon, PrintIcon, FileTextIcon, ListIcon, PieChartIcon, ArrowDown01Icon, ArrowDownWideNarrowIcon } from './icons';
+import { FileDownIcon, PrintIcon, FileTextIcon, ListIcon, PieChartIcon, ArrowDown01Icon, ArrowDownWideNarrowIcon, UsersIcon, ArrowRightIcon } from './icons';
 import * as xlsx from 'xlsx';
 import { useProject } from '../context/ProjectContext';
 
@@ -63,7 +64,7 @@ const QuestionAnalysisView: React.FC<{ stats: QuestionStats[], totalStudents: nu
 };
 
 export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
-    const { calculatedResults: results, activeProject } = useProject();
+    const { calculatedResults: results, activeProject, cloneProjectForNextClass } = useProject();
     const { areas, points, scores } = activeProject!;
     const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
     const [sortOrder, setSortOrder] = useState<'number' | 'score'>('number');
@@ -204,6 +205,12 @@ export const ResultsView = ({ onPreviewOpen }: ResultsViewProps) => {
                     <button onClick={() => setActiveTab('analysis')} className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors ${activeTab === 'analysis' ? 'bg-white dark:bg-slate-700 shadow' : 'hover:bg-slate-100/50 dark:hover:bg-slate-800/50'}`}><PieChartIcon className="w-4 h-4"/> 問題別分析</button>
                 </div>
                 <div className="flex items-center gap-2">
+                    <button onClick={cloneProjectForNextClass} className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded-md transition-colors font-bold shadow-sm">
+                        <UsersIcon className="w-4 h-4" />
+                        <span>次の組を採点する</span>
+                        <ArrowRightIcon className="w-4 h-4" />
+                    </button>
+                    <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-2"></div>
                      <button onClick={handleExportIndividualReports} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors"><FileTextIcon className="w-4 h-4" />個人成績表をExcelで出力</button>
                     <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors"><FileDownIcon className="w-4 h-4" />CSVでエクスポート</button>
                     <button onClick={() => handlePreview('report')} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors"><PrintIcon className="w-4 h-4" />個人成績表をPDF出力</button>

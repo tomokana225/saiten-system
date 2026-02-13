@@ -26,6 +26,25 @@ export const webElectronAPI = {
             img.src = filePath;
         });
       }
+      case 'load-data': {
+        const key = args[0];
+        const data = localStorage.getItem(key === 'projects' ? 'gradingProjects' : (key === 'layouts' ? 'sheetLayouts' : key));
+        return data ? JSON.parse(data) : null;
+      }
+      case 'save-data': {
+        const { key, data } = args[0];
+        const storageKey = key === 'projects' ? 'gradingProjects' : (key === 'layouts' ? 'sheetLayouts' : key);
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(data));
+            return { success: true };
+        } catch (e: any) {
+            console.error("LocalStorage Save Error", e);
+            if (e.name === 'QuotaExceededError') {
+                alert('ブラウザの保存容量上限に達しました。');
+            }
+            return { success: false, error: e.message };
+        }
+      }
       case 'gemini-validate-key': {
         try {
             // Updated to use process.env.API_KEY exclusively and recommended model 'gemini-3-flash-preview'

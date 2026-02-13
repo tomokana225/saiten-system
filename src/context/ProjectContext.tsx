@@ -51,6 +51,7 @@ interface ProjectContextType {
     handleProjectDelete: (projectId: string) => void;
     handleProjectImport: () => Promise<void>;
     handleProjectExportWithOptions: (projectId: string, options: ExportImportOptions) => Promise<void>;
+    cloneProjectForNextClass: () => void; // New method
     nextStep: () => void;
     prevStep: () => void;
     goToStep: (step: AppStep) => void;
@@ -84,14 +85,33 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return projects[activeProjectId];
     }, [activeProjectId, projects]);
 
-    // Fixed: Ensure useEffect is available from React imports
+    // Load data from persistent storage (file system) on startup
     useEffect(() => {
         const initializeData = async () => {
             setIsLoading(true);
             try {
-                const storedProjects = JSON.parse(localStorage.getItem('gradingProjects') || '{}');
+                // 1. Load Projects
+                let storedProjects = await window.electronAPI.invoke('load-data', 'projects');
+                
+                // Migration: If no file data, check localStorage (first run after update)
+                if (!storedProjects) {
+                    const localData = localStorage.getItem('gradingProjects');
+                    if (localData) {
+                        try {
+                            storedProjects = JSON.parse(localData);
+                            // Save to file immediately to complete migration
+                            await window.electronAPI.invoke('save-data', { key: 'projects', data: storedProjects });
+                        } catch (e) {
+                            console.error("Migration error for projects:", e);
+                            storedProjects = {};
+                        }
+                    } else {
+                        storedProjects = {};
+                    }
+                }
+
+                // Data Normalization/Migration for Projects
                 for (const proj of Object.values(storedProjects) as GradingProject[]) {
-                    // Migration: Convert single page to array if needed
                     if (proj.template && !proj.template.pages) {
                         proj.template.pages = [];
                         if (proj.template.filePath) {
@@ -102,7 +122,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                             });
                         }
                     }
-                    // Migration: Students
                     if (proj.uploadedSheets) {
                         for (const sheet of proj.uploadedSheets) {
                             if (!sheet.images && sheet.filePath) {
@@ -112,16 +131,31 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                             }
                         }
                     }
-                    // Migration: Ensure aiSettings has model and base
                     if (proj.aiSettings) {
                         if (!proj.aiSettings.aiModel) proj.aiSettings.aiModel = 'gemini-3-flash-preview';
                         if (proj.aiSettings.markSheetNumberingBase === undefined) proj.aiSettings.markSheetNumberingBase = 1;
                     }
                 }
                 setProjects(storedProjects);
-                setRosters(JSON.parse(localStorage.getItem('rosters') || '{}'));
-                const storedLayouts = JSON.parse(localStorage.getItem('sheetLayouts') || '{}');
+
+                // 2. Load Rosters
+                let storedRosters = await window.electronAPI.invoke('load-data', 'rosters');
+                if (!storedRosters) {
+                    const localData = localStorage.getItem('rosters');
+                    storedRosters = localData ? JSON.parse(localData) : {};
+                    if (localData) await window.electronAPI.invoke('save-data', { key: 'rosters', data: storedRosters });
+                }
+                setRosters(storedRosters);
+
+                // 3. Load Layouts
+                let storedLayouts = await window.electronAPI.invoke('load-data', 'layouts');
+                if (!storedLayouts) {
+                    const localData = localStorage.getItem('sheetLayouts');
+                    storedLayouts = localData ? JSON.parse(localData) : {};
+                    if (localData) await window.electronAPI.invoke('save-data', { key: 'layouts', data: storedLayouts });
+                }
                 setSheetLayouts(storedLayouts);
+
             } catch (error) {
                 console.error("Failed to initialize data:", error);
             } finally {
@@ -131,30 +165,34 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         initializeData();
     }, []);
 
+    // Save projects with debounce
     useEffect(() => {
-        const persistProjects = () => {
-            if (isLoading) return; // Don't save while initially loading
-            try {
-                localStorage.setItem('gradingProjects', JSON.stringify(projects));
-            } catch (error) {
-                if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-                    alert('ストレージ容量の上限に達しました。古いプロジェクトをエクスポートして削除するか、アップロードする画像のサイズを小さくしてください。');
-                } else {
-                    console.error("Failed to save projects:", error);
-                }
-            }
-        };
-        persistProjects();
+        if (isLoading) return;
+        const timer = setTimeout(() => {
+            window.electronAPI.invoke('save-data', { key: 'projects', data: projects })
+                .catch((e: any) => console.error("Failed to save projects:", e));
+        }, 1000);
+        return () => clearTimeout(timer);
     }, [projects, isLoading]);
     
+    // Save rosters with debounce
     useEffect(() => {
         if (isLoading) return;
-        try { localStorage.setItem('rosters', JSON.stringify(rosters)); } catch (e) { console.error(e); }
+        const timer = setTimeout(() => {
+            window.electronAPI.invoke('save-data', { key: 'rosters', data: rosters })
+                .catch((e: any) => console.error("Failed to save rosters:", e));
+        }, 1000);
+        return () => clearTimeout(timer);
     }, [rosters, isLoading]);
 
+    // Save layouts with debounce
     useEffect(() => {
         if (isLoading) return;
-        try { localStorage.setItem('sheetLayouts', JSON.stringify(sheetLayouts)); } catch (e) { console.error(e); }
+        const timer = setTimeout(() => {
+            window.electronAPI.invoke('save-data', { key: 'layouts', data: sheetLayouts })
+                .catch((e: any) => console.error("Failed to save layouts:", e));
+        }, 1000);
+        return () => clearTimeout(timer);
     }, [sheetLayouts, isLoading]);
 
     // Fixed: Ensure useCallback is available from React imports
@@ -266,6 +304,30 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (result.success) alert(`プロジェクトをエクスポートしました: ${result.path}`);
         else alert(`エクスポートに失敗しました: ${result.error}`);
     };
+
+    const cloneProjectForNextClass = useCallback(() => {
+        if (!activeProject) return;
+        
+        const newId = `proj_${Date.now()}`;
+        // Create a deep copy of configuration but reset student-specific data
+        const newProject: GradingProject = {
+            id: newId,
+            name: `${activeProject.name} (コピー)`,
+            template: activeProject.template,
+            areas: activeProject.areas,
+            points: activeProject.points,
+            aiSettings: activeProject.aiSettings,
+            studentInfo: [], // Reset students
+            uploadedSheets: [], // Reset sheets
+            scores: {}, // Reset scores
+            lastModified: Date.now(),
+        };
+
+        setProjects(prev => ({ ...prev, [newId]: newProject }));
+        setActiveProjectId(newId);
+        // Jump directly to student info input for the new class
+        setCurrentStep(AppStep.STUDENT_INFO_INPUT);
+    }, [activeProject]);
 
     const handleTemplateUpload = async (files: File[]) => {
         if (files.length === 0) return;
@@ -525,7 +587,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeProject, calculatedResults, studentsWithInfo,
         setProjects, setRosters, setSheetLayouts, setActiveProjectId, setCurrentStep, setPreviousStep, setIsLoading,
         updateActiveProject, handleProjectCreate, handleProjectSelect, handleProjectDelete, handleProjectImport,
-        handleProjectExportWithOptions, nextStep, prevStep, goToStep, handleTemplateUpload,
+        handleProjectExportWithOptions, cloneProjectForNextClass, nextStep, prevStep, goToStep, handleTemplateUpload,
         handleStudentSheetsUpload, uploadFilesRaw, handleAreasChange, handleTemplateChange, handleStudentInfoChange,
         handleStudentSheetsChange, handlePointsChange, handleScoresChange
     };

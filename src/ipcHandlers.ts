@@ -1,3 +1,4 @@
+
 import { ipcMain, dialog, app, nativeImage } from 'electron';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs/promises';
@@ -10,8 +11,10 @@ declare const Buffer: {
 };
 
 // Create a dedicated persistent storage directory for this application
-const persistentStorageDir = path.join(app.getPath('getPath' in app ? 'userData' : ''), 'batch-grader-files');
+const persistentStorageDir = path.join(app.getPath('userData'), 'batch-grader-files');
 fs.mkdir(persistentStorageDir, { recursive: true }).catch(console.error);
+
+const getUserDataPath = (key: string) => path.join(app.getPath('userData'), `${key}.json`);
 
 export const registerIpcHandlers = () => {
     // The channel is still 'save-file-temp' for compatibility, but it now saves persistently.
@@ -50,6 +53,29 @@ export const registerIpcHandlers = () => {
             };
         } catch (error) {
             console.error(`[IPC: get-image-details] Failed for path: ${filePath}`, error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // Persistent Data Storage Handlers
+    ipcMain.handle('load-data', async (event, key) => {
+        try {
+            const filePath = getUserDataPath(key);
+            const data = await fs.readFile(filePath, 'utf-8');
+            return JSON.parse(data);
+        } catch (error) {
+            // If file doesn't exist or error, return null to let frontend handle it (e.g. migration)
+            return null;
+        }
+    });
+
+    ipcMain.handle('save-data', async (event, { key, data }) => {
+        try {
+            const filePath = getUserDataPath(key);
+            await fs.writeFile(filePath, JSON.stringify(data));
+            return { success: true };
+        } catch (error: any) {
+            console.error(`Failed to save ${key}:`, error);
             return { success: false, error: error.message };
         }
     });
