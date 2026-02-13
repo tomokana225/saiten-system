@@ -9,6 +9,7 @@ import {
     RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon, BoxSelectIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
+import { toHalfWidth } from '../utils';
 
 // Type to store debug information about the grid detection
 interface DetectionDebugInfo {
@@ -211,7 +212,7 @@ export const StudentVerificationEditor = () => {
     const [isSorting, setIsSorting] = useState(false);
     const [showDebugGrid, setShowDebugGrid] = useState(false);
     const [showMovedHighlight, setShowMovedHighlight] = useState(true);
-    const [markThreshold, setMarkThreshold] = useState(130);
+    const [markThreshold, setMarkThreshold] = useState(aiSettings.markSheetSensitivity || 1.5);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({}); // Key: "sheetId-pageIndex"
     const [sheetMessages, setSheetMessages] = useState<Record<string, string>>({}); // Key: sheetId
     const [detectedIds, setDetectedIds] = useState<Record<string, string>>({}); // Key: sheetId, Value: detected number string (aggregated)
@@ -388,10 +389,10 @@ export const StudentVerificationEditor = () => {
         const input = manualAssignInputs[sheet.id];
         if (!input || !input.class || !input.number) return;
 
-        const targetClass = input.class.trim();
-        const targetNumber = input.number.trim();
+        const targetClass = toHalfWidth(input.class.trim());
+        const targetNumber = toHalfWidth(input.number.trim());
 
-        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+        const targetStudentIndex = studentInfoList.findIndex(s => toHalfWidth(s.class) === targetClass && toHalfWidth(s.number) === targetNumber);
 
         if (targetStudentIndex === -1) {
             alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
@@ -430,10 +431,10 @@ export const StudentVerificationEditor = () => {
         const input = pageAssignInputs[sheet.id]?.[pageIndex];
         if (!input || !input.class || !input.number) return;
 
-        const targetClass = input.class.trim();
-        const targetNumber = input.number.trim();
+        const targetClass = toHalfWidth(input.class.trim());
+        const targetNumber = toHalfWidth(input.number.trim());
 
-        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+        const targetStudentIndex = studentInfoList.findIndex(s => toHalfWidth(s.class) === targetClass && toHalfWidth(s.number) === targetNumber);
 
         if (targetStudentIndex === -1) {
             alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
@@ -498,7 +499,13 @@ export const StudentVerificationEditor = () => {
         while (newInfo.length <= index) {
             newInfo.push({ id: `new-info-${Date.now()}-${Math.random()}`, class: '', number: '', name: '' });
         }
-        newInfo[index] = { ...newInfo[index], [field]: value };
+        
+        let val = value;
+        if (field === 'class' || field === 'number') {
+            val = toHalfWidth(val);
+        }
+        
+        newInfo[index] = { ...newInfo[index], [field]: val };
         handleStudentInfoChange(newInfo);
     };
 
@@ -524,8 +531,11 @@ export const StudentVerificationEditor = () => {
             return;
         }
         
-        // 1. Flatten all current images (remove nulls) to treat each image independently
-        const allImages = uploadedSheets.flatMap(s => s.images).filter((img): img is string => img !== null);
+        // 1. Flatten all current images with their original page index
+        const allImages = uploadedSheets.flatMap(s => 
+            s.images.map((img, idx) => ({ imagePath: img, originalPageIndex: idx }))
+        ).filter((item): item is { imagePath: string, originalPageIndex: number } => item.imagePath !== null);
+
         if (allImages.length === 0) return;
 
         setIsSorting(true);
@@ -539,10 +549,18 @@ export const StudentVerificationEditor = () => {
         const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
 
         try {
-            // 2. Analyze every image against ALL possible ID mark areas (from any page)
-            // This is crucial for mixed/scattered pages.
-            const analysisResults = await Promise.all(allImages.map(async (imagePath) => {
-                for (const area of studentIdAreas) {
+            // 2. Analyze every image against ID mark areas
+            // Sorted by preference for the image's original page index
+            const analysisResults = await Promise.all(allImages.map(async ({ imagePath, originalPageIndex }) => {
+                const sortedAreas = [...studentIdAreas].sort((a, b) => {
+                    const aIsPreferred = (a.pageIndex || 0) === originalPageIndex;
+                    const bIsPreferred = (b.pageIndex || 0) === originalPageIndex;
+                    if (aIsPreferred && !bIsPreferred) return -1;
+                    if (!aIsPreferred && bIsPreferred) return 1;
+                    return 0;
+                });
+
+                for (const area of sortedAreas) {
                     const { refRight, refBottom } = getRefsForArea(area);
                     const { indices } = await analyzeStudentIdMark(
                         imagePath, 
@@ -593,10 +611,10 @@ export const StudentVerificationEditor = () => {
                     detectedIdStr = `${markClass}-${markNumber}`;
                 }
 
-                // Find student in roster
+                // Find student in roster (Normalize before comparing)
                 const matchIndex = studentInfoList.findIndex(info => {
-                    const infoNum = info.number.replace(/[^0-9]/g, '');
-                    const infoClass = info.class.replace(/[^0-9]/g, '');
+                    const infoNum = toHalfWidth(info.number).replace(/[^0-9]/g, '');
+                    const infoClass = toHalfWidth(info.class).replace(/[^0-9]/g, '');
                     
                     if (rawIdStr.length < 3) return false; 
                     
@@ -903,13 +921,13 @@ export const StudentVerificationEditor = () => {
                                                 className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
                                                 placeholder="組"
                                                 value={manualAssignInputs[sheet!.id]?.class || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: e.target.value}}))}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: toHalfWidth(e.target.value)}}))}
                                             />
                                             <input 
                                                 className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
                                                 placeholder="番"
                                                 value={manualAssignInputs[sheet!.id]?.number || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: e.target.value}}))}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: toHalfWidth(e.target.value)}}))}
                                             />
                                             <button 
                                                 onClick={() => handleManualAssign(studentIdx)}
@@ -999,14 +1017,14 @@ export const StudentVerificationEditor = () => {
                                                                         className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
                                                                         placeholder="組"
                                                                         value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.class || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: e.target.value}}}))}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: toHalfWidth(e.target.value)}}}))}
                                                                         onClick={e => e.stopPropagation()}
                                                                     />
                                                                     <input 
                                                                         className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
                                                                         placeholder="番"
                                                                         value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.number || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: e.target.value}}}))}
+                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: toHalfWidth(e.target.value)}}}))}
                                                                         onClick={e => e.stopPropagation()}
                                                                     />
                                                                     <button 
