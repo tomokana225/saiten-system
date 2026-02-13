@@ -38,8 +38,24 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     // These states are managed via local UI but should ideally be in context for consistency
     const [autoAlign, setAutoAlign] = useState(true);
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
+    const [columnCount, setColumnCount] = useState(4);
 
     const answerAreas = useMemo(() => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET), [areas]);
+
+    const filteredStudents = useMemo(() => {
+        if (!selectedAreaId) return [];
+        if (filter === 'ALL') return studentsWithInfo;
+
+        return studentsWithInfo.filter(student => {
+            const scoreData = scores[student.id]?.[selectedAreaId];
+            const status = scoreData?.status || ScoringStatus.UNSCORED;
+
+            if (filter === 'SCORED') {
+                return status !== ScoringStatus.UNSCORED;
+            }
+            return status === filter;
+        });
+    }, [studentsWithInfo, filter, scores, selectedAreaId]);
 
     const handleStartGrading = async (areaIds: number[]) => {
         setIsGrading(true);
@@ -136,13 +152,13 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     onStartMarkSheetGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.MARK_SHEET).map(a => a.id))}
                     onStartAIGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.ANSWER).map(a => a.id))} 
                     isGrading={isGrading} isGradingAll={false} progress={progress} 
-                    filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={4} onColumnCountChange={() => {}} onBulkScore={() => {}} aiGradingMode="auto" onAiGradingModeChange={() => {}} answerFormat="" onAnswerFormatChange={() => {}} 
+                    filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={() => {}} aiGradingMode="auto" onAiGradingModeChange={() => {}} answerFormat="" onAnswerFormatChange={() => {}} 
                     isImageEnhanced={isImageEnhanced} onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} 
                     autoAlign={autoAlign} onToggleAutoAlign={() => setAutoAlign(!autoAlign)} 
                     aiSettings={aiSettings}
                     onAiSettingsChange={(updater) => updateActiveProject(prev => ({ ...prev, aiSettings: updater(prev.aiSettings), lastModified: Date.now() }))}
                 />
-                <StudentAnswerGrid students={studentsWithInfo} selectedAreaId={selectedAreaId!} template={template} areas={areas} points={points} scores={scores} onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} onStartAnnotation={() => {}} onPanCommit={() => {}} gradingStatus={{}} columnCount={4} focusedStudentId={null} onStudentFocus={() => {}} partialScoreInput="" correctedImages={{}} 
+                <StudentAnswerGrid students={filteredStudents} selectedAreaId={selectedAreaId!} template={template} areas={areas} points={points} scores={scores} onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} onStartAnnotation={() => {}} onPanCommit={() => {}} gradingStatus={{}} columnCount={columnCount} focusedStudentId={null} onStudentFocus={() => {}} partialScoreInput="" correctedImages={{}} 
                     isImageEnhanced={isImageEnhanced} autoAlign={autoAlign} aiSettings={aiSettings} />
             </main>
         </div>

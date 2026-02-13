@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import type { Student, Area } from '../types';
 import { AreaType } from '../types';
@@ -413,8 +414,21 @@ export const StudentVerificationEditor = () => {
             alert('テンプレート編集画面で「学籍番号」エリアを設定してください。');
             return;
         }
-        const allImages = uploadedSheets.flatMap(s => s.images).filter(img => img !== null);
+        
+        // 1. Flatten all current images (remove nulls to allow clean regrouping)
+        const allImages = uploadedSheets.flatMap(s => s.images).filter((img): img is string => img !== null);
         if (allImages.length === 0) return;
+
+        // 2. Regroup into chunks based on current pagesPerStudent setting
+        const chunks: (string | null)[][] = [];
+        for (let i = 0; i < allImages.length; i += pagesPerStudent) {
+            const chunk = allImages.slice(i, i + pagesPerStudent);
+            // Pad with null if the last chunk is incomplete
+            while (chunk.length < pagesPerStudent) chunk.push(null);
+            chunks.push(chunk);
+        }
+
+        if (chunks.length === 0) return;
 
         setIsSorting(true);
         setDebugInfos({}); 
@@ -424,24 +438,28 @@ export const StudentVerificationEditor = () => {
         const newMovedIndices = new Set<number>();
 
         try {
-            const analyzedImages = await Promise.all(allImages.map(async (image) => {
-                if (!image) return { image, indices: null };
+            // 3. Analyze specific page in each chunk
+            const analyzedChunks = await Promise.all(chunks.map(async (chunk) => {
+                // The page that contains the ID mark
+                const targetImage = chunk[studentIdPageIdx]; 
+                
+                if (!targetImage) return { chunk, indices: null };
+                
                 const { indices } = await analyzeStudentIdMark(
-                    image, 
-                    studentIdArea,
-                    markThreshold,
+                    targetImage, 
+                    studentIdArea, 
+                    markThreshold, 
                     studentIdRefRight, 
                     studentIdRefBottom
                 );
-                return { image, indices };
+                return { chunk, indices };
             }));
 
-            const studentImageBuckets: Record<number, string[]> = {};
-            const unmatchedImages: string[] = [];
+            const studentAssignedChunks: Record<number, (string | null)[]> = {};
+            const unmatchedChunks: (string | null)[][] = [];
 
-            analyzedImages.forEach(({ image, indices }) => {
-                if (!image) return;
-
+            analyzedChunks.forEach(({ chunk, indices }) => {
+                let matchFound = false;
                 if (indices) {
                     const detectedId_TypeA = indices.map(i => i.toString()).join(''); 
                     const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); 
@@ -465,43 +483,43 @@ export const StudentVerificationEditor = () => {
                     });
 
                     if (matchIndex !== -1) {
-                        if (!studentImageBuckets[matchIndex]) studentImageBuckets[matchIndex] = [];
-                        studentImageBuckets[matchIndex].push(image);
-                    } else {
-                        unmatchedImages.push(image);
+                        studentAssignedChunks[matchIndex] = chunk;
+                        matchFound = true;
                     }
-                } else {
-                    unmatchedImages.push(image);
+                }
+                
+                if (!matchFound) {
+                    unmatchedChunks.push(chunk);
                 }
             });
 
+            // 4. Construct new sheet list
             const newSheets: Student[] = studentInfoList.map((info, index) => {
-                const assignedImages = studentImageBuckets[index] || [];
+                const assignedImages = studentAssignedChunks[index];
                 
-                const finalImages = [...assignedImages];
-                while (finalImages.length < pagesPerStudent) finalImages.push(null);
-                
-                if (finalImages.length > pagesPerStudent) {
-                    const excess = finalImages.splice(pagesPerStudent);
-                    excess.forEach(img => { if(img) unmatchedImages.push(img) });
-                }
-
-                if (assignedImages.length > 0) {
+                if (assignedImages) {
                     matchCount++;
                     newMovedIndices.add(index);
+                    return {
+                        id: `sorted-${info.id}-${Date.now()}`,
+                        originalName: `${info.class}-${info.number}`,
+                        filePath: assignedImages[0],
+                        images: assignedImages
+                    };
+                } else {
+                    // Empty student
+                    return {
+                        id: `empty-${info.id}-${Date.now()}`,
+                        originalName: 'Unassigned',
+                        filePath: null,
+                        images: Array(pagesPerStudent).fill(null)
+                    };
                 }
-
-                return {
-                    id: `sorted-${info.id}-${Date.now()}`,
-                    originalName: `${info.class}-${info.number}`,
-                    filePath: finalImages[0],
-                    images: finalImages
-                };
             });
 
-            for (let i = 0; i < unmatchedImages.length; i += pagesPerStudent) {
-                const chunk = unmatchedImages.slice(i, i + pagesPerStudent);
-                while (chunk.length < pagesPerStudent) chunk.push(null);
+            // 5. Append unmatched chunks at the end
+            for (let i = 0; i < unmatchedChunks.length; i++) {
+                const chunk = unmatchedChunks[i];
                 newSheets.push({
                     id: `unmatched-${Date.now()}-${i}`,
                     originalName: 'Unmatched',

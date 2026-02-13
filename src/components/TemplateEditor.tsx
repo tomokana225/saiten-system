@@ -42,6 +42,32 @@ const migrateAreas = (areasToMigrate: Area[]): Area[] => {
     });
 };
 
+// Automatic renumbering logic
+const autoRenumber = (currentAreas: Area[]): Area[] => {
+    const targets = currentAreas.filter(a => a.type === AreaTypeEnum.ANSWER || a.type === AreaTypeEnum.MARK_SHEET);
+    const others = currentAreas.filter(a => a.type !== AreaTypeEnum.ANSWER && a.type !== AreaTypeEnum.MARK_SHEET);
+
+    targets.sort((a, b) => {
+        const pA = a.pageIndex || 0;
+        const pB = b.pageIndex || 0;
+        if (pA !== pB) return pA - pB;
+        
+        // Y-priority with 15px threshold for "same line" detection
+        if (Math.abs(a.y - b.y) > 15) {
+            return a.y - b.y;
+        }
+        return a.x - b.x;
+    });
+
+    const renumberedTargets = targets.map((area, idx) => ({
+        ...area,
+        name: `問${idx + 1}`,
+        questionNumber: idx + 1
+    }));
+
+    return [...others, ...renumberedTargets];
+};
+
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     // FIX: aiSettings is a property of activeProject, not a direct export of useProject
     const { activeProject, handleAreasChange, handleTemplateChange } = useProject();
@@ -63,7 +89,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [activePageIndex, setActivePageIndex] = useState(0);
     const activePage = pages[activePageIndex];
 
-    const [areas, setAreas] = useState<Area[]>(() => migrateAreas(initialAreas));
+    // Initialize with migrated and renumbered areas
+    const [areas, setAreas] = useState<Area[]>(() => autoRenumber(migrateAreas(initialAreas)));
     const [selectedAreaIds, setSelectedAreaIds] = useState<Set<number>>(new Set());
     const [zoom, setZoom] = useState(1);
     
@@ -73,6 +100,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     const [manualDrawType, setManualDrawType] = useState<AreaType | null>(null);
     
     const [drawState, setDrawState] = useState<DrawState | null>(null);
+    const [currentDragPoint, setCurrentDragPoint] = useState<{ x: number, y: number } | null>(null);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     
     const [panState, setPanState] = useState<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -95,20 +123,22 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
 
     useEffect(() => {
         const migrated = migrateAreas(initialAreas);
-        setAreas(migrated);
-        setHistory([migrated]);
+        const renumbered = autoRenumber(migrated);
+        setAreas(renumbered);
+        setHistory([renumbered]);
         setHistoryIndex(0);
     }, [activeProject?.id]);
 
     const commitAreas = useCallback((newAreas: Area[]) => {
         const migrated = migrateAreas(newAreas);
-        setAreas(migrated);
+        const renumbered = autoRenumber(migrated);
+        setAreas(renumbered);
         setHistory(prev => {
             const truncated = prev.slice(0, historyIndex + 1);
-            return [...truncated, migrated];
+            return [...truncated, renumbered];
         });
         setHistoryIndex(prev => prev + 1);
-        handleAreasChange(migrated);
+        handleAreasChange(renumbered);
     }, [historyIndex, handleAreasChange]);
 
     const undo = useCallback(() => {
@@ -251,7 +281,30 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 correctedHandles.forEach(h => ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize));
             }
         });
-    }, [currentPageAreas, selectedAreaIds, activePage, zoom, showMarkPoints, detectedMarkPoints]);
+
+        // Draw temporary box during manual drag creation
+        if (drawState?.isDrawing && drawState.startPoint && currentDragPoint) {
+            const sx = drawState.startPoint.x;
+            const sy = drawState.startPoint.y;
+            const ex = currentDragPoint.x;
+            const ey = currentDragPoint.y;
+            
+            const x = Math.min(sx, ex);
+            const y = Math.min(sy, ey);
+            const w = Math.abs(ex - sx);
+            const h = Math.abs(ey - sy);
+
+            ctx.save();
+            ctx.strokeStyle = '#0ea5e9'; // Blue-500
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(x, y, w, h);
+            ctx.fillStyle = 'rgba(14, 165, 233, 0.2)';
+            ctx.fillRect(x, y, w, h);
+            ctx.restore();
+        }
+
+    }, [currentPageAreas, selectedAreaIds, activePage, zoom, showMarkPoints, detectedMarkPoints, drawState, currentDragPoint]);
     
     const getRelativeCoords = (e: React.MouseEvent | MouseEvent): { x: number, y: number } => {
         const rect = canvasRef.current!.getBoundingClientRect();
@@ -332,6 +385,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             setDrawState({ isResizing: false, isMoving: true, isDrawing: false, startPoint: pos, resizeHandle: null, moveStartArea: clickedArea, moveStartPositions });
         } else if (manualDrawType) {
             setDrawState({ isDrawing: true, isResizing: false, isMoving: false, startPoint: pos, resizeHandle: null, moveStartArea: null });
+            setCurrentDragPoint(pos); // Initialize drag point
         } else {
             setSelectedAreaIds(new Set());
         }
@@ -377,6 +431,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     if (startPos) return { ...area, x: startPos.x + dx, y: startPos.y + dy };
                     return area;
                 }));
+            } else if (drawState.isDrawing) {
+                setCurrentDragPoint(pos);
             }
         };
 
@@ -393,7 +449,10 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                 commitAreas([...areas, newArea]); setSelectedAreaIds(new Set([newArea.id]));
             }
         } else if(drawState?.isMoving || drawState?.isResizing) commitAreas(areas);
-        setDrawState(null); setPanState(null);
+        
+        setDrawState(null); 
+        setPanState(null);
+        setCurrentDragPoint(null);
     };
 
     const handleWheel = (e: React.WheelEvent) => {
