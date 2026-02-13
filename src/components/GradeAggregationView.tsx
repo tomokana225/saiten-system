@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import type { GradingProject, Student, StudentInfo, AllScores, StudentResult, ScoreData, Point, QuestionStats } from '../types';
 import * as xlsx from 'xlsx';
@@ -92,7 +93,6 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         const emptyResult: AggregatedData = { aggregatedResults: [], points: [], answerPoints: [], allScores: {}, questionStats: [] };
         if (selectedProjectIds.size < 1) return emptyResult;
 
-        // FIX: Explicitly type 'id' as string to avoid "unknown" index error.
         const selectedProjects = (Array.from(selectedProjectIds) as string[])
             .map((id: string) => projects[id])
             .filter((p): p is GradingProject => !!p);
@@ -100,25 +100,64 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         if (selectedProjects.length === 0) return emptyResult;
 
         const combinedScores: AllScores = {};
-        const combinedStudents: (Student & StudentInfo)[] = [];
+        const combinedStudentsMap = new Map<string, Student & StudentInfo>();
         
+        // Helper to determine if a score entry is meaningful (has been graded)
+        const isMeaningfulScore = (s: ScoreData) => s.status !== ScoringStatus.UNSCORED && s.score !== null;
+
         selectedProjects.forEach(proj => {
             if (!proj) return;
-            Object.assign(combinedScores, proj.scores);
+            
+            // 1. Deep Merge Scores to prevent overwriting valid scores with empty ones
+            Object.entries(proj.scores).forEach(([studentId, areaScores]) => {
+                if (!combinedScores[studentId]) {
+                    combinedScores[studentId] = { ...areaScores };
+                } else {
+                    Object.entries(areaScores).forEach(([areaIdStr, scoreData]) => {
+                        const areaId = Number(areaIdStr);
+                        const existingScore = combinedScores[studentId][areaId];
+                        // Overwrite if new data is meaningful or we don't have data yet
+                        if (isMeaningfulScore(scoreData) || !existingScore) {
+                            combinedScores[studentId][areaId] = scoreData;
+                        }
+                    });
+                }
+            });
+
+            // 2. Deduplicate Students using a Map
             proj.studentInfo.forEach((info, index) => {
                 const sheet = proj.uploadedSheets[index];
-                if (sheet) {
-                    combinedStudents.push({ ...info, ...sheet });
+                const hasImages = sheet && sheet.images && sheet.images.some(img => img !== null);
+                const studentObj = { ...info, ...(sheet || { id: `missing-${info.id}`, originalName: 'N/A', filePath: null, images: [] }) };
+
+                const existing = combinedStudentsMap.get(info.id);
+                if (!existing) {
+                    combinedStudentsMap.set(info.id, studentObj);
+                } else {
+                    // If we already have this student, prefer the one with answer sheet images
+                    const existingHasImages = existing.images && existing.images.some(img => img !== null);
+                    if (!existingHasImages && hasImages) {
+                        combinedStudentsMap.set(info.id, studentObj);
+                    }
                 }
             });
         });
         
+        const combinedStudents = Array.from(combinedStudentsMap.values());
+        
         const referencePoints = selectedProjects[0].points;
         const answerPoints = referencePoints.filter(p => selectedProjects[0].areas.some(a => a.id === p.id && (a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET)));
+        const validPointIds = new Set(answerPoints.map(p => p.id));
 
         const allStudentsWithDetails = combinedStudents.map(student => {
             const studentScores = combinedScores[student.id] || {};
-            const totalScore = Object.values(studentScores).reduce((sum, scoreData: ScoreData) => sum + (scoreData.score || 0), 0);
+            // Only sum scores that correspond to valid answer areas in the reference project
+            const totalScore = Object.entries(studentScores).reduce((sum, [pId, scoreData]) => {
+                if (validPointIds.has(Number(pId))) {
+                    return sum + (scoreData.score || 0);
+                }
+                return sum;
+            }, 0);
             return { ...student, totalScore };
         });
 
@@ -131,7 +170,7 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
 
         let resultsWithOverallRank = allStudentsWithDetails.map(student => {
             const standardScore = stdDev === 0 ? "50.0" : (((10 * (student.totalScore - mean)) / stdDev) + 50).toFixed(1);
-            return { ...student, standardScore, rank: 0, classRank: 0, subtotals: {} }; // Class rank is complex here, so we focus on overall
+            return { ...student, standardScore, rank: 0, classRank: 0, subtotals: {} };
         });
 
         resultsWithOverallRank.sort((a, b) => b.totalScore - a.totalScore);

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import type { StudentResult, Template, Area, Point, AllScores, LayoutSettings, ReportLayoutSettings, QuestionStats } from '../types';
@@ -49,12 +50,55 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
     const printRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<'report' | 'sheets'>(initialTab);
     
-    // Only select students who have a filePath (meaning they have an uploaded answer sheet) by default.
-    // This prevents printing blank sheets with 0 scores for absent students.
-    const [selectedStudents, setSelectedStudents] = useState<Set<string>>(
-        new Set(results.filter(r => r.filePath).map(r => r.id))
-    );
+    // Filter out students without answers (absent) initially
+    const validStudents = useMemo(() => results.filter(r => r.filePath), [results]);
     
+    // Get unique classes for the filter UI
+    const uniqueClasses = useMemo(() => Array.from(new Set(validStudents.map(r => r.class).filter(Boolean))).sort(), [validStudents]);
+
+    const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set(validStudents.map(r => r.id)));
+    
+    // Manage class selection separately to help with bulk updates
+    const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set(['ALL']));
+
+    const handleClassSelectionChange = (className: string) => {
+        setSelectedClasses(prev => {
+            const newSet = new Set(prev);
+            if (className === 'ALL') {
+                if (newSet.has('ALL')) {
+                    return new Set(); // Deselect All
+                } else {
+                    return new Set(['ALL', ...uniqueClasses]); // Select All
+                }
+            } else {
+                newSet.delete('ALL');
+                if (newSet.has(className)) {
+                    newSet.delete(className);
+                } else {
+                    newSet.add(className);
+                }
+                // Check if all are selected manually
+                if (uniqueClasses.length > 0 && uniqueClasses.every(c => newSet.has(c))) {
+                    newSet.add('ALL');
+                }
+            }
+            return newSet;
+        });
+    };
+
+    // Effect to update selected students based on selected classes
+    useMemo(() => {
+        const isAllSelected = selectedClasses.has('ALL');
+        const nextSelectedStudents = new Set<string>();
+        
+        validStudents.forEach(student => {
+            if (isAllSelected || selectedClasses.has(student.class)) {
+                nextSelectedStudents.add(student.id);
+            }
+        });
+        setSelectedStudents(nextSelectedStudents);
+    }, [selectedClasses, validStudents]);
+
     const [sortOrder, setSortOrder] = useState<'rank' | 'number'>('rank');
     const [reportLayoutSettings, setReportLayoutSettings] = useState<ReportLayoutSettings>({ 
         orientation: 'portrait', 
@@ -72,7 +116,6 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
     const hasLinkedQuestionNumbers = useMemo(() => points.some(p => p.questionNumberAreaId), [points]);
 
     const handleStudentSelectionChange = (studentId: string) => { setSelectedStudents(prev => { const newSet = new Set(prev); if (newSet.has(studentId)) newSet.delete(studentId); else newSet.add(studentId); return newSet; }); };
-    const handleSelectAll = () => { setSelectedStudents(selectedStudents.size === results.length ? new Set() : new Set(results.map(r => r.id))); };
     
     const sortedAndFilteredResults = useMemo(() => {
         const filtered = results.filter(r => selectedStudents.has(r.id));
@@ -88,7 +131,6 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
         return filtered;
     }, [results, selectedStudents, sortOrder]);
 
-    // FIX: The type definitions for 'react-to-print' are likely incorrect and missing the 'content' property. Casting to 'any' to bypass the erroneous type check.
     const handlePrint = useReactToPrint({ content: () => printRef.current, onBeforePrint: async () => { if (activeTab === 'report' && reportLayoutSettings.orientation === 'landscape') document.body.classList.add('printing-landscape'); }, onAfterPrint: () => { document.body.classList.remove('printing-landscape'); } } as any);
     const handleSettingChange = (category: keyof LayoutSettings, key: string, value: any) => { setLayoutSettings(prev => ({ ...prev, [category]: { ...prev[category], [key]: value }})); };
     const handleSubtotalColorChange = (subtotalId: number, color: string) => { setLayoutSettings(prev => ({ ...prev, subtotal: { ...prev.subtotal, colors: { ...prev.subtotal.colors, [subtotalId]: color } } })); };
@@ -206,8 +248,24 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
                     {sortedAndFilteredResults.length > 0 ? (<>{activeTab === 'report' && <PrintableIndividualReport ref={printRef} results={sortedAndFilteredResults} allResults={results} points={points} scores={scores} questionStats={questionStats} settings={reportLayoutSettings} />}{activeTab === 'sheets' && <PrintableAnswerSheet ref={printRef} results={sortedAndFilteredResults} template={template!} areas={areas} points={points} scores={scores} settings={layoutSettings} />}</>) : <div className="flex items-center justify-center h-full text-white"><p>印刷対象の生徒がいません。オプションで選択してください。</p></div>}
                 </div>
                 <aside className="w-80 bg-slate-100 dark:bg-slate-900 p-4 space-y-4 overflow-y-auto print-preview-controls">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">印刷オプション</h3>{renderSettings()}
-                    <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50 flex flex-col"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">印刷する生徒</label><div className="mt-2 space-y-1 max-h-60 overflow-y-auto"><div className="flex items-center"><input id="student-all" type="checkbox" checked={selectedStudents.size === results.length} onChange={handleSelectAll} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor="student-all" className="ml-2 text-sm">すべて選択</label></div>{results.map(r => <div key={r.id} className="flex items-center"><input id={`student-${r.id}`} type="checkbox" checked={selectedStudents.has(r.id)} onChange={() => handleStudentSelectionChange(r.id)} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor={`student-${r.id}`} className="ml-2 text-sm">{r.class}-{r.number} {r.name}</label></div>)}</div></div>
+                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">印刷オプション</h3>
+                    {renderSettings()}
+                    
+                    <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50 flex flex-col">
+                        <label className="font-medium text-sm text-slate-700 dark:text-slate-300">印刷するクラス</label>
+                        <div className="mt-2 space-y-1 max-h-60 overflow-y-auto">
+                            <div className="flex items-center">
+                                <input id="class-all" type="checkbox" checked={selectedClasses.has('ALL')} onChange={() => handleClassSelectionChange('ALL')} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor="class-all" className="ml-2 text-sm">すべて選択</label>
+                            </div>
+                            {uniqueClasses.map(cls => (
+                                <div key={cls} className="flex items-center">
+                                    <input id={`class-${cls}`} type="checkbox" checked={selectedClasses.has(cls)} onChange={() => handleClassSelectionChange(cls)} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor={`class-${cls}`} className="ml-2 text-sm">{cls}</label>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="p-2 rounded-lg bg-slate-200 dark:bg-slate-800/50 flex flex-col"><label className="font-medium text-sm text-slate-700 dark:text-slate-300">印刷する生徒</label><div className="mt-2 space-y-1 max-h-60 overflow-y-auto"><div className="flex items-center"><input id="student-all" type="checkbox" checked={selectedStudents.size === validStudents.length && validStudents.length > 0} onChange={() => setSelectedStudents(prev => prev.size === validStudents.length ? new Set() : new Set(validStudents.map(r => r.id)))} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor="student-all" className="ml-2 text-sm">すべて選択</label></div>{validStudents.map(r => <div key={r.id} className="flex items-center"><input id={`student-${r.id}`} type="checkbox" checked={selectedStudents.has(r.id)} onChange={() => handleStudentSelectionChange(r.id)} className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"/><label htmlFor={`student-${r.id}`} className="ml-2 text-sm">{r.class}-{r.number} {r.name}</label></div>)}</div></div>
                 </aside>
             </main>
         </div>
