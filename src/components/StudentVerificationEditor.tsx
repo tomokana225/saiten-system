@@ -213,6 +213,7 @@ export const StudentVerificationEditor = () => {
     const [showMovedHighlight, setShowMovedHighlight] = useState(true);
     const [markThreshold, setMarkThreshold] = useState(130);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({}); // Key: "sheetId-pageIndex"
+    const [sheetMessages, setSheetMessages] = useState<Record<string, string>>({}); // Key: sheetId
     const [movedStudentIndices, setMovedStudentIndices] = useState<Set<number>>(new Set());
     
     // Default to template pages, but allow user override for 1-sided template with 2-sided scans
@@ -437,10 +438,12 @@ export const StudentVerificationEditor = () => {
         setIsSorting(true);
         setDebugInfos({}); 
         setMovedStudentIndices(new Set());
+        setSheetMessages({}); // Clear previous messages
 
         let matchCount = 0;
         let mismatchCount = 0;
         const newMovedIndices = new Set<number>();
+        const newSheetMessages: Record<string, string> = {};
 
         try {
             // 3. Analyze all ID areas in each chunk (multi-page scan)
@@ -479,33 +482,54 @@ export const StudentVerificationEditor = () => {
             }));
 
             const studentAssignedChunks: Record<number, (string | null)[]> = {};
-            const unmatchedChunks: (string | null)[][] = [];
+            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string }[] = [];
 
             analyzedChunks.forEach(({ chunk, indices, isMismatch }) => {
                 if (isMismatch) {
                     mismatchCount++;
-                    unmatchedChunks.push(chunk);
+                    unmatchedChunks.push({ chunk }); // ID mismatch between pages
                     return;
                 }
 
                 let matchFound = false;
+                let detectedIdStr = "";
+
                 if (indices) {
                     const detectedId_TypeA = indices.map(i => i.toString()).join(''); 
                     const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); 
                     const candidates = [detectedId_TypeA, detectedId_TypeB];
                     
+                    // We try to match strictly.
+                    // Assumed format: Last 2 digits = Number, Remaining prefix = Class.
+                    // e.g. "232" -> Class 2, Num 32. "101" -> Class 1, Num 1. "1123" -> Class 11, Num 23.
+                    
                     const matchIndex = studentInfoList.findIndex(info => {
+                        const infoNum = info.number.replace(/[^0-9]/g, '');
+                        const infoClass = info.class.replace(/[^0-9]/g, '');
+                        
                         return candidates.some(detectedId => {
-                            const simpleCombined = (info.class + info.number).replace(/[^0-9]/g, '');
-                            if (simpleCombined === detectedId) return true;
-                            if (detectedId.length >= 3) {
-                                const markNumber = detectedId.slice(-2); 
-                                const markClassPart = detectedId.slice(0, -2); 
-                                const infoNumStr = info.number.replace(/[^0-9]/g, '');
-                                const infoNumPadded = infoNumStr.padStart(2, '0');
-                                if (infoNumPadded !== markNumber) return false;
-                                const infoClassNums = info.class.replace(/[^0-9]/g, '');
-                                if (infoClassNums.includes(markClassPart)) return true;
+                            if (detectedId.length < 3) return false; // Need at least 1 digit for class + 2 for number
+                            
+                            const markNumber = detectedId.slice(-2);
+                            const markClass = detectedId.slice(0, -2);
+                            
+                            // Pad roster number to 2 digits for comparison (e.g. "5" -> "05")
+                            // BUT mark reading might be "5" if leading zero not marked? 
+                            // Usually marksheet has 10s column and 1s column. 
+                            // If user marked [0][5], we get "05". If they marked [ ][5], we might get... 
+                            // analyzeStudentIdMark returns -1 for unmarked columns. 
+                            // Here we assume full digits returned.
+                            
+                            const paddedInfoNum = infoNum.padStart(2, '0');
+                            const normalizedMarkNum = markNumber; // Assumes detection returns exact digits
+                            
+                            // Strict Match
+                            const isNumMatch = parseInt(paddedInfoNum) === parseInt(normalizedMarkNum);
+                            const isClassMatch = parseInt(infoClass) === parseInt(markClass);
+                            
+                            if (isNumMatch && isClassMatch) {
+                                detectedIdStr = `${markClass}組${markNumber}番`; // Keep valid detection for label
+                                return true;
                             }
                             return false;
                         });
@@ -514,11 +538,19 @@ export const StudentVerificationEditor = () => {
                     if (matchIndex !== -1) {
                         studentAssignedChunks[matchIndex] = chunk;
                         matchFound = true;
+                    } else {
+                        // No match found in roster, but we did read *something* valid-looking
+                        // Pick the most likely Candidate (Type A usually) to show in error message
+                        if (detectedId_TypeA.length >= 3) {
+                            const markNumber = detectedId_TypeA.slice(-2);
+                            const markClass = detectedId_TypeA.slice(0, -2);
+                            detectedIdStr = `${markClass}-${markNumber}`;
+                        }
                     }
                 }
                 
                 if (!matchFound) {
-                    unmatchedChunks.push(chunk);
+                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr });
                 }
             });
 
@@ -548,21 +580,30 @@ export const StudentVerificationEditor = () => {
 
             // 5. Append unmatched chunks at the end
             for (let i = 0; i < unmatchedChunks.length; i++) {
-                const chunk = unmatchedChunks[i];
+                const { chunk, detectedId } = unmatchedChunks[i];
+                const sheetId = `unmatched-${Date.now()}-${i}`;
                 newSheets.push({
-                    id: `unmatched-${Date.now()}-${i}`,
+                    id: sheetId,
                     originalName: 'Unmatched',
                     filePath: chunk[0],
                     images: chunk
                 });
+                if (detectedId) {
+                    newSheetMessages[sheetId] = `名簿なし: 読取値 ${detectedId}`;
+                }
             }
 
             handleStudentSheetsChange(newSheets);
             setMovedStudentIndices(newMovedIndices);
+            setSheetMessages(newSheetMessages);
             
             let message = `全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`;
             if (mismatchCount > 0) {
                 message += `\n\n⚠️ ${mismatchCount}件の不整合が見つかりました。\n(ページ間で学籍番号が一致しないため、未割り当てとして扱いました)`;
+            }
+            const notFoundCount = unmatchedChunks.length - mismatchCount;
+            if (notFoundCount > 0) {
+                message += `\n\n⚠️ ${notFoundCount}件の名簿未登録IDが見つかりました。\n一番下の「未割り当て」リストを確認してください。`;
             }
             alert(message);
 
@@ -716,6 +757,7 @@ export const StudentVerificationEditor = () => {
                         {Array.from({ length: Math.max(uploadedSheets.length, numRows) }).map((_, studentIdx) => {
                             const sheet = uploadedSheets[studentIdx];
                             const isMoved = showMovedHighlight && movedStudentIndices.has(studentIdx);
+                            const errorMessage = sheet ? sheetMessages[sheet.id] : null;
                             
                             // Mock area for full page display
                             const fullPageArea = (pageIdx: number): Area => {
@@ -736,6 +778,12 @@ export const StudentVerificationEditor = () => {
                                             : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
                                     }`}
                                 >
+                                    {errorMessage && (
+                                        <div className="absolute top-0 right-0 left-0 z-20 bg-red-100 text-red-700 text-xs px-2 py-1 font-bold text-center border-b border-red-200">
+                                            <AlertCircleIcon className="w-3 h-3 inline mr-1"/>
+                                            {errorMessage}
+                                        </div>
+                                    )}
                                     <div className="w-6 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 border-r dark:border-slate-700 pr-2 gap-2">
                                         <div className="font-bold text-xs">{studentIdx + 1}</div>
                                         {isMoved && <CheckCircle2Icon className="w-4 h-4 text-orange-500" />}

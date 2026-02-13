@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Point, Template } from '../types';
 import { AreaType } from '../types';
-import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, CheckCircle2Icon, CopyIcon, ArrowDownWideNarrowIcon } from './icons';
+import { SparklesIcon, SpinnerIcon, EyeIcon, EyeOffIcon, CheckCircle2Icon, CopyIcon, ArrowDownWideNarrowIcon, RotateCcwIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { AnswerSnippet } from './AnswerSnippet';
 import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
@@ -112,6 +112,15 @@ export const PointAllocator = () => {
         else setSelectedIds(new Set(internalPoints.map(p => p.id)));
     };
 
+    const toggleInvertSelect = () => {
+        const allIds = new Set(internalPoints.map(p => p.id));
+        const newSelection = new Set<number>();
+        allIds.forEach(id => {
+            if (!selectedIds.has(id)) newSelection.add(id);
+        });
+        setSelectedIds(newSelection);
+    };
+
     const applyBulkPoints = () => {
         const pts = parseInt(bulkPoints);
         if (isNaN(pts)) return;
@@ -144,10 +153,15 @@ export const PointAllocator = () => {
             <div className="flex-shrink-0 flex justify-between items-center mb-4 px-1">
                 <div className="flex items-center gap-4">
                     <h3 className="text-xl font-semibold">解答欄への配点設定</h3>
-                    <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-300 transition-colors select-none">
-                        <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === internalPoints.length} onChange={toggleSelectAll} className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500" />
-                        <span className="text-sm font-bold">すべて選択</span>
-                    </label>
+                    <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-300 transition-colors select-none">
+                            <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === internalPoints.length} onChange={toggleSelectAll} className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500" />
+                            <span className="text-sm font-bold">すべて選択</span>
+                        </label>
+                        <button onClick={toggleInvertSelect} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 transition-colors text-sm font-bold text-slate-700 dark:text-slate-300" title="選択を反転">
+                            <RotateCcwIcon className="w-4 h-4" /> 反転
+                        </button>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => setShowImages(!showImages)} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 dark:bg-slate-700 rounded-md hover:bg-slate-300">

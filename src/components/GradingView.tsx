@@ -35,6 +35,10 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     const [isGrading, setIsGrading] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, message: '' });
     
+    // Focus and Keyboard handling
+    const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
+    const [partialScoreInput, setPartialScoreInput] = useState<string>('');
+
     // These states are managed via local UI but should ideally be in context for consistency
     const [autoAlign, setAutoAlign] = useState(true);
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
@@ -44,18 +48,134 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
 
     const filteredStudents = useMemo(() => {
         if (!selectedAreaId) return [];
-        if (filter === 'ALL') return studentsWithInfo;
+        const area = areas.find(a => a.id === selectedAreaId);
+        const pageIdx = area?.pageIndex || 0;
 
         return studentsWithInfo.filter(student => {
             const scoreData = scores[student.id]?.[selectedAreaId];
             const status = scoreData?.status || ScoringStatus.UNSCORED;
+            const hasImage = !!student.images[pageIdx];
 
             if (filter === 'SCORED') {
                 return status !== ScoringStatus.UNSCORED;
             }
+            if (filter === ScoringStatus.UNSCORED) {
+                // For UNSCORED filter, only show students who actually have an image to grade
+                return status === ScoringStatus.UNSCORED && hasImage;
+            }
+            if (filter === 'ALL') {
+                return true;
+            }
             return status === filter;
         });
-    }, [studentsWithInfo, filter, scores, selectedAreaId]);
+    }, [studentsWithInfo, filter, scores, selectedAreaId, areas]);
+
+    // Helper to advance to next student
+    const moveToNextStudent = useCallback(() => {
+        if (!focusedStudentId || filteredStudents.length === 0) return;
+        const currentIndex = filteredStudents.findIndex(s => s.id === focusedStudentId);
+        if (currentIndex === -1 || currentIndex >= filteredStudents.length - 1) return;
+        
+        const nextStudent = filteredStudents[currentIndex + 1];
+        setFocusedStudentId(nextStudent.id);
+        setPartialScoreInput('');
+        
+        // Scroll into view
+        const el = document.getElementById(`student-card-${nextStudent.id}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }, [focusedStudentId, filteredStudents]);
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (isGrading || !selectedAreaId) return;
+            // Ignore if focus is in an input field (except when it's our own partial score handling context if we controlled it, but here we use global listener)
+            if ((e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+
+            // Navigation
+            if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                e.preventDefault();
+                if (filteredStudents.length === 0) return;
+                
+                const currentIndex = focusedStudentId ? filteredStudents.findIndex(s => s.id === focusedStudentId) : -1;
+                let nextIndex = 0;
+
+                if (currentIndex !== -1) {
+                    if (e.key === 'ArrowRight') nextIndex = Math.min(filteredStudents.length - 1, currentIndex + 1);
+                    else if (e.key === 'ArrowLeft') nextIndex = Math.max(0, currentIndex - 1);
+                    else if (e.key === 'ArrowDown') nextIndex = Math.min(filteredStudents.length - 1, currentIndex + columnCount);
+                    else if (e.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - columnCount);
+                }
+                
+                const nextStudentId = filteredStudents[nextIndex].id;
+                setFocusedStudentId(nextStudentId);
+                setPartialScoreInput('');
+                
+                const el = document.getElementById(`student-card-${nextStudentId}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+
+            // Grading Actions (require focused student)
+            if (!focusedStudentId) return;
+            
+            const point = points.find(p => p.id === selectedAreaId);
+            if (!point) return;
+
+            if (e.key.toLowerCase() === 'j') {
+                // Correct
+                e.preventDefault();
+                handleScoresChange(prev => ({
+                    ...prev,
+                    [focusedStudentId]: { ...prev[focusedStudentId], [selectedAreaId]: { ...prev[focusedStudentId]?.[selectedAreaId], status: ScoringStatus.CORRECT, score: point.points } }
+                }));
+                setPartialScoreInput('');
+                moveToNextStudent(); // Auto advance on J
+            } else if (e.key.toLowerCase() === 'f') {
+                // Incorrect
+                e.preventDefault();
+                handleScoresChange(prev => ({
+                    ...prev,
+                    [focusedStudentId]: { ...prev[focusedStudentId], [selectedAreaId]: { ...prev[focusedStudentId]?.[selectedAreaId], status: ScoringStatus.INCORRECT, score: 0 } }
+                }));
+                setPartialScoreInput('');
+                moveToNextStudent(); // Auto advance on F
+            } else if (/^[0-9]$/.test(e.key)) {
+                // Partial Score Input
+                e.preventDefault();
+                const newInput = partialScoreInput + e.key;
+                const val = parseInt(newInput, 10);
+                if (!isNaN(val) && val <= point.points) {
+                    setPartialScoreInput(newInput);
+                    handleScoresChange(prev => ({
+                        ...prev,
+                        [focusedStudentId]: { ...prev[focusedStudentId], [selectedAreaId]: { ...prev[focusedStudentId]?.[selectedAreaId], status: ScoringStatus.PARTIAL, score: val } }
+                    }));
+                }
+            } else if (e.key === 'Backspace') {
+                e.preventDefault();
+                setPartialScoreInput(prev => {
+                    const next = prev.slice(0, -1);
+                    const val = parseInt(next, 10) || 0;
+                    handleScoresChange(scoresPrev => ({
+                        ...scoresPrev,
+                        [focusedStudentId]: { ...scoresPrev[focusedStudentId], [selectedAreaId]: { ...scoresPrev[focusedStudentId]?.[selectedAreaId], status: ScoringStatus.PARTIAL, score: val } }
+                    }));
+                    return next;
+                });
+            } else if (e.key === 'Enter') {
+                // Confirm and move next
+                e.preventDefault();
+                moveToNextStudent();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isGrading, selectedAreaId, focusedStudentId, filteredStudents, partialScoreInput, points, columnCount, handleScoresChange, moveToNextStudent]);
+
 
     const handleStartGrading = async (areaIds: number[]) => {
         setIsGrading(true);
@@ -158,8 +278,26 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     aiSettings={aiSettings}
                     onAiSettingsChange={(updater) => updateActiveProject(prev => ({ ...prev, aiSettings: updater(prev.aiSettings), lastModified: Date.now() }))}
                 />
-                <StudentAnswerGrid students={filteredStudents} selectedAreaId={selectedAreaId!} template={template} areas={areas} points={points} scores={scores} onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} onStartAnnotation={() => {}} onPanCommit={() => {}} gradingStatus={{}} columnCount={columnCount} focusedStudentId={null} onStudentFocus={() => {}} partialScoreInput="" correctedImages={{}} 
-                    isImageEnhanced={isImageEnhanced} autoAlign={autoAlign} aiSettings={aiSettings} />
+                <StudentAnswerGrid 
+                    students={filteredStudents} 
+                    selectedAreaId={selectedAreaId!} 
+                    template={template} 
+                    areas={areas} 
+                    points={points} 
+                    scores={scores} 
+                    onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} 
+                    onStartAnnotation={() => {}} 
+                    onPanCommit={() => {}} 
+                    gradingStatus={{}} 
+                    columnCount={columnCount} 
+                    focusedStudentId={focusedStudentId} 
+                    onStudentFocus={(id) => { setFocusedStudentId(id); setPartialScoreInput(''); }} 
+                    partialScoreInput={partialScoreInput} 
+                    correctedImages={{}} 
+                    isImageEnhanced={isImageEnhanced} 
+                    autoAlign={autoAlign} 
+                    aiSettings={aiSettings} 
+                />
             </main>
         </div>
     );
