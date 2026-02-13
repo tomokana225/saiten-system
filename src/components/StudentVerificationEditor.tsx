@@ -204,7 +204,7 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
 
 export const StudentVerificationEditor = () => {
     const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, uploadFilesRaw } = useProject();
-    const { uploadedSheets, studentInfo: studentInfoList, template, areas } = activeProject!;
+    const { uploadedSheets, studentInfo: studentInfoList, template, areas, aiSettings } = activeProject!;
 
     const [draggedInfoIndex, setDraggedInfoIndex] = useState<number | null>(null);
     const [dragOverInfoIndex, setDragOverInfoIndex] = useState<number | null>(null);
@@ -489,9 +489,13 @@ export const StudentVerificationEditor = () => {
 
         let matchCount = 0;
         let mismatchCount = 0;
+        let duplicateCount = 0;
         const newMovedIndices = new Set<number>();
         const newSheetMessages: Record<string, string> = {};
         const newDetectedIds: Record<string, string> = {};
+
+        // Get numbering base setting
+        const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
 
         try {
             // 3. Analyze all ID areas in each chunk (multi-page scan)
@@ -515,83 +519,83 @@ export const StudentVerificationEditor = () => {
                     }
                 }
 
-                if (detectedResults.length === 0) return { chunk, indices: null };
+                if (detectedResults.length === 0) return { chunk, indices: null, isMismatch: false };
 
                 // Consistency Check: Ensure all detected IDs on different pages match
                 // We compare the raw index arrays (e.g. [1, 2, 3] for ID 123)
                 const firstIdStr = detectedResults[0].join(',');
                 const isConsistent = detectedResults.every(res => res.join(',') === firstIdStr);
 
-                if (!isConsistent) {
-                    return { chunk, indices: null, isMismatch: true };
-                }
-
-                return { chunk, indices: detectedResults[0] }; // Use consistent ID
+                // IMPORTANT: Return indices even if mismatched so we can show "Mismatch: 123" (using first page)
+                return { chunk, indices: detectedResults[0], isMismatch: !isConsistent }; 
             }));
 
             const studentAssignedChunks: Record<number, { images: (string | null)[], detectedId: string }> = {};
-            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string }[] = [];
+            const unmatchedChunks: { chunk: (string | null)[], detectedId?: string, reason?: 'mismatch' | 'duplicate' | 'not_found' }[] = [];
+            const assignedRosterIndices = new Set<number>();
 
             analyzedChunks.forEach(({ chunk, indices, isMismatch }) => {
+                let detectedIdStr = "";
+                let rawIdStr = "";
+
+                if (indices) {
+                    // Convert indices based on numberingBase setting
+                    rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
+                    
+                    // Format: Class-Number (last 2 digits are number)
+                    if (rawIdStr.length >= 3) {
+                        const markNumber = rawIdStr.slice(-2);
+                        const markClass = rawIdStr.slice(0, -2);
+                        detectedIdStr = `${markClass}-${markNumber}`;
+                    } else {
+                        detectedIdStr = rawIdStr;
+                    }
+                }
+
                 if (isMismatch) {
                     mismatchCount++;
-                    unmatchedChunks.push({ chunk }); // ID mismatch between pages
+                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'mismatch' });
                     return;
                 }
 
-                let matchFound = false;
-                let detectedIdStr = "";
-
-                if (indices) {
-                    const detectedId_TypeA = indices.map(i => i.toString()).join(''); 
-                    const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); 
-                    const candidates = [detectedId_TypeA, detectedId_TypeB];
-                    
-                    // Default best guess to TypeA
-                    if (detectedId_TypeA.length >= 3) {
-                        const markNumber = detectedId_TypeA.slice(-2);
-                        const markClass = detectedId_TypeA.slice(0, -2);
-                        detectedIdStr = `${markClass}-${markNumber}`;
-                    }
-
-                    // We try to match strictly.
-                    // Assumed format: Last 2 digits = Number, Remaining prefix = Class.
-                    
-                    const matchIndex = studentInfoList.findIndex(info => {
-                        const infoNum = info.number.replace(/[^0-9]/g, '');
-                        const infoClass = info.class.replace(/[^0-9]/g, '');
-                        
-                        return candidates.some(detectedId => {
-                            if (detectedId.length < 3) return false; // Need at least 1 digit for class + 2 for number
-                            
-                            const markNumber = detectedId.slice(-2);
-                            const markClass = detectedId.slice(0, -2);
-                            
-                            // Pad roster number to 2 digits for comparison (e.g. "5" -> "05")
-                            const paddedInfoNum = infoNum.padStart(2, '0');
-                            const normalizedMarkNum = markNumber; // Assumes detection returns exact digits
-                            
-                            // Strict Match
-                            const isNumMatch = parseInt(paddedInfoNum) === parseInt(normalizedMarkNum);
-                            const isClassMatch = parseInt(infoClass) === parseInt(markClass);
-                            
-                            if (isNumMatch && isClassMatch) {
-                                // If matched, use this format for display
-                                detectedIdStr = `${markClass}-${markNumber}`;
-                                return true;
-                            }
-                            return false;
-                        });
-                    });
-
-                    if (matchIndex !== -1) {
-                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr };
-                        matchFound = true;
-                    }
+                if (!indices) {
+                    unmatchedChunks.push({ chunk, reason: 'not_found' });
+                    return;
                 }
-                
-                if (!matchFound) {
-                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr });
+
+                // Match Logic
+                const matchIndex = studentInfoList.findIndex(info => {
+                    const infoNum = info.number.replace(/[^0-9]/g, '');
+                    const infoClass = info.class.replace(/[^0-9]/g, '');
+                    
+                    if (rawIdStr.length < 3) return false; // Need at least 1 digit for class + 2 for number
+                    
+                    const markNumber = rawIdStr.slice(-2);
+                    const markClass = rawIdStr.slice(0, -2);
+                    
+                    // Pad roster number to 2 digits for comparison (e.g. "5" -> "05")
+                    const paddedInfoNum = infoNum.padStart(2, '0');
+                    // Assumes markNumber is already digit string from detection
+                    
+                    // Strict Match
+                    const isNumMatch = parseInt(paddedInfoNum) === parseInt(markNumber);
+                    const isClassMatch = parseInt(infoClass) === parseInt(markClass);
+                    
+                    return isNumMatch && isClassMatch;
+                });
+
+                if (matchIndex !== -1) {
+                    if (assignedRosterIndices.has(matchIndex)) {
+                        // This student already has an assigned sheet -> Duplicate
+                        unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'duplicate' });
+                        duplicateCount++;
+                    } else {
+                        // Assign to student
+                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr };
+                        assignedRosterIndices.add(matchIndex);
+                    }
+                } else {
+                    unmatchedChunks.push({ chunk, detectedId: detectedIdStr, reason: 'not_found' });
                 }
             });
 
@@ -623,7 +627,7 @@ export const StudentVerificationEditor = () => {
 
             // 5. Append unmatched chunks at the end
             for (let i = 0; i < unmatchedChunks.length; i++) {
-                const { chunk, detectedId } = unmatchedChunks[i];
+                const { chunk, detectedId, reason } = unmatchedChunks[i];
                 const sheetId = `unmatched-${Date.now()}-${i}`;
                 newSheets.push({
                     id: sheetId,
@@ -632,7 +636,12 @@ export const StudentVerificationEditor = () => {
                     images: chunk
                 });
                 if (detectedId) {
-                    newSheetMessages[sheetId] = `名簿なし`;
+                    let msg = "";
+                    if (reason === 'mismatch') msg = `不整合: ${detectedId}`;
+                    else if (reason === 'duplicate') msg = `重複: ${detectedId}`;
+                    else msg = `名簿なし: ${detectedId}`; // reason === 'not_found'
+
+                    newSheetMessages[sheetId] = msg;
                     newDetectedIds[sheetId] = detectedId;
                 }
             }
@@ -644,11 +653,14 @@ export const StudentVerificationEditor = () => {
             
             let message = `全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`;
             if (mismatchCount > 0) {
-                message += `\n\n⚠️ ${mismatchCount}件の不整合が見つかりました。\n(ページ間で学籍番号が一致しないため、未割り当てとして扱いました)`;
+                message += `\n\n⚠️ ${mismatchCount}件のページ不整合が見つかりました。\n(認識されたIDがページ間で異なります)`;
             }
-            const notFoundCount = unmatchedChunks.length - mismatchCount;
+            if (duplicateCount > 0) {
+                message += `\n\n⚠️ ${duplicateCount}件の重複が見つかりました。\n未割当リストで「重複」と表示されているものを確認してください。`;
+            }
+            const notFoundCount = unmatchedChunks.filter(u => u.reason === 'not_found').length;
             if (notFoundCount > 0) {
-                message += `\n\n⚠️ ${notFoundCount}件の名簿未登録IDが見つかりました。\n一番下の「未割り当て」リストを確認してください。`;
+                message += `\n\n⚠️ ${notFoundCount}件の名簿未登録IDが見つかりました。`;
             }
             alert(message);
 
