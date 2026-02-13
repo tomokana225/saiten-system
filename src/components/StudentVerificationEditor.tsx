@@ -214,8 +214,12 @@ export const StudentVerificationEditor = () => {
     const [markThreshold, setMarkThreshold] = useState(130);
     const [debugInfos, setDebugInfos] = useState<Record<string, DetectionDebugInfo>>({}); // Key: "sheetId-pageIndex"
     const [sheetMessages, setSheetMessages] = useState<Record<string, string>>({}); // Key: sheetId
+    const [detectedIds, setDetectedIds] = useState<Record<string, string>>({}); // Key: sheetId, Value: detected number string
     const [movedStudentIndices, setMovedStudentIndices] = useState<Set<number>>(new Set());
     
+    // Manual assignment inputs for unmatched sheets
+    const [manualAssignInputs, setManualAssignInputs] = useState<Record<string, { class: string, number: string }>>({});
+
     // Default to template pages, but allow user override for 1-sided template with 2-sided scans
     const [pagesPerStudentOverride, setPagesPerStudentOverride] = useState<number>(() => {
         return template?.pages?.length || 1;
@@ -375,6 +379,48 @@ export const StudentVerificationEditor = () => {
         }
     };
 
+    const handleManualAssign = (sheetIndex: number) => {
+        const sheet = uploadedSheets[sheetIndex];
+        if (!sheet) return;
+        const input = manualAssignInputs[sheet.id];
+        if (!input || !input.class || !input.number) return;
+
+        const targetClass = input.class.trim();
+        const targetNumber = input.number.trim();
+
+        const targetStudentIndex = studentInfoList.findIndex(s => s.class === targetClass && s.number === targetNumber);
+
+        if (targetStudentIndex === -1) {
+            alert(`名簿に ${targetClass}組 ${targetNumber}番 の生徒が見つかりません。`);
+            return;
+        }
+
+        const newSheets = [...uploadedSheets];
+        while (newSheets.length <= targetStudentIndex) {
+            newSheets.push({ id: `empty-fill-${newSheets.length}`, originalName: 'Empty', filePath: null, images: Array(pagesPerStudent).fill(null) });
+        }
+
+        const targetSheet = newSheets[targetStudentIndex];
+        const targetHasImages = targetSheet && targetSheet.images.some(img => img !== null);
+        
+        if (targetHasImages) {
+            if (!confirm(`${targetClass}組 ${targetNumber}番 には既に解答用紙が割り当てられています。入れ替えますか？`)) {
+                return;
+            }
+        }
+
+        newSheets[targetStudentIndex] = sheet;
+        newSheets[sheetIndex] = targetSheet;
+
+        handleStudentSheetsChange(newSheets);
+        setManualAssignInputs(prev => {
+            const next = { ...prev };
+            delete next[sheet.id];
+            return next;
+        });
+        setMovedStudentIndices(prev => new Set([...prev, targetStudentIndex]));
+    };
+
     // --- Info Operations ---
 
     const handleInsertBlankInfo = (index: number) => {
@@ -439,11 +485,13 @@ export const StudentVerificationEditor = () => {
         setDebugInfos({}); 
         setMovedStudentIndices(new Set());
         setSheetMessages({}); // Clear previous messages
+        setDetectedIds({}); // Clear detected IDs
 
         let matchCount = 0;
         let mismatchCount = 0;
         const newMovedIndices = new Set<number>();
         const newSheetMessages: Record<string, string> = {};
+        const newDetectedIds: Record<string, string> = {};
 
         try {
             // 3. Analyze all ID areas in each chunk (multi-page scan)
@@ -481,7 +529,7 @@ export const StudentVerificationEditor = () => {
                 return { chunk, indices: detectedResults[0] }; // Use consistent ID
             }));
 
-            const studentAssignedChunks: Record<number, (string | null)[]> = {};
+            const studentAssignedChunks: Record<number, { images: (string | null)[], detectedId: string }> = {};
             const unmatchedChunks: { chunk: (string | null)[], detectedId?: string }[] = [];
 
             analyzedChunks.forEach(({ chunk, indices, isMismatch }) => {
@@ -499,9 +547,15 @@ export const StudentVerificationEditor = () => {
                     const detectedId_TypeB = indices.map(i => ((i + 1) % 10).toString()).join(''); 
                     const candidates = [detectedId_TypeA, detectedId_TypeB];
                     
+                    // Default best guess to TypeA
+                    if (detectedId_TypeA.length >= 3) {
+                        const markNumber = detectedId_TypeA.slice(-2);
+                        const markClass = detectedId_TypeA.slice(0, -2);
+                        detectedIdStr = `${markClass}-${markNumber}`;
+                    }
+
                     // We try to match strictly.
                     // Assumed format: Last 2 digits = Number, Remaining prefix = Class.
-                    // e.g. "232" -> Class 2, Num 32. "101" -> Class 1, Num 1. "1123" -> Class 11, Num 23.
                     
                     const matchIndex = studentInfoList.findIndex(info => {
                         const infoNum = info.number.replace(/[^0-9]/g, '');
@@ -514,12 +568,6 @@ export const StudentVerificationEditor = () => {
                             const markClass = detectedId.slice(0, -2);
                             
                             // Pad roster number to 2 digits for comparison (e.g. "5" -> "05")
-                            // BUT mark reading might be "5" if leading zero not marked? 
-                            // Usually marksheet has 10s column and 1s column. 
-                            // If user marked [0][5], we get "05". If they marked [ ][5], we might get... 
-                            // analyzeStudentIdMark returns -1 for unmarked columns. 
-                            // Here we assume full digits returned.
-                            
                             const paddedInfoNum = infoNum.padStart(2, '0');
                             const normalizedMarkNum = markNumber; // Assumes detection returns exact digits
                             
@@ -528,7 +576,8 @@ export const StudentVerificationEditor = () => {
                             const isClassMatch = parseInt(infoClass) === parseInt(markClass);
                             
                             if (isNumMatch && isClassMatch) {
-                                detectedIdStr = `${markClass}組${markNumber}番`; // Keep valid detection for label
+                                // If matched, use this format for display
+                                detectedIdStr = `${markClass}-${markNumber}`;
                                 return true;
                             }
                             return false;
@@ -536,16 +585,8 @@ export const StudentVerificationEditor = () => {
                     });
 
                     if (matchIndex !== -1) {
-                        studentAssignedChunks[matchIndex] = chunk;
+                        studentAssignedChunks[matchIndex] = { images: chunk, detectedId: detectedIdStr };
                         matchFound = true;
-                    } else {
-                        // No match found in roster, but we did read *something* valid-looking
-                        // Pick the most likely Candidate (Type A usually) to show in error message
-                        if (detectedId_TypeA.length >= 3) {
-                            const markNumber = detectedId_TypeA.slice(-2);
-                            const markClass = detectedId_TypeA.slice(0, -2);
-                            detectedIdStr = `${markClass}-${markNumber}`;
-                        }
                     }
                 }
                 
@@ -556,16 +597,18 @@ export const StudentVerificationEditor = () => {
 
             // 4. Construct new sheet list
             const newSheets: Student[] = studentInfoList.map((info, index) => {
-                const assignedImages = studentAssignedChunks[index];
+                const assignment = studentAssignedChunks[index];
                 
-                if (assignedImages) {
+                if (assignment) {
                     matchCount++;
                     newMovedIndices.add(index);
+                    const sheetId = `sorted-${info.id}-${Date.now()}`;
+                    newDetectedIds[sheetId] = assignment.detectedId;
                     return {
-                        id: `sorted-${info.id}-${Date.now()}`,
+                        id: sheetId,
                         originalName: `${info.class}-${info.number}`,
-                        filePath: assignedImages[0],
-                        images: assignedImages
+                        filePath: assignment.images[0],
+                        images: assignment.images
                     };
                 } else {
                     // Empty student
@@ -589,13 +632,15 @@ export const StudentVerificationEditor = () => {
                     images: chunk
                 });
                 if (detectedId) {
-                    newSheetMessages[sheetId] = `名簿なし: 読取値 ${detectedId}`;
+                    newSheetMessages[sheetId] = `名簿なし`;
+                    newDetectedIds[sheetId] = detectedId;
                 }
             }
 
             handleStudentSheetsChange(newSheets);
             setMovedStudentIndices(newMovedIndices);
             setSheetMessages(newSheetMessages);
+            setDetectedIds(newDetectedIds);
             
             let message = `全画像をスキャンし、${matchCount}名の生徒の解答用紙を並べ替えました。`;
             if (mismatchCount > 0) {
@@ -758,6 +803,9 @@ export const StudentVerificationEditor = () => {
                             const sheet = uploadedSheets[studentIdx];
                             const isMoved = showMovedHighlight && movedStudentIndices.has(studentIdx);
                             const errorMessage = sheet ? sheetMessages[sheet.id] : null;
+                            const isUnassigned = studentIdx >= studentInfoList.length;
+                            const showAssignForm = isUnassigned && sheet && sheet.images.some(i => i !== null);
+                            const detectedId = sheet ? detectedIds[sheet.id] : null;
                             
                             // Mock area for full page display
                             const fullPageArea = (pageIdx: number): Area => {
@@ -778,6 +826,34 @@ export const StudentVerificationEditor = () => {
                                             : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
                                     }`}
                                 >
+                                    {detectedId && (
+                                        <div className="absolute top-1 left-8 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold z-10 shadow-sm pointer-events-none">
+                                            ID: {detectedId}
+                                        </div>
+                                    )}
+                                    {showAssignForm && (
+                                        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded shadow border border-slate-300 dark:border-slate-600 z-10">
+                                            <span className="text-[10px] font-bold text-slate-500">再割当:</span>
+                                            <input 
+                                                className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
+                                                placeholder="組"
+                                                value={manualAssignInputs[sheet!.id]?.class || ''}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: e.target.value}}))}
+                                            />
+                                            <input 
+                                                className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
+                                                placeholder="番"
+                                                value={manualAssignInputs[sheet!.id]?.number || ''}
+                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: e.target.value}}))}
+                                            />
+                                            <button 
+                                                onClick={() => handleManualAssign(studentIdx)}
+                                                className="bg-sky-500 text-white text-xs px-2 py-1 rounded hover:bg-sky-600"
+                                            >
+                                                決定
+                                            </button>
+                                        </div>
+                                    )}
                                     {errorMessage && (
                                         <div className="absolute top-0 right-0 left-0 z-20 bg-red-100 text-red-700 text-xs px-2 py-1 font-bold text-center border-b border-red-200">
                                             <AlertCircleIcon className="w-3 h-3 inline mr-1"/>
