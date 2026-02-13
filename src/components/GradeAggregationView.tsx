@@ -99,6 +99,12 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
 
         if (selectedProjects.length === 0) return emptyResult;
 
+        // Use the first selected project as the "Master" structure provider
+        const baseProject = selectedProjects[0];
+        const referencePoints = baseProject.points;
+        const answerPoints = referencePoints.filter(p => baseProject.areas.some(a => a.id === p.id && (a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET)));
+        const validPointIds = new Set(answerPoints.map(p => p.id));
+
         const combinedScores: AllScores = {};
         const combinedStudentsMap = new Map<string, Student & StudentInfo>();
         
@@ -108,20 +114,46 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         selectedProjects.forEach(proj => {
             if (!proj) return;
             
-            // 1. Deep Merge Scores to prevent overwriting valid scores with empty ones
+            // Build a Point ID Mapping for this project relative to the Base Project
+            // If the user cloned the project, IDs match. If they recreated it, IDs differ but labels match.
+            const pointIdMap = new Map<number, number>();
+            if (proj.id === baseProject.id) {
+                proj.points.forEach(p => pointIdMap.set(p.id, p.id));
+            } else {
+                proj.points.forEach(p => {
+                    // Try to find matching ID first
+                    const sameIdPoint = referencePoints.find(rp => rp.id === p.id);
+                    if (sameIdPoint) {
+                        pointIdMap.set(p.id, sameIdPoint.id);
+                    } else {
+                        // Fallback: Try to find matching Label
+                        const sameLabelPoint = referencePoints.find(rp => rp.label === p.label);
+                        if (sameLabelPoint) {
+                            pointIdMap.set(p.id, sameLabelPoint.id);
+                        }
+                    }
+                });
+            }
+
+            // 1. Merge Scores with remapping
             Object.entries(proj.scores).forEach(([studentId, areaScores]) => {
                 if (!combinedScores[studentId]) {
-                    combinedScores[studentId] = { ...areaScores };
-                } else {
-                    Object.entries(areaScores).forEach(([areaIdStr, scoreData]) => {
-                        const areaId = Number(areaIdStr);
-                        const existingScore = combinedScores[studentId][areaId];
+                    combinedScores[studentId] = {};
+                }
+                
+                Object.entries(areaScores).forEach(([areaIdStr, scoreData]) => {
+                    const areaId = Number(areaIdStr);
+                    const mappedId = pointIdMap.get(areaId);
+                    
+                    // Only process if this point maps to a valid point in the base project
+                    if (mappedId && validPointIds.has(mappedId)) {
+                        const existingScore = combinedScores[studentId][mappedId];
                         // Overwrite if new data is meaningful or we don't have data yet
                         if (isMeaningfulScore(scoreData) || !existingScore) {
-                            combinedScores[studentId][areaId] = scoreData;
+                            combinedScores[studentId][mappedId] = scoreData;
                         }
-                    });
-                }
+                    }
+                });
             });
 
             // 2. Deduplicate Students using a Map
@@ -145,13 +177,9 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         
         const combinedStudents = Array.from(combinedStudentsMap.values());
         
-        const referencePoints = selectedProjects[0].points;
-        const answerPoints = referencePoints.filter(p => selectedProjects[0].areas.some(a => a.id === p.id && (a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET)));
-        const validPointIds = new Set(answerPoints.map(p => p.id));
-
         const allStudentsWithDetails = combinedStudents.map(student => {
             const studentScores = combinedScores[student.id] || {};
-            // Only sum scores that correspond to valid answer areas in the reference project
+            // Sum scores based on mapped IDs
             const totalScore = Object.entries(studentScores).reduce((sum, [pId, scoreData]) => {
                 if (validPointIds.has(Number(pId))) {
                     return sum + (scoreData.score || 0);

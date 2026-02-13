@@ -49,15 +49,17 @@ interface ProjectContextType {
     handleProjectCreate: (projectName: string) => void;
     handleProjectSelect: (projectId: string) => void;
     handleProjectDelete: (projectId: string) => void;
+    handleProjectRename: (projectId: string, newName: string) => void; // New
+    handleProjectMerge: (projectIds: string[], newName: string) => void; // New
     handleProjectImport: () => Promise<void>;
     handleProjectExportWithOptions: (projectId: string, options: ExportImportOptions) => Promise<void>;
-    cloneProjectForNextClass: () => void; // New method
+    cloneProjectForNextClass: () => void;
     nextStep: () => void;
     prevStep: () => void;
     goToStep: (step: AppStep) => void;
     handleTemplateUpload: (files: File[]) => Promise<void>;
     handleStudentSheetsUpload: (files: File[]) => Promise<void>;
-    uploadFilesRaw: (files: File[]) => Promise<{ path: string; name: string }[]>; // New method
+    uploadFilesRaw: (files: File[]) => Promise<{ path: string; name: string }[]>;
     handleAreasChange: (areas: Area[]) => void;
     handleTemplateChange: (templateUpdates: Partial<Template>) => void;
     handleStudentInfoChange: (studentInfo: StudentInfo[]) => void;
@@ -256,6 +258,65 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     };
 
+    const handleProjectRename = (projectId: string, newName: string) => {
+        setProjects(prev => {
+            const project = prev[projectId];
+            if (!project) return prev;
+            return {
+                ...prev,
+                [projectId]: { ...project, name: newName, lastModified: Date.now() }
+            };
+        });
+    };
+
+    const handleProjectMerge = (projectIds: string[], newName: string) => {
+        if (projectIds.length < 2) return;
+
+        // Use the first project as the base for settings/template
+        const baseProject = projects[projectIds[0]];
+        if (!baseProject) return;
+
+        const mergedProject: GradingProject = {
+            ...JSON.parse(JSON.stringify(baseProject)),
+            id: `proj_${Date.now()}`,
+            name: newName,
+            lastModified: Date.now(),
+            studentInfo: [],
+            uploadedSheets: [],
+            scores: {}
+        };
+
+        // Merge data from all selected projects
+        projectIds.forEach(pid => {
+            const p = projects[pid];
+            if (!p) return;
+            
+            // Concatenate students
+            mergedProject.studentInfo.push(...p.studentInfo);
+            
+            // Concatenate sheets - Ensure we handle potential mismatches if indices were used, 
+            // but here we just append. Logic relies on index sync between info and sheets.
+            // If p.uploadedSheets has gaps relative to p.studentInfo, we might need filling?
+            // Assuming data integrity: uploadedSheets length >= studentInfo length usually.
+            // Safe merge:
+            const sheetCount = Math.max(p.studentInfo.length, p.uploadedSheets.length);
+            for(let i=0; i<sheetCount; i++) {
+                mergedProject.uploadedSheets.push(p.uploadedSheets[i] || {
+                    id: `empty-merge-${pid}-${i}`,
+                    originalName: 'Missing',
+                    filePath: null,
+                    images: []
+                });
+            }
+
+            // Merge scores
+            mergedProject.scores = { ...mergedProject.scores, ...p.scores };
+        });
+
+        setProjects(prev => ({ ...prev, [mergedProject.id]: mergedProject }));
+        alert(`「${newName}」として結合しました。`);
+    };
+
     const handleProjectImport = async () => {
         const result = await window.electronAPI.invoke('import-project');
         if (result.success && result.data) {
@@ -309,14 +370,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!activeProject) return;
         
         const newId = `proj_${Date.now()}`;
-        // Create a deep copy of configuration but reset student-specific data
+        // Create a DEEP COPY of configuration to prevent shared references, but reset student-specific data
         const newProject: GradingProject = {
             id: newId,
             name: `${activeProject.name} (コピー)`,
-            template: activeProject.template,
-            areas: activeProject.areas,
-            points: activeProject.points,
-            aiSettings: activeProject.aiSettings,
+            // Use JSON parse/stringify for a quick deep copy of settings objects/arrays
+            template: activeProject.template ? JSON.parse(JSON.stringify(activeProject.template)) : null,
+            areas: JSON.parse(JSON.stringify(activeProject.areas)),
+            points: JSON.parse(JSON.stringify(activeProject.points)),
+            aiSettings: JSON.parse(JSON.stringify(activeProject.aiSettings)),
             studentInfo: [], // Reset students
             uploadedSheets: [], // Reset sheets
             scores: {}, // Reset scores
@@ -589,7 +651,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateActiveProject, handleProjectCreate, handleProjectSelect, handleProjectDelete, handleProjectImport,
         handleProjectExportWithOptions, cloneProjectForNextClass, nextStep, prevStep, goToStep, handleTemplateUpload,
         handleStudentSheetsUpload, uploadFilesRaw, handleAreasChange, handleTemplateChange, handleStudentInfoChange,
-        handleStudentSheetsChange, handlePointsChange, handleScoresChange
+        handleStudentSheetsChange, handlePointsChange, handleScoresChange,
+        handleProjectRename, handleProjectMerge
     };
 
     // Fixed: Ensure useContext is used correctly with ProjectContext

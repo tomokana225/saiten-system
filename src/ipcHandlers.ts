@@ -24,6 +24,7 @@ export const registerIpcHandlers = () => {
             const filePath = path.join(persistentStorageDir, fileName);
             await fs.writeFile(filePath, Buffer.from(buffer));
             // Return a valid file protocol URL for cross-platform compatibility
+            // This ensures images can be loaded by the renderer process even after reload
             return pathToFileURL(filePath).href;
         } catch (error) {
             console.error('Failed to save persistent file:', error);
@@ -36,9 +37,22 @@ export const registerIpcHandlers = () => {
             if (!filePath || typeof filePath !== 'string') {
                 throw new Error('Invalid file path provided to get-image-details.');
             }
-            const systemPath = fileURLToPath(filePath);
+            
+            // Handle both file:// URLs and absolute paths
+            let systemPath = filePath;
+            if (filePath.startsWith('file://')) {
+                try {
+                    systemPath = fileURLToPath(filePath);
+                } catch (e) {
+                    console.error('Failed to convert file URL to path:', filePath, e);
+                }
+            }
+
             const image = nativeImage.createFromPath(systemPath);
             if (image.isEmpty()) {
+                // Try reading file directly if nativeImage fails (sometimes happens with specific encodings)
+                // and converting to data URL manually, but usually nativeImage is best.
+                // If it fails, it might be that the file doesn't exist.
                 throw new Error(`Electron nativeImage failed to load the image at: ${systemPath}`);
             }
             const size = image.getSize();
