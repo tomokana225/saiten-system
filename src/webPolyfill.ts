@@ -47,8 +47,8 @@ export const webElectronAPI = {
       }
       case 'gemini-validate-key': {
         try {
-            // Updated to use process.env.API_KEY exclusively and recommended model 'gemini-3-flash-preview'
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const { apiKey } = args[0] || {};
+            const ai = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY });
             await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'hello' });
             return { success: true };
         } catch (e: any) {
@@ -56,10 +56,9 @@ export const webElectronAPI = {
         }
       }
       case 'gemini-generate-content': {
-        const { model, contents, config } = args[0];
+        const { model, contents, config, apiKey } = args[0];
         try {
-            // Updated to use process.env.API_KEY exclusively
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY });
             const response = await ai.models.generateContent({ model: model || 'gemini-3-flash-preview', contents, config });
             return { success: true, text: response.text };
         } catch (e: any) {

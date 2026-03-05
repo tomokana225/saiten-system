@@ -8,9 +8,9 @@ import { GradingHeader } from './grading/GradingHeader';
 import { StudentAnswerGrid } from './grading/StudentAnswerGrid';
 import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
-import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, detectAndWarpCrop, loadImage } from '../utils';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, detectAndWarpCrop, loadImage, getAlignmentContext } from '../utils';
 
-const cropImage = async (imagePath: string, area: import('../types').Area, idealCorners?: import('../types').Corners): Promise<string> => {
+const cropImage = async (imagePath: string, area: import('../types').Area, template?: import('../types').Template, areas?: import('../types').Area[]): Promise<string> => {
     let dataUrl = imagePath;
     if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
@@ -21,10 +21,13 @@ const cropImage = async (imagePath: string, area: import('../types').Area, ideal
     
     const img = await loadImage(dataUrl);
     
-    if (idealCorners) {
-        const res = await detectAndWarpCrop(img, idealCorners, area);
-        if (res.url) {
-            return res.url.split(',')[1];
+    if (template && areas) {
+        const context = getAlignmentContext(areas, area.pageIndex || 0, template);
+        if (context) {
+            const res = await detectAndWarpCrop(img, context.idealCorners, area, undefined, template.alignmentDetectionSettings, context.searchZones);
+            if (res.url) {
+                return res.url.split(',')[1];
+            }
         }
     }
     
@@ -244,14 +247,14 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                 }
             } else {
                 const masterImage = template.pages[pageIdx].imagePath;
-                const masterSnippet = await cropImage(masterImage, area);
+                const masterSnippet = await cropImage(masterImage, area, template, areas);
                 setProgress(p => ({ ...p, message: `${point.label} をAI採点中...` }));
 
                 for (let i = 0; i < validStudents.length; i += aiSettings.batchSize) {
                     const batch = validStudents.slice(i, i + aiSettings.batchSize);
                     const studentSnippets = await Promise.all(batch.map(async s => ({ 
                         studentId: s.id, 
-                        base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template.alignmentMarkIdealCorners : undefined) 
+                        base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template : undefined, autoAlign ? areas : undefined) 
                     })));
                     const res = await callGeminiAPIBatch(
                         masterSnippet, 
