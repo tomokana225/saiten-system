@@ -174,6 +174,7 @@ export type Annotation = PenAnnotation | WaveAnnotation | CircleAnnotation | Tex
 export interface ScoreData {
     status: ScoringStatus;
     score: number | null;
+    aiComment?: string;
     annotations?: Annotation[];
     detectedMarkIndex?: number | number[];
     detectedPositions?: { x: number, y: number }[];

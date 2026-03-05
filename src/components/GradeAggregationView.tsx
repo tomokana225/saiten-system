@@ -196,7 +196,7 @@ export const GradeAggregationView: React.FC<GradeAggregationViewProps> = ({ proj
         const variance = totalStudents > 0 ? allTotalScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / totalStudents : 0;
         const stdDev = Math.sqrt(variance);
 
-        let resultsWithOverallRank = allStudentsWithDetails.map(student => {
+        const resultsWithOverallRank = allStudentsWithDetails.map(student => {
             const standardScore = stdDev === 0 ? "50.0" : (((10 * (student.totalScore - mean)) / stdDev) + 50).toFixed(1);
             return { ...student, standardScore, rank: 0, classRank: 0, subtotals: {} };
         });

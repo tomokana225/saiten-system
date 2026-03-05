@@ -215,7 +215,7 @@ export const GradingWorkflow: React.FC<GradingWorkflowProps> = ({ apiKey, setPri
             return activeProject.template ? <TemplateEditor apiKey={apiKey} /> : null;
         case AppStep.STUDENT_INFO_INPUT:
             return <StudentInfoInput />;
-        case AppStep.STUDENT_UPLOAD:
+        case AppStep.STUDENT_UPLOAD: {
             const pagesCount = activeProject.template?.pages?.length || 1;
             
             return (
@@ -316,6 +316,7 @@ export const GradingWorkflow: React.FC<GradingWorkflowProps> = ({ apiKey, setPri
                     )}
                 </div>
             );
+        }
         case AppStep.STUDENT_VERIFICATION:
             return <StudentVerificationEditor />;
         case AppStep.POINT_ALLOCATION:

@@ -144,8 +144,48 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 let storedRosters = await window.electronAPI.invoke('load-data', 'rosters');
                 if (!storedRosters) {
                     const localData = localStorage.getItem('rosters');
-                    storedRosters = localData ? JSON.parse(localData) : {};
+                    storedRosters = localData ? JSON.parse(localData) : null;
                     if (localData) await window.electronAPI.invoke('save-data', { key: 'rosters', data: storedRosters });
+                }
+                
+                // Add default rosters for development if none exist
+                if (!storedRosters || Object.keys(storedRosters).length === 0) {
+                    storedRosters = {
+                        'roster_dev_1_1': {
+                            id: 'roster_dev_1_1',
+                            name: '1年1組',
+                            students: [
+                                { class: '1', number: '1', name: '佐藤 健太' },
+                                { class: '1', number: '2', name: '鈴木 一郎' },
+                                { class: '1', number: '3', name: '高橋 花子' },
+                                { class: '1', number: '4', name: '田中 太郎' },
+                                { class: '1', number: '5', name: '伊藤 美咲' },
+                            ]
+                        },
+                        'roster_dev_1_2': {
+                            id: 'roster_dev_1_2',
+                            name: '1年2組',
+                            students: [
+                                { class: '2', number: '1', name: '渡辺 翔太' },
+                                { class: '2', number: '2', name: '山本 恵' },
+                                { class: '2', number: '3', name: '中村 拓海' },
+                                { class: '2', number: '4', name: '小林 結衣' },
+                                { class: '2', number: '5', name: '加藤 亮' },
+                            ]
+                        },
+                        'roster_dev_2_1': {
+                            id: 'roster_dev_2_1',
+                            name: '2年1組',
+                            students: [
+                                { class: '1', number: '1', name: '吉田 裕樹' },
+                                { class: '1', number: '2', name: '山田 桃子' },
+                                { class: '1', number: '3', name: '佐々木 翼' },
+                                { class: '1', number: '4', name: '山口 芽衣' },
+                                { class: '1', number: '5', name: '松本 潤' },
+                            ]
+                        }
+                    };
+                    await window.electronAPI.invoke('save-data', { key: 'rosters', data: storedRosters });
                 }
                 setRosters(storedRosters);
 
@@ -543,7 +583,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const variance = totalPresent > 0 ? presentScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / totalPresent : 0;
         const stdDev = Math.sqrt(variance);
 
-        let resultsWithRank = allStudentsWithDetails.map(student => {
+        const resultsWithRank = allStudentsWithDetails.map(student => {
             let standardScore = "50.0";
             if (!student.isAbsent) {
                 standardScore = stdDev === 0 ? "50.0" : (((10 * (student.totalScore - mean)) / stdDev) + 50).toFixed(1);

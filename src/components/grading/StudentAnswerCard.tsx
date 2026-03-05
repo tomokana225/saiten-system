@@ -165,6 +165,11 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                     <MarkSheetOverlay area={area} point={point} scoreData={scoreData} />
                 </AnswerSnippet>
             </div>
+            {scoreData?.aiComment && (
+                <div className="px-1 py-0.5 bg-sky-50 dark:bg-sky-900/30 border border-sky-100 dark:border-sky-800 rounded text-[10px] text-sky-700 dark:text-sky-300 italic line-clamp-2" title={scoreData.aiComment}>
+                    AI: {scoreData.aiComment}
+                </div>
+            )}
             <div className="flex items-center justify-around gap-1">
                 <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.CORRECT); }} title="正解 (J)" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}><CircleCheckIcon className="w-5 h-5" /></button>
                 <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.INCORRECT); }} title="不正解 (F)" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'}`}><XCircleIcon className="w-5 h-5" /></button>

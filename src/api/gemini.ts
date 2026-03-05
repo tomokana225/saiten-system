@@ -1,5 +1,6 @@
 
 import { ScoringStatus, Type, Point } from '../types';
+import { ThinkingLevel } from '@google/genai';
 
 // Used for TemplateEditor area detection
 export const callGeminiAPI = async (prompt: string, imageBase64: string, mimeType = 'image/png', model = 'gemini-3-flash-preview') => {
@@ -75,38 +76,45 @@ export const callGeminiAPIBatch = async (
     aiGradingMode?: 'auto' | 'strict', 
     answerFormat?: string,
     gradingSpeedMode?: 'quality' | 'speed',
-    model: string = 'gemini-3-flash-preview' // Default to Gemini 3 Flash
+    model: string = 'gemini-3-flash-preview'
 ) => {
-    
     const maxPoints = point.points;
-    let prompt = `あなたはテストの解答を採点する専門の先生です。
+    
+    const systemInstruction = `あなたはテストの解答を採点する専門の先生です。
 模範解答の画像と、複数の生徒の解答画像を一括で提供します。
-各生徒の解答を模範解答と比較し、採点してください。
-- 生徒の解答が正しい場合、statusは「${ScoringStatus.CORRECT}」、scoreは満点とします。
-- 生徒の解答が誤っている場合、statusは「${ScoringStatus.INCORRECT}」、scoreは0とします。
-- 生徒の解答が部分的に正しい場合、statusは「${ScoringStatus.PARTIAL}」、scoreは0から満点の間で部分点を評価してください。
-- この問題の満点は${maxPoints}点です。`;
+各生徒の解答を模範解答と比較し、公平かつ正確に採点してください。
+
+採点基準:
+- 正解: statusは「${ScoringStatus.CORRECT}」、scoreは満点(${maxPoints})。
+- 不正解: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
+- 部分的な正解: statusは「${ScoringStatus.PARTIAL}」、scoreは0から満点の間で適切に評価。
+- 白紙または判読不能: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
+
+重要事項:
+- 採点理由(aiComment)を日本語で簡潔に（20文字以内）記述してください。
+- 丁寧な字で書かれているか、誤字脱字がないかなども考慮してください。`;
+
+    let prompt = `以下の生徒の解答を採点してください。この問題の満点は${maxPoints}点です。`;
 
     if (aiGradingMode === 'strict' && answerFormat) {
         prompt += `
 
-**重要**: この問題の解答は、記号または特定の単語です。正解は以下の文字のみで構成されている必要があります: 「${answerFormat}」。
-これらの文字や単語以外が含まれている解答は、原則として「${ScoringStatus.INCORRECT}」(0点)と評価してください。
-ただし、模範解答と完全に一致する場合は「${ScoringStatus.CORRECT}」としてください。軽微な書き方の違い（例：とめ、はね）は許容しますが、指定された文字以外は不正解です。`;
+**厳格モード**: この問題の解答は、記号または特定の単語です。正解は以下の文字のみで構成されている必要があります: 「${answerFormat}」。
+指定された文字以外が含まれている場合は、原則として不正解(0点)としてください。`;
     }
 
-    prompt += `
-結果は必ずJSON配列形式でのみ返してください。配列内の各オブジェクトは、「studentId」「status」「score」のキーを持つ必要があります。
-応答例:
-[
-  { "studentId": "student-1", "status": "${ScoringStatus.CORRECT}", "score": ${maxPoints} },
-  { "studentId": "student-2", "status": "${ScoringStatus.INCORRECT}", "score": 0 }
-]`;
-    
-    const responseSchemaProperties: any = {
-        studentId: { type: Type.STRING },
-        status: { type: Type.STRING, enum: [ScoringStatus.CORRECT, ScoringStatus.INCORRECT, ScoringStatus.PARTIAL] },
-        score: { type: Type.INTEGER }
+    const responseSchema = {
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                studentId: { type: Type.STRING },
+                status: { type: Type.STRING, enum: [ScoringStatus.CORRECT, ScoringStatus.INCORRECT, ScoringStatus.PARTIAL] },
+                score: { type: Type.INTEGER },
+                aiComment: { type: Type.STRING, description: "採点理由の簡潔な説明" }
+            },
+            required: ["studentId", "status", "score", "aiComment"]
+        }
     };
 
     const contents: any = {
@@ -114,7 +122,7 @@ export const callGeminiAPIBatch = async (
             { text: prompt },
             { text: "模範解答:" },
             { inlineData: { mimeType: 'image/png', data: masterSnippet } },
-            { text: "生徒の解答:" },
+            { text: "生徒の解答リスト:" },
         ]
     };
 
@@ -124,19 +132,16 @@ export const callGeminiAPIBatch = async (
     });
 
     const config: any = {
+        systemInstruction,
         responseMimeType: 'application/json',
-        responseSchema: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: responseSchemaProperties,
-                required: ["studentId", "status", "score"]
-            }
-        }
+        responseSchema
     };
 
-    if (gradingSpeedMode === 'speed') {
-        config.thinkingConfig = { thinkingBudget: 0 };
+    // Enable thinking for better quality if using a Gemini 3 model
+    if (model.includes('gemini-3') && gradingSpeedMode === 'quality') {
+        config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+    } else if (gradingSpeedMode === 'speed') {
+        config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
     }
 
     try {
@@ -152,11 +157,12 @@ export const callGeminiAPIBatch = async (
                 const jsonString = result.text.replace(/```json/g, '').replace(/```/g, '').trim();
                 parsedResults = JSON.parse(jsonString);
              } catch (e) {
-                return { error: 'Failed to parse JSON response from AI.' };
+                console.error('JSON Parse Error:', e, result.text);
+                return { error: 'AIからの応答の解析に失敗しました。' };
              }
             return { results: parsedResults };
         } else {
-            return { error: result.error?.message || 'Unknown API error' };
+            return { error: result.error?.message || '不明なAPIエラーが発生しました。' };
         }
     } catch (error) {
         console.error('Error calling Gemini API for batch grading:', error);

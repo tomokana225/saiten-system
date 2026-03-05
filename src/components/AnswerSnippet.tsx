@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { Area, Template } from '../types';
 import { RotateCcwIcon, SpinnerIcon, XIcon } from './icons';
 import { detectAndWarpCrop, loadImage } from '../utils';
@@ -13,6 +13,9 @@ const getSharedImage = (src: string): Promise<HTMLImageElement> => {
     let promise = imagePromiseCache.get(src);
     if (!promise) {
         promise = (async () => {
+            if (src.startsWith('data:') || src.startsWith('blob:')) {
+                return loadImage(src);
+            }
             const result = await window.electronAPI.invoke('get-image-details', src);
             if (!result.success || !result.details?.url) throw new Error('Failed to load image');
             return loadImage(result.details.url);

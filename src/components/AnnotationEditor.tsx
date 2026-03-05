@@ -121,7 +121,7 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
                 case 'wave':
                     updatedAnnotation = { ...activeAnno, points: [...(activeAnno as PenAnnotation).points, pos] };
                     break;
-                case 'circle':
+                case 'circle': {
                     const startX = (activeAnno as CircleAnnotation).x;
                     const startY = (activeAnno as CircleAnnotation).y;
                     updatedAnnotation = {
@@ -132,6 +132,7 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({ student, are
                         height: Math.abs(pos.y - startY),
                     };
                     break;
+                }
             }
             currentAnnotations[currentAnnotations.length - 1] = updatedAnnotation;
             return currentAnnotations;

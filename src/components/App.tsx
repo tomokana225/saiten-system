@@ -158,7 +158,7 @@ const AppContent: React.FC = () => {
                     <div className="flex-shrink-0 mb-4 flex items-center gap-4">
                         {showBackButton && <button onClick={prevStep} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ArrowLeftIcon className="w-5 h-5"/></button>}
                         <div className="flex-grow">
-                            <Stepper currentStep={currentStep} />
+                            <Stepper currentStep={currentStep} onStepClick={goToStep} />
                         </div>
                          {currentStep !== AppStep.RESULTS && <button onClick={nextStep} disabled={!activeProject?.template} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-md disabled:bg-slate-400">次へ</button>}
                     </div>

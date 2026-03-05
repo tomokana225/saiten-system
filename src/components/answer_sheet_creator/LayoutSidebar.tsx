@@ -182,7 +182,7 @@ export const LayoutSidebar: React.FC<LayoutSidebarProps> = ({ layouts, setLayout
     };
 
     const addQuestion = (type: QuestionType) => {
-        let sections = [...config.sections];
+        const sections = [...config.sections];
         if (sections.length === 0) {
             sections.push({ id: `sec_${Date.now()}`, title: formatSectionTitle(0, sectionNumberingStyle), numberingStyle: '1', questions: [] });
         }

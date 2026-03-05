@@ -5,10 +5,11 @@
   "description": "An application to assist in grading paper-based tests.",
   "main": ".webpack/main",
   "scripts": {
-    "start": "electron-forge start",
+    "start": "npm run dev",
+    "dev": "webpack serve --config webpack.web.config.js --port 3000",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "build": "electron-forge make",
+    "build": "npm run build:web",
     "build:web": "webpack --config webpack.web.config.js",
     "lint": "eslint --ext .ts,.tsx ."
   },

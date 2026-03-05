@@ -11,9 +11,12 @@ import { useProject } from '../context/ProjectContext';
 import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
 
 const cropImage = async (imagePath: string, area: import('../types').Area): Promise<string> => {
-    const result = await window.electronAPI.invoke('get-image-details', imagePath);
-    if (!result.success || !result.details?.url) return '';
-    const dataUrl = result.details.url;
+    let dataUrl = imagePath;
+    if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
+        const result = await window.electronAPI.invoke('get-image-details', imagePath);
+        if (!result.success || !result.details?.url) return '';
+        dataUrl = result.details.url;
+    }
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
@@ -23,6 +26,7 @@ const cropImage = async (imagePath: string, area: import('../types').Area): Prom
             ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
             resolve(canvas.toDataURL('image/png').split(',')[1]);
         };
+        img.onerror = () => reject(new Error('Failed to load image for cropping'));
         img.src = dataUrl;
     });
 };
@@ -42,7 +46,8 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     // These states are managed via local UI but should ideally be in context for consistency
     const [autoAlign, setAutoAlign] = useState(true);
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
-    const [columnCount, setColumnCount] = useState(4);
+    const [columnCount, setColumnCount] = useState(0); // 0 means Auto
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     const answerAreas = useMemo(() => areas.filter(a => a.type === AreaType.ANSWER || a.type === AreaType.MARK_SHEET), [areas]);
 
@@ -191,8 +196,8 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
 
             if (area.type === AreaType.MARK_SHEET) {
                 // AUTO DISCOVERY of reference areas aligned with this question
-                let refR = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_RIGHT);
-                let refB = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_BOTTOM);
+                const refR = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_RIGHT);
+                const refB = findNearestAlignedRefArea(area, areas, AreaType.MARKSHEET_REF_BOTTOM);
                 
                 setProgress(p => ({ ...p, message: `${point.label} のマークを認識中...` }));
 
@@ -246,7 +251,11 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                             const next = { ...prev };
                             res.results.forEach((r: any) => { 
                                 if(!next[r.studentId]) next[r.studentId] = {}; 
-                                next[r.studentId][areaId] = { status: r.status, score: r.score }; 
+                                next[r.studentId][areaId] = { 
+                                    status: r.status, 
+                                    score: r.score,
+                                    aiComment: r.aiComment
+                                }; 
                             });
                             return next;
                         });
@@ -262,8 +271,17 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     if (!selectedAreaId && answerAreas.length > 0) setSelectedAreaId(answerAreas[0].id);
 
     return (
-        <div className="flex h-full gap-4">
-            <QuestionSidebar answerAreas={answerAreas} points={points} scores={scores} students={studentsWithInfo} selectedAreaId={selectedAreaId} onSelectArea={setSelectedAreaId} isDisabled={isGrading} />
+        <div className="flex h-full gap-4 relative">
+            {isSidebarOpen ? (
+                <QuestionSidebar answerAreas={answerAreas} points={points} scores={scores} students={studentsWithInfo} selectedAreaId={selectedAreaId} onSelectArea={setSelectedAreaId} isDisabled={isGrading} />
+            ) : (
+                <div className="w-12 flex-shrink-0 bg-white dark:bg-slate-800 rounded-lg shadow flex flex-col items-center py-4">
+                    <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full text-slate-500" title="サイドバーを開く">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+                </div>
+            )}
+            
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
                 <GradingHeader 
                     selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
@@ -278,26 +296,36 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     aiSettings={aiSettings}
                     onAiSettingsChange={(updater) => updateActiveProject(prev => ({ ...prev, aiSettings: updater(prev.aiSettings), lastModified: Date.now() }))}
                 />
-                <StudentAnswerGrid 
-                    students={filteredStudents} 
-                    selectedAreaId={selectedAreaId!} 
-                    template={template} 
-                    areas={areas} 
-                    points={points} 
-                    scores={scores} 
-                    onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} 
-                    onStartAnnotation={() => {}} 
-                    onPanCommit={() => {}} 
-                    gradingStatus={{}} 
-                    columnCount={columnCount} 
-                    focusedStudentId={focusedStudentId} 
-                    onStudentFocus={(id) => { setFocusedStudentId(id); setPartialScoreInput(''); }} 
-                    partialScoreInput={partialScoreInput} 
-                    correctedImages={{}} 
-                    isImageEnhanced={isImageEnhanced} 
-                    autoAlign={autoAlign} 
-                    aiSettings={aiSettings} 
-                />
+                <div className="flex-1 overflow-hidden relative">
+                    {!isSidebarOpen && (
+                        <button 
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="absolute top-2 left-2 z-20 p-1.5 bg-white/80 dark:bg-slate-800/80 rounded shadow hover:bg-white dark:hover:bg-slate-700 md:hidden"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+                    )}
+                    <StudentAnswerGrid 
+                        students={filteredStudents} 
+                        selectedAreaId={selectedAreaId!} 
+                        template={template} 
+                        areas={areas} 
+                        points={points} 
+                        scores={scores} 
+                        onScoreChange={(sid, aid, data) => handleScoresChange(prev => ({ ...prev, [sid]: { ...prev[sid], [aid]: { ...prev[sid]?.[aid], ...data } }}))} 
+                        onStartAnnotation={() => {}} 
+                        onPanCommit={() => {}} 
+                        gradingStatus={{}} 
+                        columnCount={columnCount} 
+                        focusedStudentId={focusedStudentId} 
+                        onStudentFocus={(id) => { setFocusedStudentId(id); setPartialScoreInput(''); }} 
+                        partialScoreInput={partialScoreInput} 
+                        correctedImages={{}} 
+                        isImageEnhanced={isImageEnhanced} 
+                        autoAlign={autoAlign} 
+                        aiSettings={aiSettings} 
+                    />
+                </div>
             </main>
         </div>
     );

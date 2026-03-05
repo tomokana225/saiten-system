@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { UsersIcon, ArrowRightIcon } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { toHalfWidth } from '../utils';
@@ -7,35 +7,25 @@ import { toHalfWidth } from '../utils';
 export const StudentInfoInput = () => {
     const { activeProject, handleStudentInfoChange, rosters, updateActiveProject, nextStep } = useProject();
     const [selectedRosterId, setSelectedRosterId] = useState('');
-    const [selectedClass, setSelectedClass] = useState<string>('');
 
-    // Extract unique classes from the selected roster
-    const availableClasses = useMemo(() => {
-        if (!selectedRosterId || !rosters[selectedRosterId]) return [];
-        const classes = new Set(rosters[selectedRosterId].students.map(s => toHalfWidth(s.class)));
-        return Array.from(classes).sort();
-    }, [selectedRosterId, rosters]);
+    const handleConfirmSelection = (rosterId: string) => {
+        if (!rosterId || !rosters[rosterId]) return;
 
-    const handleConfirmSelection = () => {
-        if (!selectedRosterId || !rosters[selectedRosterId] || !selectedClass) return;
-
-        const roster = rosters[selectedRosterId];
-        // Filter students by selected class
-        const targetStudents = roster.students.filter(s => toHalfWidth(s.class) === selectedClass);
+        const roster = rosters[rosterId];
         
         // Map to student list with unique IDs
-        const studentList = targetStudents.map((s, i) => ({
+        const studentList = roster.students.map((s, i) => ({
             ...s,
             class: toHalfWidth(s.class),
             number: toHalfWidth(s.number),
-            id: `roster-${roster.id}-${selectedClass}-${i}-${Date.now()}`
+            id: `roster-${roster.id}-${i}-${Date.now()}`
         }));
 
-        // Update project name to include class name for clarity if it's generic
-        if (activeProject && !activeProject.name.includes(selectedClass)) {
+        // Update project name to include roster name for clarity if it's generic
+        if (activeProject && !activeProject.name.includes(roster.name)) {
              updateActiveProject(p => ({
                  ...p,
-                 name: `${p.name} - ${selectedClass}組`,
+                 name: `${p.name} - ${roster.name}`,
                  studentInfo: studentList
              }));
         } else {
@@ -61,11 +51,15 @@ export const StudentInfoInput = () => {
                 <div className="space-y-6">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                            1. 名簿（学年）を選択
+                            名簿（クラス）を選択
                         </label>
                         <select
                             value={selectedRosterId}
-                            onChange={(e) => { setSelectedRosterId(e.target.value); setSelectedClass(''); }}
+                            onChange={(e) => { 
+                                const id = e.target.value;
+                                setSelectedRosterId(id); 
+                                if (id) handleConfirmSelection(id);
+                            }}
                             className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all text-lg"
                         >
                             <option value="">選択してください...</option>
@@ -80,37 +74,10 @@ export const StudentInfoInput = () => {
                         )}
                     </div>
 
-                    <div className={`transition-all duration-300 ${selectedRosterId ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                            2. 採点する組を選択
-                        </label>
-                        {availableClasses.length > 0 ? (
-                            <div className="grid grid-cols-4 gap-3">
-                                {availableClasses.map(cls => (
-                                    <button
-                                        key={cls}
-                                        onClick={() => setSelectedClass(cls)}
-                                        className={`p-3 rounded-lg border font-bold text-lg transition-all ${
-                                            selectedClass === cls
-                                                ? 'bg-sky-500 text-white border-sky-500 shadow-md transform scale-105'
-                                                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30'
-                                        }`}
-                                    >
-                                        {cls}
-                                    </button>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="p-4 text-center text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-lg">
-                                名簿を選択するとクラスが表示されます
-                            </div>
-                        )}
-                    </div>
-
                     <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
                         <button
-                            onClick={handleConfirmSelection}
-                            disabled={!selectedClass}
+                            onClick={() => handleConfirmSelection(selectedRosterId)}
+                            disabled={!selectedRosterId}
                             className="w-full flex items-center justify-center gap-2 py-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
                         >
                             <span>このクラスで採点を開始</span>

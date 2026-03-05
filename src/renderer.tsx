@@ -7,7 +7,7 @@ import { webElectronAPI } from './webPolyfill';
 // Check if running in a browser environment without Electron
 if (!window.electronAPI) {
     console.log('Running in Web Mode - Initializing Polyfills');
-    // @ts-ignore
+    // @ts-expect-error: window.electronAPI is not defined in browser
     window.electronAPI = webElectronAPI;
 }
 

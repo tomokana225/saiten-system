@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 // Added AISettings to import
 import type { GradingFilter, Area, AISettings } from '../../types';
 import { ScoringStatus, AreaType } from '../../types';
-import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon } from '../icons';
+import { SparklesIcon, SpinnerIcon, ChevronDownIcon, ChevronUpIcon, PaletteIcon, BoxSelectIcon, HelpCircleIcon } from '../icons';
 
 interface GradingHeaderProps {
     selectedArea: Area | undefined;
@@ -133,10 +133,23 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                         <span>文字強調</span>
                     </button>
                     <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
-                    <button onClick={() => onBulkScore(ScoringStatus.CORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>
-                    <button onClick={() => onBulkScore(ScoringStatus.INCORRECT)} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">すべてを☓に</button>
+                    <button onClick={() => {
+                        if (confirm('表示されているすべての解答を「正解」にしますか？')) {
+                            onBulkScore(ScoringStatus.CORRECT);
+                        }
+                    }} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>
+                    <button onClick={() => {
+                        if (confirm('表示されているすべての解答を「不正解」にしますか？')) {
+                            onBulkScore(ScoringStatus.INCORRECT);
+                        }
+                    }} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">すべてを☓に</button>
                     <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title={isExpanded ? "設定を閉じる" : "設定を開く"}>
                         {isExpanded ? <ChevronUpIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
+                    </button>
+                    <button onClick={() => {
+                        alert(`【キーボードショートカット】\n\n・J : 正解 (Correct)\n・F : 不正解 (Incorrect)\n・K : 部分点 (Partial)\n・E : 添削モード開始 (Edit)\n・Enter : 添削を確定\n・Esc : 添削をキャンセル\n・↑/↓ : 前後の生徒へ移動`);
+                    }} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500" title="ヘルプ">
+                        <HelpCircleIcon className="w-5 h-5" />
                     </button>
                 </div>
             </div>
@@ -190,11 +203,11 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
                             </select>
                         </div>
                         <div className="flex items-center gap-2 w-64">
-                            <label htmlFor="column-slider" className="text-sm whitespace-nowrap">表示列数: {columnCount}</label>
+                            <label htmlFor="column-slider" className="text-sm whitespace-nowrap">表示列数: {columnCount === 0 ? '自動' : columnCount}</label>
                             <input
                                 id="column-slider"
                                 type="range"
-                                min="1"
+                                min="0"
                                 max="10"
                                 value={columnCount}
                                 onChange={e => onColumnCountChange(parseInt(e.target.value, 10))}

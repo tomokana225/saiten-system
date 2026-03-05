@@ -44,9 +44,16 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
         return template.pages?.[pageIndex]?.imagePath || template.filePath;
     }, [selectedArea, template]);
 
+    const gridStyle = useMemo(() => {
+        if (columnCount === 0) {
+            return { gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' };
+        }
+        return { gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` };
+    }, [columnCount]);
+
     return (
         <div className="flex-1 overflow-y-auto space-y-4 p-1">
-            <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
+            <div className="grid gap-4" style={gridStyle}>
                 <div className="p-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg">
                     <h4 className="text-sm font-semibold mb-1 text-center text-slate-600 dark:text-slate-400">模範解答</h4>
                     {template && selectedArea ? (

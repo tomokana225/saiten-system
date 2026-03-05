@@ -9,7 +9,7 @@ import {
     RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon, BoxSelectIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
-import { toHalfWidth } from '../utils';
+import { toHalfWidth, loadImage } from '../utils';
 
 // Type to store debug information about the grid detection
 interface DetectionDebugInfo {
@@ -44,14 +44,17 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     return peaks;
 };
 
-const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThreshold: number, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
+const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivity: number, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
     const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [], rois: [] };
+    const markThreshold = Math.floor(255 / sensitivity);
     try {
-        const result = await window.electronAPI.invoke('get-image-details', imagePath);
-        if (!result.success || !result.details?.url) return { indices: null, debugInfo };
-        const img = new Image();
-        img.src = result.details.url;
-        await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+        let imgUrl = imagePath;
+        if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
+            const result = await window.electronAPI.invoke('get-image-details', imagePath);
+            if (!result.success || !result.details?.url) return { indices: null, debugInfo };
+            imgUrl = result.details.url;
+        }
+        const img = await loadImage(imgUrl);
         const canvas = document.createElement('canvas');
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
@@ -81,13 +84,13 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, markThres
             if (direction === 'row') {
                 for (let y = 0; y < imgData.height; y++) {
                     let darkCount = 0;
-                    for (let x = scanXStart; x < scanXEnd; x++) if (isDark(imgData, x, y, 160)) darkCount++;
+                    for (let x = scanXStart; x < scanXEnd; x++) if (isDark(imgData, x, y, markThreshold)) darkCount++;
                     profile[y] = darkCount;
                 }
             } else {
                 for (let x = 0; x < imgData.width; x++) {
                     let darkCount = 0;
-                    for (let y = scanYStart; y < scanYEnd; y++) if (isDark(imgData, x, y, 160)) darkCount++;
+                    for (let y = scanYStart; y < scanYEnd; y++) if (isDark(imgData, x, y, markThreshold)) darkCount++;
                     profile[x] = darkCount;
                 }
             }
@@ -231,6 +234,14 @@ export const StudentVerificationEditor = () => {
 
     // MEMO: Find ALL student ID areas (possibly on different pages)
     const studentIdAreas = useMemo(() => areas.filter(a => a.type === AreaType.STUDENT_ID_MARK), [areas]);
+
+    // Get list of students who don't have an assigned sheet yet
+    const unassignedStudents = useMemo(() => {
+        return studentInfoList.filter((info, index) => {
+            const sheet = uploadedSheets[index];
+            return !sheet || !sheet.images || sheet.images.every(img => img === null);
+        });
+    }, [studentInfoList, uploadedSheets]);
 
     const getRefsForArea = useCallback((targetArea: Area) => {
         const pageIdx = targetArea.pageIndex || 0;
@@ -932,23 +943,29 @@ export const StudentVerificationEditor = () => {
                                         </div>
                                     )}
                                     {showAssignForm && (
-                                        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded shadow border border-slate-300 dark:border-slate-600 z-10">
-                                            <span className="text-[10px] font-bold text-slate-500">再割当:</span>
-                                            <input 
-                                                className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
-                                                placeholder="組"
-                                                value={manualAssignInputs[sheet!.id]?.class || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{number:''}), class: toHalfWidth(e.target.value)}}))}
-                                            />
-                                            <input 
-                                                className="w-10 text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600" 
-                                                placeholder="番"
-                                                value={manualAssignInputs[sheet!.id]?.number || ''}
-                                                onChange={e => setManualAssignInputs(p => ({...p, [sheet!.id]: {...(p[sheet!.id]||{class:''}), number: toHalfWidth(e.target.value)}}))}
-                                            />
+                                        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded shadow-lg border border-sky-300 dark:border-sky-700 z-10">
+                                            <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400">生徒に割当:</span>
+                                            <select 
+                                                className="text-xs p-1 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600 max-w-[120px]"
+                                                onChange={e => {
+                                                    const [cls, num] = e.target.value.split(':');
+                                                    if (cls && num) {
+                                                        setManualAssignInputs(p => ({...p, [sheet!.id]: { class: cls, number: num }}));
+                                                    }
+                                                }}
+                                                value={manualAssignInputs[sheet!.id] ? `${manualAssignInputs[sheet!.id].class}:${manualAssignInputs[sheet!.id].number}` : ""}
+                                            >
+                                                <option value="">選択してください</option>
+                                                {unassignedStudents.map(s => (
+                                                    <option key={s.id} value={`${s.class}:${s.number}`}>
+                                                        {s.class}組{s.number}番 {s.name}
+                                                    </option>
+                                                ))}
+                                            </select>
                                             <button 
                                                 onClick={() => handleManualAssign(studentIdx)}
-                                                className="bg-sky-500 text-white text-xs px-2 py-1 rounded hover:bg-sky-600"
+                                                disabled={!manualAssignInputs[sheet!.id]}
+                                                className="bg-sky-500 text-white text-xs px-2 py-1 rounded hover:bg-sky-600 disabled:bg-slate-300"
                                             >
                                                 決定
                                             </button>
@@ -1034,26 +1051,31 @@ export const StudentVerificationEditor = () => {
                                                                         </div>
                                                                     )}
                                                                 </AnswerSnippet>
-                                                                <div className="absolute inset-x-0 bottom-0 p-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-30">
-                                                                    <input 
-                                                                        className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
-                                                                        placeholder="組"
-                                                                        value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.class || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{number:''}), class: toHalfWidth(e.target.value)}}}))}
+                                                                <div className="absolute inset-x-0 bottom-0 p-1 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 z-30">
+                                                                    <select 
+                                                                        className="w-full text-[9px] p-0.5 rounded bg-white text-black border-none"
+                                                                        onChange={e => {
+                                                                            const [cls, num] = e.target.value.split(':');
+                                                                            if (sheet && cls && num) {
+                                                                                setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: { class: cls, number: num }}}));
+                                                                            }
+                                                                        }}
+                                                                        value={sheet && pageAssignInputs[sheet.id]?.[pageIdx] ? `${pageAssignInputs[sheet.id][pageIdx].class}:${pageAssignInputs[sheet.id][pageIdx].number}` : ""}
                                                                         onClick={e => e.stopPropagation()}
-                                                                    />
-                                                                    <input 
-                                                                        className="w-8 text-[9px] p-0.5 rounded bg-white text-black border-none text-center"
-                                                                        placeholder="番"
-                                                                        value={sheet ? (pageAssignInputs[sheet.id]?.[pageIdx]?.number || '') : ''}
-                                                                        onChange={e => sheet && setPageAssignInputs(p => ({...p, [sheet.id]: {...(p[sheet.id]||{}), [pageIdx]: {...(p[sheet.id]?.[pageIdx]||{class:''}), number: toHalfWidth(e.target.value)}}}))}
-                                                                        onClick={e => e.stopPropagation()}
-                                                                    />
-                                                                    <button 
-                                                                        className="flex-1 bg-sky-500 text-white text-[9px] rounded hover:bg-sky-600"
-                                                                        onClick={(e) => { e.stopPropagation(); handlePageManualAssign(studentIdx, pageIdx); }}
                                                                     >
-                                                                        移動
+                                                                        <option value="">生徒を選択して移動</option>
+                                                                        {unassignedStudents.map(s => (
+                                                                            <option key={s.id} value={`${s.class}:${s.number}`}>
+                                                                                {s.class}-{s.number} {s.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <button 
+                                                                        className="w-full bg-sky-500 text-white text-[9px] py-0.5 rounded hover:bg-sky-600 disabled:bg-slate-500"
+                                                                        onClick={(e) => { e.stopPropagation(); handlePageManualAssign(studentIdx, pageIdx); }}
+                                                                        disabled={!sheet || !pageAssignInputs[sheet.id]?.[pageIdx]}
+                                                                    >
+                                                                        移動実行
                                                                     </button>
                                                                 </div>
                                                             </>

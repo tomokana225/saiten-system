@@ -298,10 +298,13 @@ export const analyzeMarkSheetSnippet = async (
     refB?: Area,
     idealCorners?: Corners
 ): Promise<{ index: number | number[], positions: {x:number,y:number}[] }> => {
-    const result = await window.electronAPI.invoke('get-image-details', imagePath);
-    if (!result.success || !result.details?.url) return { index: -1, positions: [] };
-    
-    const img = await loadImage(result.details.url);
+    let imgUrl = imagePath;
+    if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
+        const result = await window.electronAPI.invoke('get-image-details', imagePath);
+        if (!result.success || !result.details?.url) return { index: -1, positions: [] };
+        imgUrl = result.details.url;
+    }
+    const img = await loadImage(imgUrl);
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
