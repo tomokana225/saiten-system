@@ -229,30 +229,41 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
                 console.log("Image loaded", img);
 
                 // --- Automatic Alignment Logic ---
-                if (useAlignment && template && template.alignmentMarkIdealCorners) {
-                    console.log("Alignment logic running", { manualCorners });
-                    const srcCorners = manualCorners || await getSharedAlignment(imageSrc, img, template, alignmentSettings, searchZones);
-                    console.log("srcCorners:", srcCorners);
-                    const alignedDataUrl = await detectAndWarpCrop(
-                        img, template.alignmentMarkIdealCorners, 
-                        { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
-                        srcCorners,
-                        alignmentSettings,
-                        searchZones
-                    );
-                    console.log("alignedDataUrl:", alignedDataUrl);
-                    if (alignedDataUrl.url && isMounted) {
-                        setCroppedImage({
-                            url: alignedDataUrl.url, width: area.width + padding*2, height: area.height + padding*2,
-                            cropX: area.x - padding, cropY: area.y - padding
-                        });
-                        setLoading(false);
-                        return;
+                // If manualCorners are provided, we should ALWAYS run alignment logic, even if useAlignment is false.
+                // This is because manualCorners implies the user wants to force a specific alignment.
+                const shouldAlign = (useAlignment && template && template.alignmentMarkIdealCorners) || (manualCorners && template && template.alignmentMarkIdealCorners);
+
+                if (shouldAlign) {
+                    console.log("Alignment logic running", { manualCorners, useAlignment });
+                    // Use manualCorners if available, otherwise try to find them automatically IF useAlignment is true.
+                    // If useAlignment is false but we are here because of manualCorners, we use manualCorners.
+                    const srcCorners = manualCorners || (useAlignment ? await getSharedAlignment(imageSrc, img, template!, alignmentSettings, searchZones) : null);
+                    
+                    if (srcCorners) {
+                        console.log("srcCorners found:", srcCorners);
+                        const alignedDataUrl = await detectAndWarpCrop(
+                            img, template!.alignmentMarkIdealCorners!, 
+                            { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
+                            srcCorners,
+                            alignmentSettings,
+                            searchZones
+                        );
+                        console.log("alignedDataUrl:", alignedDataUrl);
+                        if (alignedDataUrl.url && isMounted) {
+                            setCroppedImage({
+                                url: alignedDataUrl.url, width: area.width + padding*2, height: area.height + padding*2,
+                                cropX: area.x - padding, cropY: area.y - padding
+                            });
+                            setLoading(false);
+                            return;
+                        } else {
+                            console.warn("Auto-alignment failed (warp failed), falling back to simple crop");
+                        }
                     } else {
-                        console.warn("Auto-alignment failed (marks not found), falling back to simple crop");
+                         console.warn("Auto-alignment skipped (no corners found), falling back to simple crop");
                     }
                 } else {
-                    console.log("Alignment logic NOT running", { useAlignment, template: !!template, corners: !!template?.alignmentMarkIdealCorners });
+                    console.log("Alignment logic NOT running", { useAlignment, template: !!template, corners: !!template?.alignmentMarkIdealCorners, manualCorners: !!manualCorners });
                 }
 
                 // --- Standard Simple Crop (Fallback) ---
