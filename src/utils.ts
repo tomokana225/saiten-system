@@ -515,11 +515,27 @@ export const warpArea = (
     idealCorners: Corners,
     targetArea: { x: number, y: number, width: number, height: number }
 ): string => {
+    // Validation logs
+    // console.log("warpArea input:", { srcCorners, idealCorners, targetArea });
+
     const idealPts = [idealCorners.tl, idealCorners.tr, idealCorners.br, idealCorners.bl];
     const srcPts = [srcCorners.tl, srcCorners.tr, srcCorners.br, srcCorners.bl];
     const H = getHomographyMatrix(idealPts, srcPts);
+    
+    // Check for invalid matrix
+    if (H.flat().some(v => isNaN(v) || !isFinite(v))) {
+        console.error("warpArea: Invalid Homography Matrix calculated", H);
+        return srcImage.src; // Fallback to original (or empty?)
+    }
+
     const w = Math.floor(targetArea.width);
     const h = Math.floor(targetArea.height);
+    
+    if (w <= 0 || h <= 0) {
+        console.error("warpArea: Invalid target dimensions", { w, h });
+        return "";
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d')!;
@@ -537,11 +553,17 @@ export const warpArea = (
     const h10 = H[1][0], h11 = H[1][1], h12 = H[1][2];
     const h20 = H[2][0], h21 = H[2][1], h22 = H[2][2];
     
+    let validPixels = 0;
+
     for (let dy = 0; dy < h; dy++) {
         for (let dx = 0; dx < w; dx++) {
             const tx = targetArea.x + dx;
             const ty = targetArea.y + dy;
             const denom = h20 * tx + h21 * ty + h22;
+            
+            // Avoid division by zero
+            if (Math.abs(denom) < 1e-10) continue;
+
             const sx = (h00 * tx + h01 * ty + h02) / denom;
             const sy = (h10 * tx + h11 * ty + h12) / denom;
             
@@ -571,11 +593,18 @@ export const warpArea = (
                         srcData[idx01 + c] * dx0 * dy1 +
                         srcData[idx11 + c] * dx1 * dy1;
                 }
+                // Check if alpha is non-zero
+                if (destData.data[destIdx + 3] > 0) validPixels++;
             } else {
                 destData.data[destIdx + 3] = 0;
             }
         }
     }
+    
+    if (validPixels === 0) {
+        console.warn("warpArea: Result image is completely empty/transparent. Check alignment coordinates.");
+    }
+
     ctx.putImageData(destData, 0, 0);
     return canvas.toDataURL();
 };
