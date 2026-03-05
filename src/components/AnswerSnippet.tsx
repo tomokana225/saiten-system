@@ -231,39 +231,65 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
                 // --- Automatic Alignment Logic ---
                 // If manualCorners are provided, we should ALWAYS run alignment logic, even if useAlignment is false.
                 // This is because manualCorners implies the user wants to force a specific alignment.
-                const shouldAlign = (useAlignment && template && template.alignmentMarkIdealCorners) || (manualCorners && template && template.alignmentMarkIdealCorners);
+                
+                // Determine ideal corners (destination for warp)
+                let idealCorners = template?.alignmentMarkIdealCorners;
+                
+                // Fallback: If template doesn't have ideal corners (e.g. legacy or failed detection), 
+                // but we have searchZones (which are Area objects from the template), calculate centers.
+                if (!idealCorners && searchZones && searchZones.tl && searchZones.tr && searchZones.br && searchZones.bl) {
+                    idealCorners = {
+                        tl: { x: searchZones.tl.x + searchZones.tl.width / 2, y: searchZones.tl.y + searchZones.tl.height / 2 },
+                        tr: { x: searchZones.tr.x + searchZones.tr.width / 2, y: searchZones.tr.y + searchZones.tr.height / 2 },
+                        br: { x: searchZones.br.x + searchZones.br.width / 2, y: searchZones.br.y + searchZones.br.height / 2 },
+                        bl: { x: searchZones.bl.x + searchZones.bl.width / 2, y: searchZones.bl.y + searchZones.bl.height / 2 },
+                    };
+                    console.log("Derived idealCorners from searchZones:", idealCorners);
+                }
 
-                if (shouldAlign) {
-                    console.log("Alignment logic running", { manualCorners, useAlignment });
+                // Sanity check for idealCorners
+                const isIdealValid = idealCorners && 
+                    (idealCorners.tr.x - idealCorners.tl.x) > 10 && 
+                    (idealCorners.bl.y - idealCorners.tl.y) > 10;
+
+                const shouldAlign = (useAlignment && isIdealValid) || (manualCorners && isIdealValid);
+
+                if (shouldAlign && idealCorners) {
+                    console.log("Alignment logic running", { manualCorners, useAlignment, idealCorners });
                     // Use manualCorners if available, otherwise try to find them automatically IF useAlignment is true.
                     // If useAlignment is false but we are here because of manualCorners, we use manualCorners.
                     const srcCorners = manualCorners || (useAlignment ? await getSharedAlignment(imageSrc, img, template!, alignmentSettings, searchZones) : null);
                     
                     if (srcCorners) {
                         console.log("srcCorners found:", srcCorners);
-                        const alignedDataUrl = await detectAndWarpCrop(
-                            img, template!.alignmentMarkIdealCorners!, 
-                            { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
-                            srcCorners,
-                            alignmentSettings,
-                            searchZones
-                        );
-                        console.log("alignedDataUrl:", alignedDataUrl);
-                        if (alignedDataUrl.url && isMounted) {
-                            setCroppedImage({
-                                url: alignedDataUrl.url, width: area.width + padding*2, height: area.height + padding*2,
-                                cropX: area.x - padding, cropY: area.y - padding
-                            });
-                            setLoading(false);
-                            return;
-                        } else {
-                            console.warn("Auto-alignment failed (warp failed), falling back to simple crop");
+                        try {
+                            const alignedDataUrl = await detectAndWarpCrop(
+                                img, idealCorners, 
+                                { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
+                                srcCorners,
+                                alignmentSettings,
+                                searchZones
+                            );
+                            console.log("alignedDataUrl result:", alignedDataUrl.url ? "URL present" : "URL null");
+                            
+                            if (alignedDataUrl.url && isMounted) {
+                                setCroppedImage({
+                                    url: alignedDataUrl.url, width: area.width + padding*2, height: area.height + padding*2,
+                                    cropX: area.x - padding, cropY: area.y - padding
+                                });
+                                setLoading(false);
+                                return;
+                            } else {
+                                console.warn("Auto-alignment failed (warp returned null), falling back to simple crop");
+                            }
+                        } catch (warpError) {
+                            console.error("Warp execution failed:", warpError);
                         }
                     } else {
                          console.warn("Auto-alignment skipped (no corners found), falling back to simple crop");
                     }
                 } else {
-                    console.log("Alignment logic NOT running", { useAlignment, template: !!template, corners: !!template?.alignmentMarkIdealCorners, manualCorners: !!manualCorners });
+                    console.log("Alignment logic NOT running", { useAlignment, hasTemplate: !!template, hasIdealCorners: !!idealCorners, isIdealValid, hasManualCorners: !!manualCorners });
                 }
 
                 // --- Standard Simple Crop (Fallback) ---
