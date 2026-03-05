@@ -566,10 +566,14 @@ export const StudentVerificationEditor = () => {
 
                 if (columnImages.length === 0) continue;
 
-                const areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+                // Find ID area for this page index. If not found, fallback to page 0 area (assuming repetitive layout)
+                let areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+                if (!areaForPage && studentIdAreas.length > 0) {
+                    areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === 0);
+                }
 
                 if (!areaForPage) {
-                    // No ID mark for this page, treat as unmatched/manual for now
+                    // No ID mark available at all (should not happen due to check at start)
                     columnImages.forEach(img => unmatchedImages.push({ url: img, reason: 'no_id_area', pageIndex: pageIdx }));
                     continue;
                 }
@@ -580,7 +584,7 @@ export const StudentVerificationEditor = () => {
                 const results = await Promise.all(columnImages.map(async (imagePath) => {
                     const { indices, debugInfo } = await analyzeStudentIdMark(
                         imagePath, 
-                        areaForPage, 
+                        areaForPage!, // Non-null assertion safe due to check above
                         markThreshold, 
                         refRight, 
                         refBottom
@@ -683,7 +687,7 @@ export const StudentVerificationEditor = () => {
 
             // 5. Append unmatched images
             // We need to group unmatched images into rows as best as possible, or just dump them linearly
-            // Since they are unmatched, we can't link Page 1 and Page 2.
+            // Since they are unmatched, we can't link Page 1 and Page 2 reliably.
             // We will create new rows for them.
             unmatchedImages.forEach((item, i) => {
                 const sheetId = `unmatched-${Date.now()}-${i}`;
@@ -741,32 +745,37 @@ export const StudentVerificationEditor = () => {
         const numberingBase = aiSettings?.markSheetNumberingBase ?? 1;
 
         for (const sheet of uploadedSheets) {
-            for (const area of studentIdAreas) {
-                const pIdx = area.pageIndex || 0;
-                const targetImage = sheet.images[pIdx];
+            for (let pageIdx = 0; pageIdx < pagesPerStudent; pageIdx++) {
+                const targetImage = sheet.images[pageIdx];
                 if (targetImage) {
-                    const { refRight, refBottom } = getRefsForArea(area);
-                    const { debugInfo, indices } = await analyzeStudentIdMark(
-                        targetImage, 
-                        area,
-                        markThreshold,
-                        refRight,
-                        refBottom
-                    );
-                    // Store debug info with page index as key suffix to handle multi-page visualization
-                    newDebugInfos[`${sheet.id}-${pIdx}`] = debugInfo;
+                    let areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+                    // Fallback to page 0 if not found
+                    if (!areaForPage) areaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === 0);
+                    
+                    if (areaForPage) {
+                        const { refRight, refBottom } = getRefsForArea(areaForPage);
+                        const { debugInfo, indices } = await analyzeStudentIdMark(
+                            targetImage, 
+                            areaForPage,
+                            markThreshold,
+                            refRight,
+                            refBottom
+                        );
+                        // Store debug info with page index as key suffix to handle multi-page visualization
+                        newDebugInfos[`${sheet.id}-${pageIdx}`] = debugInfo;
 
-                    // Update page detected ID if found
-                    if (indices) {
-                        const rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
-                        let detectedIdStr = rawIdStr;
-                        if (rawIdStr.length >= 3) {
-                            const markNumber = rawIdStr.slice(-2);
-                            const markClass = rawIdStr.slice(0, -2);
-                            detectedIdStr = `${markClass}-${markNumber}`;
+                        // Update page detected ID if found
+                        if (indices) {
+                            const rawIdStr = indices.map(i => ((i + numberingBase) % 10).toString()).join(''); 
+                            let detectedIdStr = rawIdStr;
+                            if (rawIdStr.length >= 3) {
+                                const markNumber = rawIdStr.slice(-2);
+                                const markClass = rawIdStr.slice(0, -2);
+                                detectedIdStr = `${markClass}-${markNumber}`;
+                            }
+                            if (!newPageDetectedIds[sheet.id]) newPageDetectedIds[sheet.id] = {};
+                            newPageDetectedIds[sheet.id][pageIdx] = detectedIdStr;
                         }
-                        if (!newPageDetectedIds[sheet.id]) newPageDetectedIds[sheet.id] = {};
-                        newPageDetectedIds[sheet.id][pIdx] = detectedIdStr;
                     }
                 }
             }
@@ -973,7 +982,12 @@ export const StudentVerificationEditor = () => {
                                             // Determine target area for preview
                                             let targetArea = areas.find(a => a.type === AreaType.NAME && (a.pageIndex || 0) === pageIdx);
                                             // Fallback to ID mark if available on this page
-                                            const idAreaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+                                            let idAreaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === pageIdx);
+                                            
+                                            // If auto sort would fallback, visualization should too for consistency
+                                            if (!idAreaForPage && showDebugGrid) {
+                                                idAreaForPage = studentIdAreas.find(a => (a.pageIndex || 0) === 0);
+                                            }
                                             
                                             if (showDebugGrid && idAreaForPage) {
                                                 targetArea = idAreaForPage;
