@@ -27,6 +27,16 @@ const AppContent: React.FC = () => {
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
     const [appMode, setAppMode] = useState<AppMode>(AppMode.HOME);
     const [printPreviewConfig, setPrintPreviewConfig] = useState<{ open: boolean, initialTab: 'report' | 'sheets', questionStats: QuestionStats[] }>({ open: false, initialTab: 'report', questionStats: [] });
+    const [apiKey, setApiKey] = useState<string>("");
+
+    useEffect(() => {
+        const checkApiKey = async () => {
+            if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+                setApiKey(process.env.API_KEY || "selected");
+            }
+        };
+        checkApiKey();
+    }, []);
 
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -87,7 +97,7 @@ const AppContent: React.FC = () => {
                     onProjectExportWithOptions={handleProjectExportWithOptions}
                 />;
             }
-            return <GradingWorkflow apiKey={""} setPrintPreviewConfig={setPrintPreviewConfig} />;
+            return <GradingWorkflow apiKey={apiKey} setPrintPreviewConfig={setPrintPreviewConfig} />;
         }
         return <p>Invalid state</p>;
     };

@@ -5,7 +5,7 @@ import { AreaType as AreaTypeEnum } from '../types';
 import { TemplateSidebar, areaTypeColors } from './template_editor/TemplateSidebar';
 import { TemplateToolbar } from './template_editor/TemplateToolbar';
 import { useProject } from '../context/ProjectContext';
-import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, loadImage, detectRectFromPoint } from '../utils';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, loadImage, detectRectFromPoint, findStudentIdRefMarks } from '../utils';
 
 interface TemplateEditorProps {
     apiKey: string;
@@ -163,6 +163,44 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             handleAreasChange(nextState);
         }
     }, [history, historyIndex, handleAreasChange]);
+
+    const addAreaWithAutoRefs = useCallback(async (newArea: Area, img?: HTMLImageElement) => {
+        const nextAreas = [...areas, newArea];
+        
+        if (newArea.type === AreaTypeEnum.STUDENT_ID_MARK) {
+            try {
+                let currentImg = img;
+                if (!currentImg && activePage) {
+                    const result = await window.electronAPI.invoke('get-image-details', activePage.imagePath);
+                    if (result.success && result.details?.url) {
+                        currentImg = await loadImage(result.details.url);
+                    }
+                }
+                
+                if (currentImg) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = currentImg.naturalWidth; canvas.height = currentImg.naturalHeight;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    if (ctx) {
+                        ctx.drawImage(currentImg, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const refs = findStudentIdRefMarks(imageData, newArea);
+                        if (refs.right) {
+                            nextAreas.push({ ...refs.right, id: Date.now() + 1, name: '学籍番号基準(右)', type: AreaTypeEnum.STUDENT_ID_REF_RIGHT, pageIndex: activePageIndex });
+                        }
+                        if (refs.bottom) {
+                            nextAreas.push({ ...refs.bottom, id: Date.now() + 2, name: '学籍番号基準(下)', type: AreaTypeEnum.STUDENT_ID_REF_BOTTOM, pageIndex: activePageIndex });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Auto detect Student ID refs failed:", e);
+            }
+        }
+        
+        commitAreas(nextAreas);
+        setSelectedAreaIds(new Set([newArea.id]));
+    }, [areas, activePage, activePageIndex, commitAreas]);
     
     const currentPageAreas = areas.filter(a => (a.pageIndex === undefined ? 0 : a.pageIndex) === activePageIndex);
 
@@ -335,7 +373,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             if (rect) {
                 const newArea: Area = {
                     id: Date.now(),
-                    name: `${wandTargetType}${areas.length + 1}`,
+                    name: wandTargetType === AreaTypeEnum.STUDENT_ID_MARK ? '学籍番号欄' : `${wandTargetType}${areas.length + 1}`,
                     type: wandTargetType,
                     x: rect.x,
                     y: rect.y,
@@ -343,8 +381,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
                     height: rect.height,
                     pageIndex: activePageIndex
                 };
-                commitAreas([...areas, newArea]);
-                setSelectedAreaIds(new Set([newArea.id]));
+                addAreaWithAutoRefs(newArea, img);
             } else {
                 // Optional: Feedback if nothing detected (e.g., clicked on a line)
                 console.log("No clear frame detected at this point.");
@@ -450,8 +487,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
             const pos = getRelativeCoords(e); const { startPoint } = drawState;
             const width = Math.abs(pos.x - startPoint.x); const height = Math.abs(pos.y - startPoint.y);
             if (width > MIN_AREA_SIZE && height > MIN_AREA_SIZE) {
-                const newArea: Area = { id: Date.now(), name: `領域${areas.length + 1}`, type: manualDrawType, x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y), width, height, pageIndex: activePageIndex };
-                commitAreas([...areas, newArea]); setSelectedAreaIds(new Set([newArea.id]));
+                const name = manualDrawType === AreaTypeEnum.STUDENT_ID_MARK ? '学籍番号欄' : `領域${areas.length + 1}`;
+                const newArea: Area = { id: Date.now(), name, type: manualDrawType, x: Math.min(pos.x, startPoint.x), y: Math.min(pos.y, startPoint.y), width, height, pageIndex: activePageIndex };
+                addAreaWithAutoRefs(newArea);
             }
         } else if(drawState?.isMoving || drawState?.isResizing) commitAreas(areas);
         

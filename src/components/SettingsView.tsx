@@ -15,6 +15,39 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
     return (
         <div className="w-full max-w-4xl mx-auto space-y-8">
             <div className="space-y-4">
+                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">Gemini API 設定</h3>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
+                    <div className="flex items-start gap-3">
+                        <InfoIcon className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm space-y-1">
+                            <p className="font-bold">APIキーの選択</p>
+                            <p className="text-slate-500 dark:text-slate-400">
+                                AI採点機能を利用するには、Gemini APIキーの選択が必要です。
+                                下記のボタンからAPIキーを選択してください。
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                                ※ 請求設定が有効なGoogle CloudプロジェクトのAPIキーを選択してください。
+                                <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline ml-1">詳細はこちら</a>
+                            </p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={async () => {
+                            if (window.aistudio) {
+                                await window.aistudio.openSelectKey();
+                                // After selection, we might want to refresh the app state
+                                // but the platform usually handles the injection.
+                                window.location.reload(); 
+                            }
+                        }}
+                        className="w-full sm:w-auto px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-sm transition-all active:scale-95"
+                    >
+                        APIキーを選択する
+                    </button>
+                </div>
+            </div>
+
+            <div className="space-y-4">
                 <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">テーマ設定</h3>
                 <div className="flex items-center space-x-2 p-1 bg-slate-200 dark:bg-slate-700 rounded-lg">
                     <button onClick={() => setTheme('light')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors ${theme === 'light' ? 'bg-white dark:bg-slate-600 shadow' : 'hover:bg-slate-300 dark:hover:bg-slate-600/50'}`}>

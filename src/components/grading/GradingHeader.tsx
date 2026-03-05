@@ -43,7 +43,11 @@ const filterOptions: { value: GradingFilter; label: string }[] = [
 ];
 
 const presetAnswerFormats = [
-    { label: 'ア-オ', value: 'アイウエオ' }, { label: '数字', value: '1234567890' }, { label: 'A-E', value: 'ABCDE' }, { label: 'a-e', value: 'abcde' }
+    { label: 'ア-オ', value: 'アイウエオ' }, 
+    { label: 'ア-ン', value: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン' },
+    { label: '数字', value: '0123456789' }, 
+    { label: 'A-Z', value: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+    { label: 'a-z', value: 'abcdefghijklmnopqrstuvwxyz' }
 ];
 
 export const GradingHeader: React.FC<GradingHeaderProps> = ({

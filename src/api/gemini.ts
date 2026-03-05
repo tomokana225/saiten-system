@@ -169,3 +169,48 @@ export const callGeminiAPIBatch = async (
         return { error: error.message };
     }
 };
+
+export const inferAreaType = async (imageBase64: string, mimeType = 'image/png', model = 'gemini-3-flash-preview') => {
+    const systemInstruction = `あなたはテスト用紙のレイアウトを解析する専門家です。
+画像の中央にある四角い枠が、以下のどの種類に当てはまるかを判定してください。
+枠の周りにある文字（「氏名」、「合計」、「問1」など）をヒントにしてください。
+
+返すべき種類（以下のいずれか1つ）:
+- "氏名": 氏名入力欄
+- "合計": 合計点、得点、点数などの欄
+- "解答": 一般的な記述解答欄
+- "マークシート": マークシート（数字や記号が並んでいる）領域
+- "学籍番号": 学籍番号のマーク入力欄
+- "小計": 小計欄
+- "不明": 判定できない場合`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            type: { type: Type.STRING, enum: ["氏名", "合計", "解答", "マークシート", "学籍番号", "小計", "不明"] },
+            confidence: { type: Type.NUMBER, description: "判定の自信度（0.0〜1.0）" }
+        },
+        required: ["type", "confidence"]
+    };
+
+    try {
+        const result = await window.electronAPI.invoke('gemini-generate-content', {
+            model: model, 
+            contents: {
+                parts: [
+                    { text: "この枠の種類を判定してください。" },
+                    { inlineData: { mimeType, data: imageBase64 } }
+                ]
+            },
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema,
+            }
+        });
+        return result;
+    } catch (error) {
+        console.error('Error calling Gemini API for area type inference:', error);
+        return { success: false, error: { message: error.message } };
+    }
+};

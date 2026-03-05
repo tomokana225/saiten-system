@@ -31,18 +31,46 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     let peakSum = 0;
     let peakMass = 0;
     const maxVal = Math.max(...profile);
-    const threshold = Math.max(5, maxVal * thresholdRatio);
+    const threshold = Math.max(3, maxVal * thresholdRatio);
+    
+    // Simple smoothing to reduce noise
+    const smoothed = new Array(length).fill(0);
     for (let i = 0; i < length; i++) {
-        const val = profile[i];
+        let sum = 0, count = 0;
+        for (let j = -1; j <= 1; j++) {
+            if (i + j >= 0 && i + j < length) {
+                sum += profile[i + j];
+                count++;
+            }
+        }
+        smoothed[i] = sum / count;
+    }
+
+    for (let i = 0; i < length; i++) {
+        const val = smoothed[i];
         if (val > threshold) {
             if (!inPeak) { inPeak = true; peakSum = 0; peakMass = 0; }
             peakSum += i * val;
             peakMass += val;
         } else {
-            if (inPeak) { inPeak = false; if (peakMass > 0) peaks.push(peakSum / peakMass); }
+            if (inPeak) { 
+                inPeak = false; 
+                if (peakMass > 0) {
+                    const peakPos = peakSum / peakMass;
+                    // Ensure peaks are not too close (e.g. at least 5px apart)
+                    if (peaks.length === 0 || peakPos - peaks[peaks.length - 1] > 5) {
+                        peaks.push(peakPos);
+                    }
+                }
+            }
         }
     }
-    if (inPeak && peakMass > 0) peaks.push(peakSum / peakMass);
+    if (inPeak && peakMass > 0) {
+        const peakPos = peakSum / peakMass;
+        if (peaks.length === 0 || peakPos - peaks[peaks.length - 1] > 5) {
+            peaks.push(peakPos);
+        }
+    }
     return peaks;
 };
 
@@ -153,8 +181,11 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivi
             debugInfo.scanZones?.push({ x: 0, y: scanYStart, w: mainCrop.sw, h: mainCrop.h - scanYStart, label: 'Auto Ref Bottom' });
         }
 
-        if (rowCenters.length < 1) rowCenters = [mainCrop.h / 6, mainCrop.h / 2, mainCrop.h * 5/6];
-        if (colCenters.length < 1) for(let i=0; i<10; i++) colCenters.push(mainCrop.sw / 10 * i + mainCrop.sw / 20);
+        if (rowCenters.length !== 3) rowCenters = [mainCrop.h / 6, mainCrop.h / 2, mainCrop.h * 5/6];
+        if (colCenters.length !== 10) {
+            colCenters = [];
+            for(let i=0; i<10; i++) colCenters.push(mainCrop.sw / 10 * i + mainCrop.sw / 20);
+        }
 
         const rowBoundaries: number[] = [];
         const colBoundaries: number[] = [];
@@ -212,7 +243,8 @@ function checkFill(startX: number, startY: number, w: number, h: number, data: U
         }
     }
     const ratio = totalPixels > 0 ? darkPixels / totalPixels : 0;
-    return { filled: ratio > 0.30, darkPixels, ratio };
+    // Lower threshold slightly for warped images which might be blurred
+    return { filled: ratio > 0.20, darkPixels, ratio };
 }
 
 const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugInfo, width: number, height: number }) => {
@@ -586,7 +618,7 @@ export const StudentVerificationEditor = () => {
 
     const handleSortGlobal = async () => {
         if (studentIdAreas.length === 0) {
-            alert('テンプレート編集画面で「学籍番号」エリアを設定してください。');
+            alert('テンプレート編集画面で「学籍番号欄」を設定してください。');
             return;
         }
         
@@ -662,14 +694,24 @@ export const StudentVerificationEditor = () => {
                     }
 
                     // Format detected ID
-                    const rawIdStr = res.indices.map(i => ((i + numberingBase) % 10).toString()).join('');
+                    const rawIdStr = res.indices.map(i => {
+                        if (i === -1) return ' '; // Use space for undetected marks
+                        return ((i + numberingBase) % 10).toString();
+                    }).join('');
+                    
+                    // For matching, we ignore spaces
+                    const matchIdStr = rawIdStr.replace(/\s/g, '');
                     let detectedIdStr = rawIdStr;
-                    let markNumber = rawIdStr;
+                    let markNumber = rawIdStr.trim();
                     let markClass = "";
 
-                    if (rawIdStr.length >= 3) {
-                        markNumber = rawIdStr.slice(-2);
-                        markClass = rawIdStr.slice(0, -2);
+                    if (matchIdStr.length >= 3) {
+                        // Assuming the last 2 digits are number and the rest is class
+                        // This is a bit fragile if there are spaces, so let's use the raw indices if possible
+                        // But for now let's just trim and try to match
+                        const cleanId = rawIdStr.replace(/\s/g, '');
+                        markNumber = cleanId.slice(-2);
+                        markClass = cleanId.slice(0, -2);
                         detectedIdStr = `${markClass}-${markNumber}`;
                     }
 
@@ -696,17 +738,17 @@ export const StudentVerificationEditor = () => {
                             // Track detected ID for UI display (store temporarily by student index key)
                             const tempKey = `sorted-${matchIndex}`;
                             if (!newPageDetectedIds[tempKey]) newPageDetectedIds[tempKey] = {};
-                            newPageDetectedIds[tempKey][pageIdx] = detectedIdStr;
+                            newPageDetectedIds[tempKey][pageIdx] = detectedIdStr.trim();
                             
                             // Use first detected ID as generic label if needed
-                            if (!newDetectedIds[tempKey]) newDetectedIds[tempKey] = detectedIdStr;
+                            if (!newDetectedIds[tempKey]) newDetectedIds[tempKey] = detectedIdStr.trim();
 
                         } else {
-                            unmatchedImages.push({ url: res.imagePath, reason: 'duplicate', detectedId: detectedIdStr, pageIndex: pageIdx });
+                            unmatchedImages.push({ url: res.imagePath, reason: 'duplicate', detectedId: detectedIdStr.trim(), pageIndex: pageIdx });
                             duplicateCount++;
                         }
                     } else {
-                        unmatchedImages.push({ url: res.imagePath, reason: 'not_found', detectedId: detectedIdStr, pageIndex: pageIdx });
+                        unmatchedImages.push({ url: res.imagePath, reason: 'not_found', detectedId: detectedIdStr.trim(), pageIndex: pageIdx });
                         notFoundCount++;
                     }
                 });

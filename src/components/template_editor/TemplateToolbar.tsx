@@ -33,7 +33,7 @@ const typeNameMap: Record<string, string> = {
     [AreaTypeEnum.TOTAL]: '合計', 
     [AreaTypeEnum.QUESTION_NUMBER]: '問題番号',
     [AreaTypeEnum.ALIGNMENT_MARK]: '基準マーク', 
-    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号',
+    [AreaTypeEnum.STUDENT_ID_MARK]: '学籍番号欄',
     [AreaTypeEnum.STUDENT_ID_REF_RIGHT]: '学籍基準(右)',
     [AreaTypeEnum.STUDENT_ID_REF_BOTTOM]: '学籍基準(下)',
     [AreaTypeEnum.MARKSHEET_REF_RIGHT]: 'マーク基準(右)',

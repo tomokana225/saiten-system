@@ -1,6 +1,6 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
-import { Area, Point, AreaType } from './types';
+import { Area, Point, AreaType, Corners, PointCoord } from './types';
 
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {
@@ -63,8 +63,6 @@ export const convertFileToImages = async (file: File): Promise<string[]> => {
     }
 };
 
-interface PointCoord { x: number; y: number; }
-interface Corners { tl: PointCoord; tr: PointCoord; br: PointCoord; bl: PointCoord; }
 
 export const findAlignmentMarks = (
     imageData: ImageData, 
@@ -297,8 +295,23 @@ export const detectRectFromPoint = (
                         visited[idx] = 1;
                         queue.push(nx, ny);
                     } else {
-                        // Hit a border pixel (dark), stop expansion here.
-                        // Ideally we check if it's a valid edge.
+                        // Hit a border. Try to jump over it if it's a thin horizontal line
+                        // and we are moving vertically.
+                        if (ny !== cy) { // Vertical move
+                            const jump = 8; // Max line thickness to jump (increased for student ID rows)
+                            const step = ny > cy ? 1 : -1;
+                            for (let j = 1; j <= jump; j++) {
+                                const jny = cy + (j + 1) * step;
+                                if (jny >= 0 && jny < sh && isBackground(nx, jny)) {
+                                    const jidx = jny * sw + nx;
+                                    if (visited[jidx] === 0) {
+                                        visited[jidx] = 1;
+                                        queue.push(nx, jny);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -665,4 +678,120 @@ export const detectAndWarpCrop = async (
         return { url, corners: srcCorners };
     }
     return { url: null };
+};
+
+export const findStudentIdRefMarks = (
+    imageData: ImageData,
+    studentIdArea: Area,
+    threshold: number = 160
+): { right?: Area, bottom?: Area } => {
+    const { data, width, height } = imageData;
+    const results: { right?: Area, bottom?: Area } = {};
+
+    const findAllBlobs = (searchX: number, searchY: number, searchW: number, searchH: number, direction: 'h' | 'v'): { x: number, y: number, width: number, height: number } | undefined => {
+        const sx = Math.max(0, Math.floor(searchX));
+        const sy = Math.max(0, Math.floor(searchY));
+        const sw = Math.min(width - sx, Math.floor(searchW));
+        const sh = Math.min(height - sy, Math.floor(searchH));
+
+        let blobs: { minX: number, maxX: number, minY: number, maxY: number, centerX: number, centerY: number, area: number }[] = [];
+        const globalVisited = new Uint8Array(width * height);
+
+        for (let y = sy; y < sy + sh; y++) {
+            for (let x = sx; x < sx + sw; x++) {
+                const gIdx = y * width + x;
+                if (globalVisited[gIdx]) continue;
+
+                const idx = gIdx * 4;
+                const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                if (gray < threshold) {
+                    let minX = x, maxX = x, minY = y, maxY = y;
+                    const queue: [number, number][] = [[x, y]];
+                    globalVisited[gIdx] = 1;
+                    let count = 0;
+                    
+                    while(queue.length > 0 && count < 2000) {
+                        const [cx, cy] = queue.shift()!;
+                        count++;
+                        if (cx < minX) minX = cx;
+                        if (cx > maxX) maxX = cx;
+                        if (cy < minY) minY = cy;
+                        if (cy > maxY) maxY = cy;
+                        
+                        const neighbors: [number, number][] = [[cx+1, cy], [cx-1, cy], [cx, cy+1], [cx, cy-1]];
+                        for(const [nx, ny] of neighbors) {
+                            if (nx >= sx && nx < sx + sw && ny >= sy && ny < sy + sh) {
+                                const nidx = ny * width + nx;
+                                if (!globalVisited[nidx]) {
+                                    const nidx4 = nidx * 4;
+                                    const ngray = 0.299 * data[nidx4] + 0.587 * data[nidx4+1] + 0.114 * data[nidx4+2];
+                                    if (ngray < threshold) {
+                                        globalVisited[nidx] = 1;
+                                        queue.push([nx, ny]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    const w = maxX - minX + 1;
+                    const h = maxY - minY + 1;
+                    // Reference marks are usually small squares (e.g. 8x8 to 20x20)
+                    if (w >= 4 && h >= 4 && w < 60 && h < 60) {
+                        blobs.push({ minX, maxX, minY, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, area: w * h });
+                    }
+                }
+            }
+        }
+
+        if (blobs.length === 0) return undefined;
+
+        // Group blobs into rows/cols and pick the one closest to the search start
+        if (direction === 'h') {
+            const sortedY = [...blobs].sort((a, b) => a.centerY - b.centerY);
+            const firstY = sortedY[0].centerY;
+            // Pick all blobs that are within 15px of the first encountered row
+            blobs = blobs.filter(b => Math.abs(b.centerY - firstY) < 15);
+        } else {
+            const sortedX = [...blobs].sort((a, b) => a.centerX - b.centerX);
+            const firstX = sortedX[0].centerX;
+            // Pick all blobs that are within 15px of the first encountered column
+            blobs = blobs.filter(b => Math.abs(b.centerX - firstX) < 15);
+        }
+
+        if (blobs.length === 0) return undefined;
+
+        const combinedMinX = Math.min(...blobs.map(b => b.minX));
+        const combinedMaxX = Math.max(...blobs.map(b => b.maxX));
+        const combinedMinY = Math.min(...blobs.map(b => b.minY));
+        const combinedMaxY = Math.max(...blobs.map(b => b.maxY));
+
+        return {
+            x: combinedMinX,
+            y: combinedMinY,
+            width: combinedMaxX - combinedMinX + 1,
+            height: combinedMaxY - combinedMinY + 1
+        };
+    };
+
+    const searchRangeRight = 300; 
+    const searchRangeBottom = 150; 
+
+    results.right = findAllBlobs(
+        studentIdArea.x + studentIdArea.width + 5, 
+        studentIdArea.y - 50, 
+        searchRangeRight, 
+        studentIdArea.height + 100,
+        'v'
+    ) as any;
+
+    results.bottom = findAllBlobs(
+        studentIdArea.x - 50, 
+        studentIdArea.y + studentIdArea.height + 5, 
+        studentIdArea.width + 100, 
+        searchRangeBottom,
+        'h'
+    ) as any;
+
+    return results;
 };

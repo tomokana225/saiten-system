@@ -247,7 +247,15 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                         studentId: s.id, 
                         base64: await cropImage(s.images[pageIdx]!, area) 
                     })));
-                    const res = await callGeminiAPIBatch(masterSnippet, studentSnippets, point, 'auto', '', aiSettings.gradingMode, aiSettings.aiModel);
+                    const res = await callGeminiAPIBatch(
+                        masterSnippet, 
+                        studentSnippets, 
+                        point, 
+                        point.aiGradingMode || 'auto', 
+                        point.answerFormat || '', 
+                        aiSettings.gradingMode, 
+                        aiSettings.aiModel
+                    );
                     if (res.results) {
                         handleScoresChange(prev => {
                             const next = { ...prev };
@@ -270,6 +278,18 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
         setProgress({ current: 0, total: 0, message: '' });
     };
 
+    const selectedArea = useMemo(() => answerAreas.find(a => a.id === selectedAreaId), [answerAreas, selectedAreaId]);
+    const selectedPoint = useMemo(() => points.find(p => p.id === selectedAreaId), [points, selectedAreaId]);
+
+    const handlePointUpdate = (updater: (prev: import('../types').Point) => import('../types').Point) => {
+        if (!selectedAreaId) return;
+        updateActiveProject(prev => ({
+            ...prev,
+            points: prev.points.map(p => p.id === selectedAreaId ? updater(p) : p),
+            lastModified: Date.now()
+        }));
+    };
+
     if (!selectedAreaId && answerAreas.length > 0) setSelectedAreaId(answerAreas[0].id);
 
     return (
@@ -286,13 +306,17 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
             
             <main className="flex-1 flex flex-col gap-4 overflow-hidden">
                 <GradingHeader 
-                    selectedArea={answerAreas.find(a => a.id === selectedAreaId)} 
+                    selectedArea={selectedArea} 
                     onStartAIGrading={() => selectedAreaId && handleStartGrading([selectedAreaId])} 
                     onStartMarkSheetGrading={() => selectedAreaId && handleStartGrading([selectedAreaId])} 
                     onStartMarkSheetGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.MARK_SHEET).map(a => a.id))}
                     onStartAIGradingAll={() => handleStartGrading(answerAreas.filter(a => a.type === AreaType.ANSWER).map(a => a.id))} 
                     isGrading={isGrading} isGradingAll={false} progress={progress} 
-                    filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={() => {}} aiGradingMode="auto" onAiGradingModeChange={() => {}} answerFormat="" onAnswerFormatChange={() => {}} 
+                    filter={filter} onFilterChange={setFilter} apiKey={apiKey} columnCount={columnCount} onColumnCountChange={setColumnCount} onBulkScore={() => {}} 
+                    aiGradingMode={selectedPoint?.aiGradingMode || 'auto'} 
+                    onAiGradingModeChange={(mode) => handlePointUpdate(p => ({ ...p, aiGradingMode: mode }))} 
+                    answerFormat={selectedPoint?.answerFormat || ''} 
+                    onAnswerFormatChange={(format) => handlePointUpdate(p => ({ ...p, answerFormat: format }))} 
                     isImageEnhanced={isImageEnhanced} onToggleImageEnhancement={() => setIsImageEnhanced(!isImageEnhanced)} 
                     autoAlign={autoAlign} onToggleAutoAlign={() => setAutoAlign(!autoAlign)} 
                     aiSettings={aiSettings}

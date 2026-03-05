@@ -1,6 +1,100 @@
-import React from 'react';
-import type { StudentResult, Template, Area, Point, AllScores, LayoutSettings, Annotation, TextAnnotation } from '../../types';
+import React, { useState, useEffect } from 'react';
+import type { StudentResult, Template, Area, Point, AllScores, LayoutSettings, Annotation, TextAnnotation, AISettings, Corners } from '../../types';
 import { AreaType, ScoringStatus } from '../../types';
+import { detectAndWarpCrop, loadImage } from '../../utils';
+import { SpinnerIcon } from '../icons';
+
+// Shared global cache to prevent redundant loads during print generation
+const imagePromiseCache = new Map<string, Promise<HTMLImageElement>>();
+const getSharedImage = (src: string): Promise<HTMLImageElement> => {
+    let promise = imagePromiseCache.get(src);
+    if (!promise) {
+        promise = (async () => {
+            if (src.startsWith('data:') || src.startsWith('blob:')) {
+                return loadImage(src);
+            }
+            const result = await window.electronAPI.invoke('get-image-details', src);
+            if (!result.success || !result.details?.url) throw new Error('Failed to load image');
+            return loadImage(result.details.url);
+        })();
+        imagePromiseCache.set(src, promise);
+    }
+    return promise;
+};
+
+const WarpedPageImage: React.FC<{
+    src: string;
+    pageIndex: number;
+    template: Template;
+    areas: Area[];
+    enableAutoAlignment: boolean;
+    studentManualCorners?: Corners;
+    studentName: string;
+}> = ({ src, pageIndex, template, areas, enableAutoAlignment, studentManualCorners, studentName }) => {
+    const [warpedSrc, setWarpedSrc] = useState<string>(src);
+    const [isWarping, setIsWarping] = useState(false);
+
+    useEffect(() => {
+        if (!enableAutoAlignment || !template.alignmentMarkIdealCorners) {
+            setWarpedSrc(src);
+            return;
+        }
+
+        let isMounted = true;
+        const process = async () => {
+            setIsWarping(true);
+            try {
+                const img = await getSharedImage(src);
+                if (!isMounted) return;
+
+                const marks = areas.filter(a => a.type === AreaType.ALIGNMENT_MARK && (a.pageIndex || 0) === pageIndex);
+                let searchZones = undefined;
+                if (marks.length === 4) {
+                    const sortedByY = [...marks].sort((a, b) => a.y - b.y);
+                    const topTwo = sortedByY.slice(0, 2).sort((a, b) => a.x - b.x);
+                    const bottomTwo = sortedByY.slice(2, 4).sort((a, b) => a.x - b.x);
+                    searchZones = {
+                        tl: topTwo[0],
+                        tr: topTwo[1],
+                        br: bottomTwo[1],
+                        bl: bottomTwo[0]
+                    };
+                }
+
+                const res = await detectAndWarpCrop(
+                    img,
+                    template.alignmentMarkIdealCorners!,
+                    { x: 0, y: 0, width: template.width || img.naturalWidth, height: template.height || img.naturalHeight },
+                    studentManualCorners || undefined,
+                    template.alignmentDetectionSettings,
+                    searchZones
+                );
+
+                if (res.url && isMounted) {
+                    setWarpedSrc(res.url);
+                }
+            } catch (e) {
+                console.error(`Warping page failed for ${studentName} p${pageIndex + 1}`, e);
+            } finally {
+                if (isMounted) setIsWarping(false);
+            }
+        };
+
+        process();
+        return () => { isMounted = false; };
+    }, [src, enableAutoAlignment, template, studentManualCorners, areas, pageIndex, studentName]);
+
+    return (
+        <div className="relative w-full h-full">
+            <img src={warpedSrc} alt={`Answer sheet p${pageIndex + 1}`} className="absolute top-0 left-0 w-full h-full" />
+            {isWarping && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/30 z-10">
+                    <SpinnerIcon className="w-8 h-8 text-sky-500 animate-spin" />
+                </div>
+            )}
+        </div>
+    );
+};
 
 // This component renders annotations (drawings/text) on top of the answer sheet for printing.
 const AnnotationOverlayForPrint: React.FC<{ annotations: Annotation[], width: number, height: number }> = ({ annotations, width, height }) => {
@@ -92,10 +186,11 @@ interface PrintableAnswerSheetProps {
     points: Point[];
     scores: AllScores;
     settings: LayoutSettings;
+    aiSettings: AISettings;
 }
 
 export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAnswerSheetProps>(
-    ({ results, template, areas, points, scores, settings }, ref) => {
+    ({ results, template, areas, points, scores, settings, aiSettings }, ref) => {
 
         const getPointForArea = (area: Area) => points.find(p => p.id === area.id);
 
@@ -183,7 +278,15 @@ export const PrintableAnswerSheet = React.forwardRef<HTMLDivElement, PrintableAn
                                     }}
                                 >
                                     <div style={imageContainerStyle}>
-                                        <img src={imageSrc} alt={`Answer sheet for ${student.name} p${pageIndex+1}`} className="absolute top-0 left-0 w-full h-full" />
+                                        <WarpedPageImage 
+                                            src={imageSrc} 
+                                            pageIndex={pageIndex} 
+                                            template={template} 
+                                            areas={areas} 
+                                            enableAutoAlignment={aiSettings.enableAutoAlignment}
+                                            studentManualCorners={student.manualAlignmentCorners?.[pageIndex]}
+                                            studentName={student.name}
+                                        />
                                         <div className="absolute top-0 left-0 w-full h-full">
                                             {pageAreas.map(area => {
                                                 const getBaseStyleForArea = (targetArea: Area): React.CSSProperties => ({

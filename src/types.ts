@@ -17,6 +17,9 @@ export enum Type {
     NULL = 'NULL',
 }
 
+export interface PointCoord { x: number; y: number; }
+export interface Corners { tl: PointCoord; tr: PointCoord; br: PointCoord; bl: PointCoord; }
+
 // App-wide enums and string unions
 export enum AppMode {
     HOME = 'ホーム',
@@ -54,7 +57,7 @@ export enum AreaType {
     MARK_SHEET = 'マークシート',
     QUESTION_NUMBER = '問題番号',
     ALIGNMENT_MARK = '基準マーク',
-    STUDENT_ID_MARK = '学籍番号',
+    STUDENT_ID_MARK = '学籍番号欄',
     STUDENT_ID_REF_RIGHT = '学籍番号基準(右)',
     STUDENT_ID_REF_BOTTOM = '学籍番号基準(下)',
     MARKSHEET_REF_RIGHT = 'マークシート基準(右)',
@@ -146,6 +149,8 @@ export interface Point {
     correctAnswerIndex?: number;
     markRefRightAreaId?: number;
     markRefBottomAreaId?: number;
+    aiGradingMode?: 'auto' | 'strict';
+    answerFormat?: string;
 }
 
 export type AnnotationTool = 'pen' | 'wave' | 'circle' | 'text';
@@ -357,6 +362,16 @@ export interface LayoutSettings {
         color: string;
         vOffset: number;
     };
+}
+
+declare global {
+    interface Window {
+        electronAPI: any;
+        aistudio: {
+            hasSelectedApiKey: () => Promise<boolean>;
+            openSelectKey: () => Promise<void>;
+        };
+    }
 }
 
 export interface ReportLayoutSettings {

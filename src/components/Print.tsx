@@ -245,7 +245,7 @@ export const Print: React.FC<PrintProps> = ({ initialTab, questionStats, onClose
             </header>
             <main className="flex-1 flex overflow-hidden">
                 <div className="flex-1 bg-slate-300 dark:bg-slate-950/80 overflow-auto p-4">
-                    {sortedAndFilteredResults.length > 0 ? (<>{activeTab === 'report' && <PrintableIndividualReport ref={printRef} results={sortedAndFilteredResults} allResults={results} points={points} scores={scores} questionStats={questionStats} settings={reportLayoutSettings} />}{activeTab === 'sheets' && <PrintableAnswerSheet ref={printRef} results={sortedAndFilteredResults} template={template!} areas={areas} points={points} scores={scores} settings={layoutSettings} />}</>) : <div className="flex items-center justify-center h-full text-white"><p>印刷対象の生徒がいません。オプションで選択してください。</p></div>}
+                    {sortedAndFilteredResults.length > 0 ? (<>{activeTab === 'report' && <PrintableIndividualReport ref={printRef} results={sortedAndFilteredResults} allResults={results} points={points} scores={scores} questionStats={questionStats} settings={reportLayoutSettings} />}{activeTab === 'sheets' && <PrintableAnswerSheet ref={printRef} results={sortedAndFilteredResults} template={template!} areas={areas} points={points} scores={scores} settings={layoutSettings} aiSettings={activeProject.aiSettings} />}</>) : <div className="flex items-center justify-center h-full text-white"><p>印刷対象の生徒がいません。オプションで選択してください。</p></div>}
                 </div>
                 <aside className="w-80 bg-slate-100 dark:bg-slate-900 p-4 space-y-4 overflow-y-auto print-preview-controls">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">印刷オプション</h3>
