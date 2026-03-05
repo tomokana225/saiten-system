@@ -209,6 +209,7 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
     const [croppedImage, setCroppedImage] = useState<{ url: string, width: number, height: number, cropX: number, cropY: number } | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
+    const [alignmentError, setAlignmentError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!imageSrc) {
@@ -219,6 +220,7 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
         let isMounted = true;
         setLoading(true);
         setError(false);
+        setAlignmentError(null);
 
         const crop = async () => {
             console.log("Cropping triggered", { imageSrc, manualCorners, useAlignment });
@@ -281,15 +283,21 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
                                 return;
                             } else {
                                 console.warn("Auto-alignment failed (warp returned null), falling back to simple crop");
+                                if (isMounted) setAlignmentError("補正失敗: 画像変換エラー");
                             }
                         } catch (warpError) {
                             console.error("Warp execution failed:", warpError);
+                            if (isMounted) setAlignmentError(`補正エラー: ${warpError}`);
                         }
                     } else {
                          console.warn("Auto-alignment skipped (no corners found), falling back to simple crop");
+                         if (isMounted) setAlignmentError("補正失敗: 基準点検出不可");
                     }
                 } else {
                     console.log("Alignment logic NOT running", { useAlignment, hasTemplate: !!template, hasIdealCorners: !!idealCorners, isIdealValid, hasManualCorners: !!manualCorners });
+                    if (useAlignment && !isIdealValid) {
+                        if (isMounted) setAlignmentError("補正不可: テンプレート基準点未設定");
+                    }
                 }
 
                 // --- Standard Simple Crop (Fallback) ---
@@ -327,13 +335,21 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
     if (error || !croppedImage) return <div className="w-full h-full flex items-center justify-center bg-slate-100 text-red-400 text-xs"><XIcon className="w-4 h-4"/> Error</div>;
 
     return (
-        <PannableImage
-            imageDataUrl={croppedImage.url} imageWidth={croppedImage.width} imageHeight={croppedImage.height}
-            area={area} pannable={pannable} onClick={onClick} manualPanOffset={manualPanOffset} onPanCommit={onPanCommit}
-            padding={padding} cropInfo={{ x: croppedImage.cropX, y: croppedImage.cropY, width: croppedImage.width, height: croppedImage.height }}
-            isEnhanced={isEnhanced}
-        >
-            {children}
-        </PannableImage>
+        <div className="relative w-full h-full group">
+            <PannableImage
+                imageDataUrl={croppedImage.url} imageWidth={croppedImage.width} imageHeight={croppedImage.height}
+                area={area} pannable={pannable} onClick={onClick} manualPanOffset={manualPanOffset} onPanCommit={onPanCommit}
+                padding={padding} cropInfo={{ x: croppedImage.cropX, y: croppedImage.cropY, width: croppedImage.width, height: croppedImage.height }}
+                isEnhanced={isEnhanced}
+            >
+                {children}
+            </PannableImage>
+            
+            {alignmentError && (
+                <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white text-[10px] px-2 py-0.5 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    {alignmentError}
+                </div>
+            )}
+        </div>
     );
 };

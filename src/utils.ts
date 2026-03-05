@@ -483,8 +483,11 @@ const getHomographyMatrix = (src: PointCoord[], dst: PointCoord[]): number[][] =
     for (let i = 0; i < 4; i++) {
         const x = src[i].x; const y = src[i].y;
         const u = dst[i].x; const v = dst[i].y;
-        P.push([-x, -y, -1, 0, 0, 0, x * u, y * u, u]);
-        P.push([0, 0, 0, -x, -y, -1, x * v, y * v, v]);
+        // Standard homography equations:
+        // u = (h00*x + h01*y + h02) / (h20*x + h21*y + 1)
+        // v = (h10*x + h11*y + h12) / (h20*x + h21*y + 1)
+        P.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
+        P.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
     }
     const N = 8;
     for (let i = 0; i < N; i++) {
@@ -492,17 +495,15 @@ const getHomographyMatrix = (src: PointCoord[], dst: PointCoord[]): number[][] =
         for (let j = i + 1; j < N; j++) if (Math.abs(P[j][i]) > Math.abs(P[maxRow][i])) maxRow = j;
         [P[i], P[maxRow]] = [P[maxRow], P[i]];
         const pivot = P[i][i];
-        if (Math.abs(pivot) < 1e-8) continue;
+        if (Math.abs(pivot) < 1e-10) return [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
         for (let j = i; j < 9; j++) P[i][j] /= pivot;
         for (let k = 0; k < N; k++) if (k !== i) {
             const factor = P[k][i];
             for (let j = i; j < 9; j++) P[k][j] -= factor * P[i][j];
         }
     }
-    const h = Array(9).fill(0);
-    for (let i = 0; i < N; i++) h[i] = P[i][8];
-    h[8] = 1;
-    return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]]];
+    const h = P.map(row => row[8]);
+    return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1]];
 };
 
 const sourceImageDataCache = new WeakMap<HTMLImageElement, Uint8ClampedArray>();
@@ -520,6 +521,9 @@ export const warpArea = (
 
     const idealPts = [idealCorners.tl, idealCorners.tr, idealCorners.br, idealCorners.bl];
     const srcPts = [srcCorners.tl, srcCorners.tr, srcCorners.br, srcCorners.bl];
+    
+    // The original code used getHomographyMatrix(idealPts, srcPts).
+    // Let's revert to that and see if the issue is elsewhere.
     const H = getHomographyMatrix(idealPts, srcPts);
     
     // Check for invalid matrix
@@ -557,8 +561,11 @@ export const warpArea = (
 
     for (let dy = 0; dy < h; dy++) {
         for (let dx = 0; dx < w; dx++) {
+            // tx, ty are coordinates in the IDEAL (template) space
             const tx = targetArea.x + dx;
             const ty = targetArea.y + dy;
+            
+            // Map ideal coordinates back to the scanned image coordinates
             const denom = h20 * tx + h21 * ty + h22;
             
             // Avoid division by zero
@@ -569,6 +576,7 @@ export const warpArea = (
             
             const destIdx = (dy * w + dx) * 4;
             
+            // Check if the mapped source coordinate is within the bounds of the scanned image
             if (sx >= 0 && sx < srcImageWidth - 1 && sy >= 0 && sy < srcImageHeight - 1) {
                 // Bilinear Interpolation for smoother tilted images
                 const x0 = Math.floor(sx);
@@ -593,16 +601,28 @@ export const warpArea = (
                         srcData[idx01 + c] * dx0 * dy1 +
                         srcData[idx11 + c] * dx1 * dy1;
                 }
-                // Check if alpha is non-zero
-                if (destData.data[destIdx + 3] > 0) validPixels++;
+                // Force alpha to 255 if it's somehow getting zeroed out by interpolation
+                destData.data[destIdx + 3] = 255;
+                validPixels++;
             } else {
+                // Pixel is outside the scanned image, make it transparent
+                destData.data[destIdx + 0] = 0;
+                destData.data[destIdx + 1] = 0;
+                destData.data[destIdx + 2] = 0;
                 destData.data[destIdx + 3] = 0;
             }
         }
     }
     
     if (validPixels === 0) {
-        console.warn("warpArea: Result image is completely empty/transparent. Check alignment coordinates.");
+        console.warn("warpArea: Result image is completely empty/transparent. Check alignment coordinates.", {
+            targetArea,
+            srcImageSize: { w: srcImageWidth, h: srcImageHeight },
+            H,
+            srcCorners,
+            idealCorners
+        });
+        return ""; // Return empty string to signal failure
     }
 
     ctx.putImageData(destData, 0, 0);
