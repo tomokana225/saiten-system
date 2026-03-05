@@ -27,15 +27,20 @@ const AppContent: React.FC = () => {
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
     const [appMode, setAppMode] = useState<AppMode>(AppMode.HOME);
     const [printPreviewConfig, setPrintPreviewConfig] = useState<{ open: boolean, initialTab: 'report' | 'sheets', questionStats: QuestionStats[] }>({ open: false, initialTab: 'report', questionStats: [] });
-    const [apiKey, setApiKey] = useState<string>("");
+    const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('manual_api_key') || "");
 
     useEffect(() => {
         const checkApiKey = async () => {
-            if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+            if (!apiKey && window.aistudio && await window.aistudio.hasSelectedApiKey()) {
                 setApiKey(process.env.API_KEY || "selected");
             }
         };
         checkApiKey();
+    }, [apiKey]);
+
+    const handleApiKeyChange = useCallback((newKey: string) => {
+        setApiKey(newKey);
+        localStorage.setItem('manual_api_key', newKey);
     }, []);
 
     useEffect(() => {
@@ -84,6 +89,8 @@ const AppContent: React.FC = () => {
                theme={theme} setTheme={setTheme}
                aiSettings={activeProject?.aiSettings}
                onAiSettingsChange={activeProject ? handleAiSettingsChange : undefined}
+               apiKey={apiKey}
+               onApiKeyChange={handleApiKeyChange}
             />;
         }
         if (appMode === AppMode.GRADING) {

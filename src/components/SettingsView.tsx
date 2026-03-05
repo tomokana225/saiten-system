@@ -8,42 +8,73 @@ interface SettingsViewProps {
     setTheme: React.Dispatch<React.SetStateAction<'light' | 'dark'>>;
     aiSettings?: AISettings;
     onAiSettingsChange?: React.Dispatch<React.SetStateAction<AISettings>>;
+    apiKey: string;
+    onApiKeyChange: (key: string) => void;
 }
 
-export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }: SettingsViewProps) => {
+export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange, apiKey, onApiKeyChange }: SettingsViewProps) => {
 
     return (
         <div className="w-full max-w-4xl mx-auto space-y-8">
             <div className="space-y-4">
                 <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">Gemini API 設定</h3>
-                <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
-                    <div className="flex items-start gap-3">
-                        <InfoIcon className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
-                        <div className="text-sm space-y-1">
-                            <p className="font-bold">APIキーの選択</p>
-                            <p className="text-slate-500 dark:text-slate-400">
-                                AI採点機能を利用するには、Gemini APIキーの選択が必要です。
-                                下記のボタンからAPIキーを選択してください。
-                            </p>
-                            <p className="text-[10px] text-slate-400">
-                                ※ 請求設定が有効なGoogle CloudプロジェクトのAPIキーを選択してください。
-                                <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline ml-1">詳細はこちら</a>
-                            </p>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg space-y-6">
+                    <div className="space-y-4">
+                        <div className="flex items-start gap-3">
+                            <InfoIcon className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
+                            <div className="text-sm space-y-1">
+                                <p className="font-bold">APIキーの設定</p>
+                                <p className="text-slate-500 dark:text-slate-400">
+                                    AI採点機能を利用するには、Gemini APIキーが必要です。
+                                    ブラウザのダイアログから選択するか、直接キーを入力してください。
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                    方法1: ブラウザから選択 (推奨)
+                                </label>
+                                <button 
+                                    onClick={async () => {
+                                        if (window.aistudio) {
+                                            await window.aistudio.openSelectKey();
+                                            window.location.reload(); 
+                                        }
+                                    }}
+                                    className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-sm transition-all active:scale-95 text-sm"
+                                >
+                                    APIキーを選択する
+                                </button>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                    方法2: 直接入力
+                                </label>
+                                <input 
+                                    type="password"
+                                    value={apiKey === 'selected' ? '••••••••••••••••' : apiKey}
+                                    onChange={(e) => onApiKeyChange(e.target.value)}
+                                    placeholder="AI Studio API Keyを入力"
+                                    className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-sky-500 outline-none"
+                                />
+                                {apiKey === 'selected' && (
+                                    <p className="text-[10px] text-teal-600 dark:text-teal-400 font-bold">
+                                        ✓ ブラウザで選択されたキーを使用中
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                    <button 
-                        onClick={async () => {
-                            if (window.aistudio) {
-                                await window.aistudio.openSelectKey();
-                                // After selection, we might want to refresh the app state
-                                // but the platform usually handles the injection.
-                                window.location.reload(); 
-                            }
-                        }}
-                        className="w-full sm:w-auto px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-sm transition-all active:scale-95"
-                    >
-                        APIキーを選択する
-                    </button>
+
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <p className="text-[10px] text-slate-400">
+                            ※ 請求設定が有効なGoogle CloudプロジェクトのAPIキーを選択してください。
+                            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline ml-1">詳細はこちら</a>
+                        </p>
+                    </div>
                 </div>
             </div>
 

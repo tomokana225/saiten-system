@@ -8,26 +8,32 @@ import { GradingHeader } from './grading/GradingHeader';
 import { StudentAnswerGrid } from './grading/StudentAnswerGrid';
 import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
-import { analyzeMarkSheetSnippet, findNearestAlignedRefArea } from '../utils';
+import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, detectAndWarpCrop, loadImage } from '../utils';
 
-const cropImage = async (imagePath: string, area: import('../types').Area): Promise<string> => {
+const cropImage = async (imagePath: string, area: import('../types').Area, idealCorners?: import('../types').Corners): Promise<string> => {
     let dataUrl = imagePath;
     if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
-        if (!result.success || !result.details?.url) return '';
-        dataUrl = result.details.url;
+        if (result.success && result.details?.url) {
+            dataUrl = result.details.url;
+        }
     }
+    
+    const img = await loadImage(dataUrl);
+    
+    if (idealCorners) {
+        const res = await detectAndWarpCrop(img, idealCorners, area);
+        if (res.url) {
+            return res.url.split(',')[1];
+        }
+    }
+    
     return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = area.width; canvas.height = area.height;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
-            resolve(canvas.toDataURL('image/png').split(',')[1]);
-        };
-        img.onerror = () => reject(new Error('Failed to load image for cropping'));
-        img.src = dataUrl;
+        const canvas = document.createElement('canvas');
+        canvas.width = area.width; canvas.height = area.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
+        resolve(canvas.toDataURL('image/png').split(',')[1]);
     });
 };
 
@@ -245,12 +251,13 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     const batch = validStudents.slice(i, i + aiSettings.batchSize);
                     const studentSnippets = await Promise.all(batch.map(async s => ({ 
                         studentId: s.id, 
-                        base64: await cropImage(s.images[pageIdx]!, area) 
+                        base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template.alignmentMarkIdealCorners : undefined) 
                     })));
                     const res = await callGeminiAPIBatch(
                         masterSnippet, 
                         studentSnippets, 
                         point, 
+                        apiKey,
                         point.aiGradingMode || 'auto', 
                         point.answerFormat || '', 
                         aiSettings.gradingMode, 

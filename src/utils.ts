@@ -36,6 +36,36 @@ export const loadImage = (src: string): Promise<HTMLImageElement> => {
     });
 };
 
+export const getAlignmentContext = (areas: Area[], pageIndex: number, template?: Template): { idealCorners: Corners, searchZones: { tl: Area, tr: Area, br: Area, bl: Area } } | null => {
+    const marks = areas.filter(a => a.type === AreaType.ALIGNMENT_MARK && (a.pageIndex || 0) === pageIndex);
+    if (marks.length !== 4) return null;
+    
+    const sortedByY = [...marks].sort((a, b) => a.y - b.y);
+    const topTwo = sortedByY.slice(0, 2).sort((a, b) => a.x - b.x);
+    const bottomTwo = sortedByY.slice(2, 4).sort((a, b) => a.x - b.x);
+    
+    const searchZones = {
+        tl: topTwo[0],
+        tr: topTwo[1],
+        br: bottomTwo[1],
+        bl: bottomTwo[0]
+    };
+    
+    // Prefer template's stored ideal corners if available (they are more precise as they come from detection)
+    let idealCorners = template?.alignmentMarkIdealCorners;
+    
+    if (!idealCorners) {
+        idealCorners = {
+            tl: { x: searchZones.tl.x + searchZones.tl.width / 2, y: searchZones.tl.y + searchZones.tl.height / 2 },
+            tr: { x: searchZones.tr.x + searchZones.tr.width / 2, y: searchZones.tr.y + searchZones.tr.height / 2 },
+            br: { x: searchZones.br.x + searchZones.br.width / 2, y: searchZones.br.y + searchZones.br.height / 2 },
+            bl: { x: searchZones.bl.x + searchZones.bl.width / 2, y: searchZones.bl.y + searchZones.bl.height / 2 },
+        };
+    }
+    
+    return { idealCorners, searchZones };
+};
+
 export const convertFileToImages = async (file: File): Promise<string[]> => {
     if (file.type === 'application/pdf') {
         const arrayBuffer = await fileToArrayBuffer(file);
@@ -66,7 +96,7 @@ export const convertFileToImages = async (file: File): Promise<string[]> => {
 
 export const findAlignmentMarks = (
     imageData: ImageData, 
-    settings: { minSize: number, threshold: number, padding: number } = { minSize: 10, threshold: 160, padding: 0 },
+    settings: { minSize: number, threshold: number, padding: number } = { minSize: 8, threshold: 160, padding: 0 },
     searchZones?: { tl: Area; tr: Area; br: Area; bl: Area }
 ): Corners | null => {
     const { data, width, height } = imageData;
@@ -295,23 +325,8 @@ export const detectRectFromPoint = (
                         visited[idx] = 1;
                         queue.push(nx, ny);
                     } else {
-                        // Hit a border. Try to jump over it if it's a thin horizontal line
-                        // and we are moving vertically.
-                        if (ny !== cy) { // Vertical move
-                            const jump = 8; // Max line thickness to jump (increased for student ID rows)
-                            const step = ny > cy ? 1 : -1;
-                            for (let j = 1; j <= jump; j++) {
-                                const jny = cy + (j + 1) * step;
-                                if (jny >= 0 && jny < sh && isBackground(nx, jny)) {
-                                    const jidx = jny * sw + nx;
-                                    if (visited[jidx] === 0) {
-                                        visited[jidx] = 1;
-                                        queue.push(nx, jny);
-                                    }
-                                    break;
-                                }
-                            }
-                        }
+                        // Hit a border pixel (dark), stop expansion here.
+                        // Ideally we check if it's a valid edge.
                     }
                 }
             }
@@ -656,7 +671,7 @@ export const warpArea = (
 
 export const detectAndWarpCrop = async (
     img: HTMLImageElement,
-    idealCorners: Corners,
+    idealCorners: Corners | undefined,
     targetArea: { x: number, y: number, width: number, height: number },
     cachedCorners?: Corners,
     settings?: { minSize: number, threshold: number, padding: number },
@@ -673,7 +688,8 @@ export const detectAndWarpCrop = async (
         const found = findAlignmentMarks(imageData, settings, searchZones);
         if (found) srcCorners = found;
     }
-    if (srcCorners) {
+    
+    if (srcCorners && idealCorners) {
         const url = warpArea(img, img.naturalWidth, img.naturalHeight, srcCorners, idealCorners, targetArea);
         return { url, corners: srcCorners };
     }
