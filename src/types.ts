@@ -201,6 +201,7 @@ export interface AISettings {
     markSheetSensitivity: number;
     aiModel: string;
     markSheetNumberingBase?: number;
+    enableAutoAlignment: boolean;
 }
 
 export interface GradingProject {

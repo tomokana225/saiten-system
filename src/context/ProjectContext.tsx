@@ -136,6 +136,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     if (proj.aiSettings) {
                         if (!proj.aiSettings.aiModel) proj.aiSettings.aiModel = 'gemini-3-flash-preview';
                         if (proj.aiSettings.markSheetNumberingBase === undefined) proj.aiSettings.markSheetNumberingBase = 1;
+                        if (proj.aiSettings.enableAutoAlignment === undefined) proj.aiSettings.enableAutoAlignment = true;
                     }
                 }
                 setProjects(storedProjects);
@@ -273,7 +274,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
             id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
-            aiSettings: { batchSize: 5, delayBetweenBatches: 1000, gradingMode: 'quality', markSheetSensitivity: 1.5, markSheetNumberingBase: 1, aiModel: 'gemini-3-flash-preview' },
+            aiSettings: { 
+                batchSize: 5, 
+                delayBetweenBatches: 1000, 
+                gradingMode: 'quality', 
+                markSheetSensitivity: 1.5, 
+                markSheetNumberingBase: 1, 
+                aiModel: 'gemini-3-flash-preview',
+                enableAutoAlignment: true
+            },
             lastModified: Date.now(),
         };
         setProjects(prev => ({...prev, [newId]: newProject}));

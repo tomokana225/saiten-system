@@ -44,7 +44,9 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
     const [partialScoreInput, setPartialScoreInput] = useState<string>('');
 
     // These states are managed via local UI but should ideally be in context for consistency
-    const [autoAlign, setAutoAlign] = useState(true);
+    const autoAlign = aiSettings.enableAutoAlignment;
+    const setAutoAlign = (val: boolean) => updateActiveProject(prev => ({ ...prev, aiSettings: { ...prev.aiSettings, enableAutoAlignment: val }, lastModified: Date.now() }));
+    
     const [isImageEnhanced, setIsImageEnhanced] = useState(false);
     const [columnCount, setColumnCount] = useState(0); // 0 means Auto
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);

@@ -455,7 +455,7 @@ export const analyzeMarkSheetSnippet = async (
 
     const pos: {x:number,y:number}[] = [];
     const marks: number[] = [];
-    const roi = 14;
+    const roi = 20; // Increased ROI for better robustness
 
     for (let i = 0; i < options; i++) {
         const cx = isH ? cols[i] : cols[0];
@@ -463,13 +463,25 @@ export const analyzeMarkSheetSnippet = async (
         pos.push({ x: cx, y: cy });
         
         let darkCount = 0;
-        const data = finalCtx.getImageData(cx - roi/2, cy - roi/2, roi, roi).data;
+        // Ensure we don't go out of bounds
+        const startX = Math.max(0, Math.floor(cx - roi/2));
+        const startY = Math.max(0, Math.floor(cy - roi/2));
+        const actualRoiW = Math.min(roi, finalCanvas.width - startX);
+        const actualRoiH = Math.min(roi, finalCanvas.height - startY);
+        
+        if (actualRoiW <= 0 || actualRoiH <= 0) continue;
+
+        const data = finalCtx.getImageData(startX, startY, actualRoiW, actualRoiH).data;
         for(let k=0; k<data.length; k+=4) {
             const gray = (0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]);
             if(gray < fillGrayThreshold) darkCount++;
         }
-        const ratio = darkCount / (roi * roi);
-        if (ratio > fillRatioThreshold) marks.push(i);
+        const ratio = darkCount / (actualRoiW * actualRoiH);
+        
+        // Slightly more lenient threshold for warped images
+        const adjustedFillRatioThreshold = idealCorners ? fillRatioThreshold * 0.85 : fillRatioThreshold;
+        
+        if (ratio > adjustedFillRatioThreshold) marks.push(i);
     }
 
     return { 

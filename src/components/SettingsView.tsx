@@ -134,6 +134,24 @@ export const SettingsView = ({ theme, setTheme, aiSettings, onAiSettingsChange }
                         </div>
 
                         <div className="space-y-2">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                自動傾き補正・位置合わせ
+                            </label>
+                            <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">基準マークによる自動補正</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">4隅の基準マークを検出し、スキャン時の傾きやズレを自動的に補正します。</p>
+                                </div>
+                                <button 
+                                    onClick={() => onAiSettingsChange(prev => ({ ...prev, enableAutoAlignment: !prev.enableAutoAlignment }))}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${aiSettings.enableAutoAlignment ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${aiSettings.enableAutoAlignment ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
                             <label htmlFor="sensitivity-slider" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                                 マークシート認識感度: <span className="font-bold">{(aiSettings.markSheetSensitivity || 1.5).toFixed(1)}</span>
                             </label>
