@@ -50,106 +50,106 @@ export const GradingHeader: React.FC<GradingHeaderProps> = ({
     selectedArea, onStartAIGrading, onStartMarkSheetGrading, onStartMarkSheetGradingAll, onStartAIGradingAll, isGrading, isGradingAll, progress, filter, onFilterChange, apiKey,
     columnCount, onColumnCountChange, onBulkScore,
     aiGradingMode, onAiGradingModeChange, answerFormat, onAnswerFormatChange,
-    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign,
-    // Destructured added props
-    aiSettings, onAiSettingsChange
+    isImageEnhanced, onToggleImageEnhancement, autoAlign, onToggleAutoAlign
 }) => {
     const isAnyGrading = isGrading || isGradingAll;
     const isMarkSheet = selectedArea?.type === AreaType.MARK_SHEET;
     const [isExpanded, setIsExpanded] = useState(false);
 
     return (
-        <div className="flex-shrink-0 flex flex-col gap-3 p-3 bg-white dark:bg-slate-800 rounded-lg shadow">
-            <div className="flex justify-between items-center">
-                 <div className="flex items-center gap-3">
+        <div className="flex-shrink-0 flex flex-col gap-2 p-2 sm:p-3 bg-white dark:bg-slate-800 rounded-lg shadow">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+                 <div className="flex flex-wrap items-center gap-2">
                     {isMarkSheet ? (
                          <button
                             onClick={onStartMarkSheetGrading}
                             disabled={!selectedArea || isAnyGrading}
-                            className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors"
+                            className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm bg-teal-600 text-white rounded-md hover:bg-teal-500 disabled:bg-slate-400 transition-colors"
                         >
-                            {isGrading ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                            {isGrading ? '採点中...' : 'この問題をマークシート採点'}
+                            {isGrading ? <SpinnerIcon className="w-3 h-3 sm:w-4 sm:h-4" /> : <SparklesIcon className="w-3 h-3 sm:w-4 sm:h-4" />}
+                            <span>{isGrading ? '採点中...' : 'この問題を採点'}</span>
                         </button>
                     ) : (
                          <button
                             onClick={onStartAIGrading}
                             disabled={!selectedArea || isAnyGrading || !apiKey}
-                            className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:bg-slate-400 transition-colors"
+                            className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:bg-slate-400 transition-colors"
                         >
-                            {isGrading ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                            {isGrading ? '採点中...' : 'この問題をAI採点'}
+                            {isGrading ? <SpinnerIcon className="w-3 h-3 sm:w-4 sm:h-4" /> : <SparklesIcon className="w-3 h-3 sm:w-4 sm:h-4" />}
+                            <span>{isGrading ? '採点中...' : 'この問題をAI採点'}</span>
                         </button>
                     )}
                     
-                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                    <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
 
                     <button
                         onClick={onStartMarkSheetGradingAll}
                         disabled={isAnyGrading}
-                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-teal-700 text-white rounded-md hover:bg-teal-600 disabled:bg-slate-400 transition-colors"
+                        className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm bg-teal-700 text-white rounded-md hover:bg-teal-600 disabled:bg-slate-400 transition-colors"
                     >
-                        {isGradingAll ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                        {isGradingAll ? '全マークシート採点中...' : '全マークシートを採点'}
+                        {isGradingAll ? <SpinnerIcon className="w-3 h-3 sm:w-4 sm:h-4" /> : <SparklesIcon className="w-3 h-3 sm:w-4 sm:h-4" />}
+                        <span className="hidden xs:inline">{isGradingAll ? 'マーク採点中...' : '全マーク採点'}</span>
+                        <span className="xs:hidden">{isGradingAll ? '...' : '全マーク'}</span>
                     </button>
 
                     <button
                         onClick={onStartAIGradingAll}
                         disabled={isAnyGrading || !apiKey}
-                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-500 disabled:bg-slate-400 transition-colors"
+                        className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm bg-purple-600 text-white rounded-md hover:bg-purple-500 disabled:bg-slate-400 transition-colors"
                     >
-                        {isGradingAll ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
-                        {isGradingAll ? '全問題採点中...' : '全記述問題をAI採点'}
+                        {isGradingAll ? <SpinnerIcon className="w-3 h-3 sm:w-4 sm:h-4" /> : <SparklesIcon className="w-3 h-3 sm:w-4 sm:h-4" />}
+                        <span className="hidden xs:inline">{isGradingAll ? 'AI採点中...' : '全記述AI採点'}</span>
+                        <span className="xs:hidden">{isGradingAll ? '...' : '全AI'}</span>
                     </button>
 
                     {isAnyGrading && progress.total > 0 && (
                         <div className="flex items-center gap-2">
-                             <div className="flex flex-col text-xs text-slate-500 dark:text-slate-400 w-48">
-                                <span>{progress.message || '進捗'}</span>
-                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
-                                    <div className="bg-sky-500 h-2 rounded-full" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
+                             <div className="flex flex-col text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 w-24 sm:w-48">
+                                <span className="truncate">{progress.message || '進捗'}</span>
+                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1 sm:h-2 mt-1">
+                                    <div className="bg-sky-500 h-1 sm:h-2 rounded-full" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
                                 </div>
                             </div>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">{progress.current} / {progress.total}</span>
+                            <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">{progress.current}/{progress.total}</span>
                         </div>
                     )}
                  </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 sm:gap-4">
                     <button 
                         onClick={onToggleAutoAlign}
-                        className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors border ${autoAlign ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700' : 'bg-white text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                        className={`flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs rounded-md transition-colors border ${autoAlign ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700' : 'bg-white text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
                         title="基準マークを使ってスキャンのズレを補正します"
                     >
-                        <BoxSelectIcon className="w-4 h-4" />
-                        <span>位置補正 {autoAlign ? 'ON' : 'OFF'}</span>
+                        <BoxSelectIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">位置補正 {autoAlign ? 'ON' : 'OFF'}</span>
                     </button>
                     <button 
                         onClick={onToggleImageEnhancement}
-                        className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${isImageEnhanced ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        className={`flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs rounded-md transition-colors ${isImageEnhanced ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                         title="薄い文字を濃く表示します"
                     >
-                        <PaletteIcon className="w-4 h-4" />
-                        <span>文字強調</span>
+                        <PaletteIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">文字強調</span>
                     </button>
-                    <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+                    <div className="hidden sm:block h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
                     <button onClick={() => {
                         if (confirm('表示されているすべての解答を「正解」にしますか？')) {
                             onBulkScore(ScoringStatus.CORRECT);
                         }
-                    }} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">すべてを◯に</button>
+                    }} disabled={!selectedArea || isAnyGrading} className="px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs rounded-md bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 hover:bg-green-200 disabled:opacity-50">全◯</button>
                     <button onClick={() => {
                         if (confirm('表示されているすべての解答を「不正解」にしますか？')) {
                             onBulkScore(ScoringStatus.INCORRECT);
                         }
-                    }} disabled={!selectedArea || isAnyGrading} className="px-3 py-1.5 text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">すべてを☓に</button>
+                    }} disabled={!selectedArea || isAnyGrading} className="px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs rounded-md bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-200 disabled:opacity-50">全☓</button>
                     <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title={isExpanded ? "設定を閉じる" : "設定を開く"}>
-                        {isExpanded ? <ChevronUpIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
+                        {isExpanded ? <ChevronUpIcon className="w-4 h-4 sm:w-5 sm:h-5" /> : <ChevronDownIcon className="w-4 h-4 sm:w-5 sm:h-5" />}
                     </button>
                     <button onClick={() => {
                         alert(`【キーボードショートカット】\n\n・J : 正解 (Correct)\n・F : 不正解 (Incorrect)\n・K : 部分点 (Partial)\n・E : 添削モード開始 (Edit)\n・Enter : 添削を確定\n・Esc : 添削をキャンセル\n・↑/↓ : 前後の生徒へ移動`);
                     }} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500" title="ヘルプ">
-                        <HelpCircleIcon className="w-5 h-5" />
+                        <HelpCircleIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                 </div>
             </div>

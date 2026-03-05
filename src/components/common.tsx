@@ -37,7 +37,7 @@ export const Stepper = ({ currentStep, onStepClick }: { currentStep: string, onS
     const currentStepIndex = steps.findIndex(step => step.id === currentStep);
 
     return (
-        <nav className="p-2 bg-slate-200 dark:bg-slate-800 rounded-lg">
+        <nav className="p-1 sm:p-2 bg-slate-200 dark:bg-slate-800 rounded-lg">
             <ol className="flex items-center w-full">
                 {steps.map((step, index) => {
                     const IconComponent = stepIcons[step.id];
@@ -45,16 +45,16 @@ export const Stepper = ({ currentStep, onStepClick }: { currentStep: string, onS
                     const isCurrent = index === currentStepIndex;
                     
                     return (
-                        <li key={step.id} className={`flex w-full items-center ${index < steps.length - 1 ? "after:content-[''] after:w-full after:h-1 after:border-b after:border-slate-300 dark:after:border-slate-600 after:border-1 after:inline-block" : ""}`}>
+                        <li key={step.id} className={`flex w-full items-center ${index < steps.length - 1 ? "after:content-[''] after:w-full after:h-0.5 sm:after:h-1 after:border-b after:border-slate-300 dark:after:border-slate-600 after:border-1 after:inline-block" : ""}`}>
                             <button 
                                 onClick={() => onStepClick && onStepClick(step.id as AppStep)}
                                 disabled={!onStepClick || (!isCompleted && !isCurrent)}
                                 className={`flex flex-col items-center group transition-all ${onStepClick && (isCompleted || isCurrent) ? 'cursor-pointer' : 'cursor-default'}`}
                             >
-                                <span className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-colors ${isCurrent ? 'bg-sky-500' : isCompleted ? 'bg-sky-200 dark:bg-sky-900/50' : 'bg-slate-300 dark:bg-slate-700'} ${onStepClick && isCompleted ? 'group-hover:bg-sky-300 dark:group-hover:bg-sky-800' : ''}`}>
-                                    <IconComponent className={`w-4 h-4 ${isCurrent ? 'text-white' : isCompleted ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'}`} />
+                                <span className={`flex items-center justify-center w-5 h-5 sm:w-8 sm:h-8 rounded-full shrink-0 transition-colors ${isCurrent ? 'bg-sky-500' : isCompleted ? 'bg-sky-200 dark:bg-sky-900/50' : 'bg-slate-300 dark:bg-slate-700'} ${onStepClick && isCompleted ? 'group-hover:bg-sky-300 dark:group-hover:bg-sky-800' : ''}`}>
+                                    <IconComponent className={`w-2.5 h-2.5 sm:w-4 sm:h-4 ${isCurrent ? 'text-white' : isCompleted ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'}`} />
                                 </span>
-                                <span className={`mt-1 text-[10px] font-medium text-center whitespace-nowrap ${isCurrent ? 'text-sky-500 dark:text-sky-400' : isCompleted ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'}`}>{step.title}</span>
+                                <span className={`mt-0.5 sm:mt-1 text-[8px] sm:text-[10px] font-medium text-center whitespace-nowrap ${isCurrent ? 'text-sky-500 dark:text-sky-400' : isCompleted ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'} hidden xs:block`}>{step.title}</span>
                             </button>
                         </li>
                     );

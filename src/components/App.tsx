@@ -17,7 +17,7 @@ import { ArrowLeftIcon, SettingsIcon, FileDownIcon, UsersIcon, BarChart3Icon, Ed
 const AppContent: React.FC = () => {
     const {
         projects, rosters, setRosters, sheetLayouts, setSheetLayouts,
-        activeProjectId, setActiveProjectId, currentStep, setCurrentStep, previousStep,
+        setActiveProjectId, currentStep, setCurrentStep, previousStep,
         isLoading, activeProject, goToStep, prevStep, nextStep,
         handleProjectSelect, handleProjectCreate, handleProjectDelete,
         handleProjectImport, handleProjectExportWithOptions,
@@ -131,44 +131,44 @@ const AppContent: React.FC = () => {
             {printPreviewConfig.open && activeProject && <Print initialTab={printPreviewConfig.initialTab} questionStats={printPreviewConfig.questionStats} onClose={() => setPrintPreviewConfig({ ...printPreviewConfig, open: false })} />}
             
             {isNavVisible && (
-                 <header className="flex-shrink-0 w-full p-2 bg-white dark:bg-slate-800 shadow-md flex justify-between items-center z-20">
-                    <div className="flex items-center gap-4">
-                        <button onClick={resetToHome} className="text-lg font-bold p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md">AI Grading Assistant</button>
-                        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
-                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                           <ModeIcon className="w-5 h-5" />
-                           <span>
+                 <header className="flex-shrink-0 w-full p-1 sm:p-2 bg-white dark:bg-slate-800 shadow-md flex justify-between items-center z-20">
+                    <div className="flex items-center gap-2 sm:gap-4">
+                        <button onClick={resetToHome} className="text-sm sm:text-lg font-bold p-1 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md">AI Grading Assistant</button>
+                        <div className="h-4 sm:h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="flex items-center gap-1 sm:gap-2 text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
+                           <ModeIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                           <span className="hidden xs:inline">
                                 {appMode === AppMode.GRADING && '採点モード'}
                                 {appMode === AppMode.ROSTER && '名簿管理モード'}
                                 {appMode === AppMode.AGGREGATION && '成績集計モード'}
                                 {appMode === AppMode.SHEET_CREATOR && '解答用紙作成ツール'}
                            </span>
-                           {isGradingMode && activeProject && <span className="font-semibold text-slate-800 dark:text-slate-200">&gt; {activeProject.name}</span>}
+                           {isGradingMode && activeProject && <span className="font-semibold text-slate-800 dark:text-slate-200 max-w-[100px] sm:max-w-none truncate">&gt; {activeProject.name}</span>}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        {isGradingMode && activeProject && <button onClick={() => handleProjectExportWithOptions(activeProject.id, { includeTemplate: true, includeStudents: true, includeAnswers: true })} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors"><FileDownIcon className="w-4 h-4" />エクスポート</button>}
-                        <button onClick={() => goToStep(AppStep.SETTINGS)} className={`p-2 rounded-full ${currentStep === AppStep.SETTINGS ? 'bg-slate-200 dark:bg-slate-700' : 'hover:bg-slate-200 dark:hover:bg-slate-700'}`}><SettingsIcon className="w-5 h-5"/></button>
+                    <div className="flex items-center gap-1 sm:gap-2">
+                        {isGradingMode && activeProject && <button onClick={() => handleProjectExportWithOptions(activeProject.id, { includeTemplate: true, includeStudents: true, includeAnswers: true })} className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-2 text-[10px] sm:text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors"><FileDownIcon className="w-3 h-3 sm:w-4 sm:h-4" /><span className="hidden sm:inline">エクスポート</span></button>}
+                        <button onClick={() => goToStep(AppStep.SETTINGS)} className={`p-1.5 sm:p-2 rounded-full ${currentStep === AppStep.SETTINGS ? 'bg-slate-200 dark:bg-slate-700' : 'hover:bg-slate-200 dark:hover:bg-slate-700'}`}><SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5"/></button>
                     </div>
                 </header>
             )}
 
-            <main className="flex-1 flex flex-col p-4 overflow-hidden">
+            <main className="flex-1 flex flex-col p-2 sm:p-4 overflow-hidden">
                 {isStepView && (
-                    <div className="flex-shrink-0 mb-4 flex items-center gap-4">
-                        {showBackButton && <button onClick={prevStep} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ArrowLeftIcon className="w-5 h-5"/></button>}
+                    <div className="flex-shrink-0 mb-2 sm:mb-4 flex items-center gap-2 sm:gap-4">
+                        {showBackButton && <button onClick={prevStep} className="p-1.5 sm:p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><ArrowLeftIcon className="w-4 h-4 sm:w-5 sm:h-5"/></button>}
                         <div className="flex-grow">
                             <Stepper currentStep={currentStep} onStepClick={goToStep} />
                         </div>
-                         {currentStep !== AppStep.RESULTS && <button onClick={nextStep} disabled={!activeProject?.template} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-md disabled:bg-slate-400">次へ</button>}
+                         {currentStep !== AppStep.RESULTS && <button onClick={nextStep} disabled={!activeProject?.template} className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-sky-600 hover:bg-sky-500 text-white rounded-md disabled:bg-slate-400">次へ</button>}
                     </div>
                 )}
                 {isSettingsView && (
-                    <div className="flex-shrink-0 mb-4 flex items-center gap-4">
-                        <button onClick={goBackFromSettings} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
-                            <ArrowLeftIcon className="w-5 h-5"/>
+                    <div className="flex-shrink-0 mb-2 sm:mb-4 flex items-center gap-2 sm:gap-4">
+                        <button onClick={goBackFromSettings} className="p-1.5 sm:p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+                            <ArrowLeftIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
                         </button>
-                        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">設定</h2>
+                        <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-slate-200">設定</h2>
                     </div>
                 )}
                 <div className={`flex-1 flex flex-col ${isScrollableStep ? 'overflow-auto' : 'overflow-hidden'}`}>

@@ -73,12 +73,27 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+            // Get existing alignment marks as search zones if they exist
+            const existingMarks = areas.filter(a => a.type === AreaType.ALIGNMENT_MARK && (a.pageIndex || 0) === activePageIndex);
+            let searchZones = undefined;
+            if (existingMarks.length === 4) {
+                const sortedByY = [...existingMarks].sort((a, b) => a.y - b.y);
+                const topTwo = sortedByY.slice(0, 2).sort((a, b) => a.x - b.x);
+                const bottomTwo = sortedByY.slice(2, 4).sort((a, b) => a.x - b.x);
+                searchZones = {
+                    tl: topTwo[0],
+                    tr: topTwo[1],
+                    br: bottomTwo[1],
+                    bl: bottomTwo[0]
+                };
+            }
+
             // Pass user settings to the detection algorithm
             const marks = findAlignmentMarks(imageData, {
                 minSize: detSettings.minSize,
                 threshold: detSettings.threshold,
                 padding: detSettings.padding
-            });
+            }, searchZones);
 
             if (marks) {
                 // Remove existing marks ONLY from the current page
@@ -96,11 +111,26 @@ export const TemplateSidebar: React.FC<TemplateSidebarProps> = ({
 
                 setAreas([...otherPageAreas, ...markAreas]);
                 
-                // Note: We only store one set of "Ideal Corners" in the template for warping.
-                // Usually this is sufficient if all pages are scanned similarly. 
-                // If pages differ drastically, we might need page-specific ideal corners in the future.
-                if (activePageIndex === 0) {
-                    onTemplateChange({ alignmentMarkIdealCorners: marks });
+                // Note: We store "Ideal Corners" in the template for warping.
+                // If it's the first page or if ideal corners aren't set yet, we save them.
+                if (activePageIndex === 0 || !template.alignmentMarkIdealCorners) {
+                    onTemplateChange({ 
+                        alignmentMarkIdealCorners: marks,
+                        alignmentDetectionSettings: {
+                            minSize: detSettings.minSize,
+                            threshold: detSettings.threshold,
+                            padding: detSettings.padding
+                        }
+                    });
+                } else {
+                    // Just update settings if we already have ideal corners from page 0
+                    onTemplateChange({
+                        alignmentDetectionSettings: {
+                            minSize: detSettings.minSize,
+                            threshold: detSettings.threshold,
+                            padding: detSettings.padding
+                        }
+                    });
                 }
                 
                 alert(`このページで${markAreas.length}個の基準マークを検出しました。`);

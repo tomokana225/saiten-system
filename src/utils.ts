@@ -68,16 +68,42 @@ interface Corners { tl: PointCoord; tr: PointCoord; br: PointCoord; bl: PointCoo
 
 export const findAlignmentMarks = (
     imageData: ImageData, 
-    settings: { minSize: number, threshold: number, padding: number } = { minSize: 10, threshold: 160, padding: 0 }
+    settings: { minSize: number, threshold: number, padding: number } = { minSize: 10, threshold: 160, padding: 0 },
+    searchZones?: { tl: Area; tr: Area; br: Area; bl: Area }
 ): Corners | null => {
     const { data, width, height } = imageData;
-    const searchRange = 0.20;
-    const cornerW = Math.floor(width * searchRange);
-    const cornerH = Math.floor(height * searchRange);
+    
+    // If search zones are provided, use them. Otherwise use the default corner search.
+    const getZone = (type: 'tl' | 'tr' | 'br' | 'bl', useSearchZones: boolean) => {
+        if (useSearchZones && searchZones && searchZones[type]) {
+            const zone = searchZones[type];
+            // Increased margin to 30% to handle larger shifts/tilts
+            const margin = Math.max(50, Math.min(width, height) * 0.30);
+            return {
+                x1: Math.max(0, Math.floor(zone.x - margin)),
+                y1: Math.max(0, Math.floor(zone.y - margin)),
+                x2: Math.min(width, Math.ceil(zone.x + zone.width + margin)),
+                y2: Math.min(height, Math.ceil(zone.y + zone.height + margin)),
+                tx: zone.x + zone.width / 2,
+                ty: zone.y + zone.height / 2
+            };
+        }
+        
+        const searchRange = 0.35; // 35% range
+        const cornerW = Math.floor(width * searchRange);
+        const cornerH = Math.floor(height * searchRange);
+        
+        switch(type) {
+            case 'tl': return { x1: 0, y1: 0, x2: cornerW, y2: cornerH, tx: 0, ty: 0 };
+            case 'tr': return { x1: width - cornerW, y1: 0, x2: width, y2: cornerH, tx: width, ty: 0 };
+            case 'br': return { x1: width - cornerW, y1: height - cornerH, x2: width, y2: height, tx: width, ty: height };
+            case 'bl': return { x1: 0, y1: height - cornerH, x2: cornerW, y2: height, tx: 0, ty: height };
+        }
+    };
 
-    const findBestCentroid = (startX: number, startY: number, endX: number, endY: number, targetX: number, targetY: number): PointCoord | null => {
+    const findBestCentroid = (startX: number, startY: number, endX: number, endY: number, targetX: number, targetY: number, threshold: number): PointCoord | null => {
         const visited = new Uint8Array((endX - startX) * (endY - startY));
-        let bestCandidate: { centroid: PointCoord, distSq: number } | null = null;
+        let bestCandidate: { centroid: PointCoord, distSq: number, weight: number } | null = null;
         const minArea = settings.minSize * settings.minSize;
 
         for (let y = startY; y < endY; y++) {
@@ -88,15 +114,24 @@ export const findAlignmentMarks = (
                 const idx = (y * width + x) * 4;
                 const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
 
-                if (gray < settings.threshold) {
-                    let sumX = 0, sumY = 0, count = 0;
+                if (gray < threshold) {
+                    let sumX = 0, sumY = 0, count = 0, totalWeight = 0;
                     let minX = x, maxX = x, minY = y, maxY = y;
                     const stack = [[x, y]];
                     visited[vIdx] = 1;
 
                     while (stack.length > 0) {
                         const [cx, cy] = stack.pop()!;
-                        sumX += cx; sumY += cy; count++;
+                        const cIdx = (cy * width + cx) * 4;
+                        const cGray = 0.299 * data[cIdx] + 0.587 * data[cIdx + 1] + 0.114 * data[cIdx + 2];
+                        
+                        // Weighted centroid: darker pixels have more influence
+                        const weight = (255 - cGray) / 255;
+                        sumX += cx * weight; 
+                        sumY += cy * weight; 
+                        totalWeight += weight;
+                        count++;
+
                         if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
                         if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
 
@@ -107,25 +142,30 @@ export const findAlignmentMarks = (
                                 if (!visited[nvIdx]) {
                                     const nIdx = (ny * width + nx) * 4;
                                     const nGray = 0.299 * data[nIdx] + 0.587 * data[nIdx + 1] + 0.114 * data[nIdx + 2];
-                                    if (nGray < settings.threshold) {
+                                    if (nGray < threshold) {
                                         visited[nvIdx] = 1;
                                         stack.push([nx, ny]);
                                     }
                                 }
                             }
                         }
-                        if (count > 5000) break;
+                        if (count > 20000) break; // Increased safety limit
                     }
 
                     const blobW = maxX - minX + 1;
                     const blobH = maxY - minY + 1;
                     const aspectRatio = Math.max(blobW, blobH) / Math.min(blobW, blobH);
 
-                    if (count >= minArea && count < (width * height * 0.02) && aspectRatio < 3) {
-                        const centroid = { x: sumX / count, y: sumY / count };
+                    // Relaxed criteria for detection
+                    const adjustedMinArea = threshold > 180 ? minArea * 0.3 : minArea * 0.5;
+
+                    if (count >= adjustedMinArea && count < (width * height * 0.1) && aspectRatio < 8) {
+                        const centroid = { x: sumX / totalWeight, y: sumY / totalWeight };
                         const distSq = Math.pow(centroid.x - targetX, 2) + Math.pow(centroid.y - targetY, 2);
-                        if (!bestCandidate || distSq < bestCandidate.distSq) {
-                            bestCandidate = { centroid, distSq };
+                        // Prefer darker blobs (higher totalWeight) if distance is similar
+                        const score = distSq / (totalWeight * 0.1 + 1); 
+                        if (!bestCandidate || score < bestCandidate.distSq) {
+                            bestCandidate = { centroid, distSq: score, weight: totalWeight };
                         }
                     }
                 }
@@ -134,12 +174,42 @@ export const findAlignmentMarks = (
         return bestCandidate ? bestCandidate.centroid : null;
     };
 
-    const tl = findBestCentroid(0, 0, cornerW, cornerH, 0, 0);
-    const tr = findBestCentroid(width - cornerW, 0, width, cornerH, width, 0);
-    const br = findBestCentroid(width - cornerW, height - cornerH, width, height, width, height);
-    const bl = findBestCentroid(0, height - cornerH, cornerW, height, 0, height);
+    // Try even more thresholds if the primary one fails
+    const thresholdsToTry = [settings.threshold, 140, 180, 120, 200, 220, 100, 80, 240];
+    
+    // First pass: try with searchZones if available
+    if (searchZones) {
+        for (const threshold of thresholdsToTry) {
+            const zTL = getZone('tl', true);
+            const zTR = getZone('tr', true);
+            const zBR = getZone('br', true);
+            const zBL = getZone('bl', true);
 
-    if (tl && tr && br && bl) return { tl, tr, br, bl };
+            const tl = findBestCentroid(zTL.x1, zTL.y1, zTL.x2, zTL.y2, zTL.tx, zTL.ty, threshold);
+            const tr = findBestCentroid(zTR.x1, zTR.y1, zTR.x2, zTR.y2, zTR.tx, zTR.ty, threshold);
+            const br = findBestCentroid(zBR.x1, zBR.y1, zBR.x2, zBR.y2, zBR.tx, zBR.ty, threshold);
+            const bl = findBestCentroid(zBL.x1, zBL.y1, zBL.x2, zBL.y2, zBL.tx, zBL.ty, threshold);
+
+            if (tl && tr && br && bl) return { tl, tr, br, bl };
+        }
+    }
+
+    // Second pass: fallback to default corner search (ignore searchZones)
+    // This handles cases where the image is shifted significantly outside the expected zones
+    for (const threshold of thresholdsToTry) {
+        const zTL = getZone('tl', false);
+        const zTR = getZone('tr', false);
+        const zBR = getZone('br', false);
+        const zBL = getZone('bl', false);
+
+        const tl = findBestCentroid(zTL.x1, zTL.y1, zTL.x2, zTL.y2, zTL.tx, zTL.ty, threshold);
+        const tr = findBestCentroid(zTR.x1, zTR.y1, zTR.x2, zTR.y2, zTR.tx, zTR.ty, threshold);
+        const br = findBestCentroid(zBR.x1, zBR.y1, zBR.x2, zBR.y2, zBR.tx, zBR.ty, threshold);
+        const bl = findBestCentroid(zBL.x1, zBL.y1, zBL.x2, zBL.y2, zBL.tx, zBL.ty, threshold);
+
+        if (tl && tr && br && bl) return { tl, tr, br, bl };
+    }
+
     return null;
 };
 
@@ -466,6 +536,7 @@ export const warpArea = (
     const h00 = H[0][0], h01 = H[0][1], h02 = H[0][2];
     const h10 = H[1][0], h11 = H[1][1], h12 = H[1][2];
     const h20 = H[2][0], h21 = H[2][1], h22 = H[2][2];
+    
     for (let dy = 0; dy < h; dy++) {
         for (let dx = 0; dx < w; dx++) {
             const tx = targetArea.x + dx;
@@ -473,14 +544,33 @@ export const warpArea = (
             const denom = h20 * tx + h21 * ty + h22;
             const sx = (h00 * tx + h01 * ty + h02) / denom;
             const sy = (h10 * tx + h11 * ty + h12) / denom;
-            const srcX = Math.round(sx); const srcY = Math.round(sy);
+            
             const destIdx = (dy * w + dx) * 4;
-            if (srcX >= 0 && srcX < srcImageWidth && srcY >= 0 && srcY < srcImageHeight) {
-                const srcIdx = (srcY * srcImageWidth + srcX) * 4;
-                destData.data[destIdx] = srcData[srcIdx];
-                destData.data[destIdx + 1] = srcData[srcIdx + 1];
-                destData.data[destIdx + 2] = srcData[srcIdx + 2];
-                destData.data[destIdx + 3] = srcData[srcIdx + 3];
+            
+            if (sx >= 0 && sx < srcImageWidth - 1 && sy >= 0 && sy < srcImageHeight - 1) {
+                // Bilinear Interpolation for smoother tilted images
+                const x0 = Math.floor(sx);
+                const x1 = x0 + 1;
+                const y0 = Math.floor(sy);
+                const y1 = y0 + 1;
+                
+                const dx1 = sx - x0;
+                const dy1 = sy - y0;
+                const dx0 = 1 - dx1;
+                const dy0 = 1 - dy1;
+                
+                const idx00 = (y0 * srcImageWidth + x0) * 4;
+                const idx10 = (y0 * srcImageWidth + x1) * 4;
+                const idx01 = (y1 * srcImageWidth + x0) * 4;
+                const idx11 = (y1 * srcImageWidth + x1) * 4;
+                
+                for (let c = 0; c < 4; c++) {
+                    destData.data[destIdx + c] = 
+                        srcData[idx00 + c] * dx0 * dy0 +
+                        srcData[idx10 + c] * dx1 * dy0 +
+                        srcData[idx01 + c] * dx0 * dy1 +
+                        srcData[idx11 + c] * dx1 * dy1;
+                }
             } else {
                 destData.data[destIdx + 3] = 0;
             }
@@ -494,7 +584,9 @@ export const detectAndWarpCrop = async (
     img: HTMLImageElement,
     idealCorners: Corners,
     targetArea: { x: number, y: number, width: number, height: number },
-    cachedCorners?: Corners
+    cachedCorners?: Corners,
+    settings?: { minSize: number, threshold: number, padding: number },
+    searchZones?: { tl: Area; tr: Area; br: Area; bl: Area }
 ): Promise<{ url: string | null, corners?: Corners }> => {
     let srcCorners = cachedCorners;
     if (!srcCorners) {
@@ -504,7 +596,7 @@ export const detectAndWarpCrop = async (
         if (!ctx) return { url: null };
         ctx.drawImage(img, 0, 0);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const found = findAlignmentMarks(imageData, { minSize: 8, threshold: 160, padding: 0 });
+        const found = findAlignmentMarks(imageData, settings, searchZones);
         if (found) srcCorners = found;
     }
     if (srcCorners) {

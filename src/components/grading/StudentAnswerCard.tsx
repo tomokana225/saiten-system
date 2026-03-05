@@ -2,7 +2,7 @@
 import React from 'react';
 // Added AISettings to import
 import type { Student, Area, Point, ScoreData, Template, AISettings } from '../../types';
-import { ScoringStatus } from '../../types';
+import { ScoringStatus, AreaType } from '../../types';
 import { AnswerSnippet } from '../AnswerSnippet';
 import { AnnotationOverlay } from '../AnnotationOverlay';
 import { CircleCheckIcon, XIcon as XCircleIcon, TriangleIcon, SpinnerIcon, PencilIcon } from '../icons';
@@ -90,6 +90,7 @@ interface StudentAnswerCardProps {
     student: Student & { class: string; number: string; name: string };
     template: Template;
     area: Area;
+    areas: Area[];
     point: Point;
     scoreData?: ScoreData;
     onScoreChange: (studentId: string, areaId: number, newScoreData: Partial<ScoreData>) => void;
@@ -107,7 +108,7 @@ interface StudentAnswerCardProps {
 }
 
 export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
-    student, template, area, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
+    student, template, area, areas, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
     isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign,
     // Destructured aiSettings
     aiSettings
@@ -116,6 +117,23 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     const pageIndex = area.pageIndex || 0;
     const imageSrc = student.images[pageIndex] || null;
     const hasImage = !!imageSrc;
+
+    const searchZones = React.useMemo(() => {
+        if (!areas) return undefined;
+        const marks = areas.filter(a => a.type === AreaType.ALIGNMENT_MARK && (a.pageIndex || 0) === pageIndex);
+        if (marks.length !== 4) return undefined;
+        
+        const sortedByY = [...marks].sort((a, b) => a.y - b.y);
+        const topTwo = sortedByY.slice(0, 2).sort((a, b) => a.x - b.x);
+        const bottomTwo = sortedByY.slice(2, 4).sort((a, b) => a.x - b.x);
+        
+        return {
+            tl: topTwo[0],
+            tr: topTwo[1],
+            br: bottomTwo[1],
+            bl: bottomTwo[0]
+        };
+    }, [areas, pageIndex]);
 
     const handleStatusChange = (newStatus: ScoringStatus) => {
         if (!hasImage) return;
@@ -160,7 +178,21 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
                 </div>
             </div>
             <div className="relative w-full bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px' }}>
-                <AnswerSnippet imageSrc={imageSrc} area={area} template={template} pannable={isFocused} onClick={handleAnswerClick} manualPanOffset={scoreData?.manualPanOffset} onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)} padding={15} isEnhanced={isImageEnhanced} useAlignment={autoAlign}>
+                <AnswerSnippet 
+                    imageSrc={imageSrc} 
+                    area={area} 
+                    template={template} 
+                    pannable={isFocused} 
+                    onClick={handleAnswerClick} 
+                    manualPanOffset={scoreData?.manualPanOffset} 
+                    onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)} 
+                    padding={15} 
+                    isEnhanced={isImageEnhanced} 
+                    useAlignment={autoAlign}
+                    alignmentSettings={template.alignmentDetectionSettings}
+                    searchZones={searchZones}
+                    manualCorners={student.manualAlignmentCorners?.[pageIndex]}
+                >
                     <AnnotationOverlay annotations={scoreData?.annotations || []} />
                     <MarkSheetOverlay area={area} point={point} scoreData={scoreData} />
                 </AnswerSnippet>

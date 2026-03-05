@@ -90,6 +90,11 @@ export interface Template {
         br: { x: number, y: number },
         bl: { x: number, y: number },
     };
+    alignmentDetectionSettings?: {
+        minSize: number;
+        threshold: number;
+        padding: number;
+    };
 }
 
 export interface Area {
@@ -116,6 +121,12 @@ export interface Student {
     originalName: string;
     filePath: string | null;
     images: (string | null)[];
+    manualAlignmentCorners?: Record<number, {
+        tl: { x: number, y: number },
+        tr: { x: number, y: number },
+        br: { x: number, y: number },
+        bl: { x: number, y: number },
+    }>;
 }
 
 export interface Roster {

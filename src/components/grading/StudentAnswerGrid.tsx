@@ -64,6 +64,7 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
                             area={selectedArea}
                             template={template}
                             pannable={false}
+                            alignmentSettings={template.alignmentDetectionSettings}
                         />
                     ) : (
                         <div className="flex items-center justify-center h-20 text-slate-400 text-xs">読み込み中...</div>
@@ -81,6 +82,7 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
                             student={student}
                             template={template}
                             area={selectedArea}
+                            areas={areas}
                             point={selectedPoint}
                             scoreData={scores[student.id]?.[selectedAreaId]}
                             onScoreChange={onScoreChange}

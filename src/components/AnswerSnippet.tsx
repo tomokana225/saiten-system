@@ -26,8 +26,16 @@ const getSharedImage = (src: string): Promise<HTMLImageElement> => {
 };
 
 // Helper to get or create alignment detection promise
-const getSharedAlignment = (src: string, img: HTMLImageElement, template: Template): Promise<any> => {
-    let promise = alignmentPromiseCache.get(src);
+const getSharedAlignment = (
+    src: string, 
+    img: HTMLImageElement, 
+    template: Template, 
+    settings?: { minSize: number, threshold: number, padding: number },
+    searchZones?: { tl: Area; tr: Area; br: Area; bl: Area }
+): Promise<any> => {
+    // Include settings in the cache key to handle adjustments
+    const cacheKey = `${src}_${settings?.threshold || 160}_${settings?.minSize || 10}_${JSON.stringify(searchZones || {})}`;
+    let promise = alignmentPromiseCache.get(cacheKey);
     if (!promise) {
         promise = (async () => {
             if (!template.alignmentMarkIdealCorners) return null;
@@ -39,9 +47,9 @@ const getSharedAlignment = (src: string, img: HTMLImageElement, template: Templa
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const { findAlignmentMarks } = await import('../utils');
-            return findAlignmentMarks(imageData);
+            return findAlignmentMarks(imageData, settings, searchZones);
         })();
-        alignmentPromiseCache.set(src, promise);
+        alignmentPromiseCache.set(cacheKey, promise);
     }
     return promise;
 };
@@ -184,10 +192,19 @@ interface AnswerSnippetProps {
     padding?: number;
     isEnhanced?: boolean;
     useAlignment?: boolean;
+    alignmentSettings?: { minSize: number, threshold: number, padding: number };
+    searchZones?: { tl: Area; tr: Area; br: Area; bl: Area };
+    manualCorners?: {
+        tl: { x: number, y: number },
+        tr: { x: number, y: number },
+        br: { x: number, y: number },
+        bl: { x: number, y: number },
+    };
 }
 
 export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({ 
-    imageSrc, area, template, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0, isEnhanced = false, useAlignment = false
+    imageSrc, area, template, pannable = false, onClick, children, manualPanOffset, onPanCommit, padding = 0, isEnhanced = false, useAlignment = false,
+    alignmentSettings, searchZones, manualCorners
 }) => {
     const [croppedImage, setCroppedImage] = useState<{ url: string, width: number, height: number, cropX: number, cropY: number } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -204,19 +221,26 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
         setError(false);
 
         const crop = async () => {
+            console.log("Cropping triggered", { imageSrc, manualCorners, useAlignment });
             try {
                 // Use shared promise cache to avoid redundant loads and heavy processing
                 const img = await getSharedImage(imageSrc);
                 if (!isMounted) return;
+                console.log("Image loaded", img);
 
                 // --- Automatic Alignment Logic ---
                 if (useAlignment && template && template.alignmentMarkIdealCorners) {
-                    const srcCorners = await getSharedAlignment(imageSrc, img, template);
+                    console.log("Alignment logic running", { manualCorners });
+                    const srcCorners = manualCorners || await getSharedAlignment(imageSrc, img, template, alignmentSettings, searchZones);
+                    console.log("srcCorners:", srcCorners);
                     const alignedDataUrl = await detectAndWarpCrop(
                         img, template.alignmentMarkIdealCorners, 
                         { x: area.x - padding, y: area.y - padding, width: area.width + padding*2, height: area.height + padding*2 },
-                        srcCorners
+                        srcCorners,
+                        alignmentSettings,
+                        searchZones
                     );
+                    console.log("alignedDataUrl:", alignedDataUrl);
                     if (alignedDataUrl.url && isMounted) {
                         setCroppedImage({
                             url: alignedDataUrl.url, width: area.width + padding*2, height: area.height + padding*2,
@@ -224,7 +248,11 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
                         });
                         setLoading(false);
                         return;
+                    } else {
+                        console.warn("Auto-alignment failed (marks not found), falling back to simple crop");
                     }
+                } else {
+                    console.log("Alignment logic NOT running", { useAlignment, template: !!template, corners: !!template?.alignmentMarkIdealCorners });
                 }
 
                 // --- Standard Simple Crop (Fallback) ---
@@ -255,7 +283,7 @@ export const AnswerSnippet: React.FC<AnswerSnippetProps> = ({
 
         crop();
         return () => { isMounted = false; };
-    }, [imageSrc, area.x, area.y, area.width, area.height, padding, useAlignment, template]);
+    }, [imageSrc, area.x, area.y, area.width, area.height, padding, useAlignment, template, manualCorners, alignmentSettings, searchZones]);
 
     if (!imageSrc) return <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 text-xs">No Image</div>;
     if (loading) return <div className="w-full h-full flex items-center justify-center bg-slate-50"><SpinnerIcon className="w-5 h-5 text-sky-500" /></div>;

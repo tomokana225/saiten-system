@@ -12,6 +12,25 @@ html, body, #root {
     overflow: hidden;
 }
 
+/* Custom scrollbar for a cleaner look */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+.dark ::-webkit-scrollbar-thumb {
+    background: #475569;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }
@@ -19,4 +38,17 @@ html, body, #root {
 .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+}
+
+/* Responsive scaling for small viewports */
+@media (max-height: 700px) {
+    :root {
+        font-size: 14px;
+    }
+}
+
+@media (max-height: 600px) {
+    :root {
+        font-size: 13px;
+    }
 }

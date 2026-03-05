@@ -1,12 +1,14 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import type { Student, Area } from '../types';
+import type { Student, Area, Template } from '../types';
 import { AreaType } from '../types';
 import { AnswerSnippet } from './AnswerSnippet';
+import { ManualAlignmentModal } from './ManualAlignmentModal';
 import { 
     Trash2Icon, PlusIcon, GripVerticalIcon, ArrowRightIcon, 
-    SparklesIcon, SpinnerIcon, EyeIcon, AlertCircleIcon, 
-    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon, SettingsIcon, FileStackIcon, ListIcon, BoxSelectIcon
+    SparklesIcon, SpinnerIcon, AlertCircleIcon, 
+    RotateCcwIcon, ArrowDownFromLineIcon, CheckCircle2Icon,
+    CrosshairIcon, BoxSelectIcon
 } from './icons';
 import { useProject } from '../context/ProjectContext';
 import { toHalfWidth, loadImage } from '../utils';
@@ -44,7 +46,7 @@ const findPeaksInProfile = (profile: number[], length: number, thresholdRatio: n
     return peaks;
 };
 
-const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivity: number, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
+const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivity: number, template?: Template, searchZones?: { tl: Area; tr: Area; br: Area; bl: Area }, refRightArea?: Area, refBottomArea?: Area): Promise<{ indices: number[] | null, debugInfo: DetectionDebugInfo }> => {
     const debugInfo: DetectionDebugInfo = { points: [], rows: [], cols: [], rowBoundaries: [], colBoundaries: [], orientation: 'horizontal', scanZones: [], rois: [] };
     const markThreshold = Math.floor(255 / sensitivity);
     try {
@@ -55,12 +57,34 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivi
             imgUrl = result.details.url;
         }
         const img = await loadImage(imgUrl);
+        
+        // --- Alignment Logic for Student ID ---
+        let finalImg: HTMLImageElement | HTMLCanvasElement = img;
+
+        if (template?.alignmentMarkIdealCorners) {
+            const { detectAndWarpCrop } = await import('../utils');
+            // We warp the WHOLE page to a canvas, then detect on that canvas
+            const result = await detectAndWarpCrop(
+                img, 
+                template.alignmentMarkIdealCorners,
+                { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight },
+                undefined,
+                template.alignmentDetectionSettings,
+                searchZones
+            );
+            if (result.url) {
+                const warpedImg = await loadImage(result.url);
+                finalImg = warpedImg;
+                // Since we warped the whole page to its original size, areas don't need adjustment
+            }
+        }
+
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        canvas.width = finalImg instanceof HTMLImageElement ? finalImg.naturalWidth : finalImg.width;
+        canvas.height = finalImg instanceof HTMLImageElement ? finalImg.naturalHeight : finalImg.height;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return { indices: null, debugInfo };
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(finalImg, 0, 0);
         
         const getCropData = (area: Area) => {
             let sx = Math.floor(area.x); let sy = Math.floor(area.y); let sw = Math.floor(area.width); let sh = Math.floor(area.height);
@@ -71,6 +95,8 @@ const analyzeStudentIdMark = async (imagePath: string, mainArea: Area, sensitivi
         };
         const mainCrop = getCropData(mainArea);
         if (!mainCrop) return { indices: null, debugInfo };
+        
+        // ... rest of the function ...
 
         const isDark = (imgData: ImageData, x: number, y: number, threshold = markThreshold) => {
             const idx = (y * imgData.width + x) * 4;
@@ -207,7 +233,7 @@ const GridOverlay = ({ debugInfo, width, height }: { debugInfo: DetectionDebugIn
 };
 
 export const StudentVerificationEditor = () => {
-    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, uploadFilesRaw } = useProject();
+    const { activeProject, handleStudentSheetsChange, handleStudentInfoChange, uploadFilesRaw, updateActiveProject } = useProject();
     const { uploadedSheets, studentInfo: studentInfoList, template, areas, aiSettings } = activeProject!;
 
     const [draggedInfoIndex, setDraggedInfoIndex] = useState<number | null>(null);
@@ -226,6 +252,12 @@ export const StudentVerificationEditor = () => {
     const [manualAssignInputs, setManualAssignInputs] = useState<Record<string, { class: string, number: string }>>({});
     // Manual assignment inputs for specific pages (Page Level)
     const [pageAssignInputs, setPageAssignInputs] = useState<Record<string, Record<number, { class: string, number: string }>>>({});
+    const [alignmentModal, setAlignmentModal] = useState<{
+        sheetId: string;
+        pageIdx: number;
+        imageUrl: string;
+        initialCorners?: any;
+    } | null>(null);
 
     // Default to template pages, but allow user override for 1-sided template with 2-sided scans
     const [pagesPerStudentOverride, setPagesPerStudentOverride] = useState<number>(() => {
@@ -248,6 +280,22 @@ export const StudentVerificationEditor = () => {
         const refRight = areas.find(a => a.type === AreaType.STUDENT_ID_REF_RIGHT && (a.pageIndex || 0) === pageIdx);
         const refBottom = areas.find(a => a.type === AreaType.STUDENT_ID_REF_BOTTOM && (a.pageIndex || 0) === pageIdx);
         return { refRight, refBottom };
+    }, [areas]);
+
+    const getSearchZonesForPage = useCallback((pageIdx: number) => {
+        const marks = areas.filter(a => a.type === AreaType.ALIGNMENT_MARK && (a.pageIndex || 0) === pageIdx);
+        if (marks.length !== 4) return undefined;
+        
+        const sortedByY = [...marks].sort((a, b) => a.y - b.y);
+        const topTwo = sortedByY.slice(0, 2).sort((a, b) => a.x - b.x);
+        const bottomTwo = sortedByY.slice(2, 4).sort((a, b) => a.x - b.x);
+        
+        return {
+            tl: topTwo[0],
+            tr: topTwo[1],
+            br: bottomTwo[1],
+            bl: bottomTwo[0]
+        };
     }, [areas]);
 
     const pagesPerStudent = pagesPerStudentOverride;
@@ -590,6 +638,7 @@ export const StudentVerificationEditor = () => {
                 }
 
                 const { refRight, refBottom } = getRefsForArea(areaForPage);
+                const searchZones = getSearchZonesForPage(pageIdx);
 
                 // Analyze entire column
                 const results = await Promise.all(columnImages.map(async (imagePath) => {
@@ -597,6 +646,8 @@ export const StudentVerificationEditor = () => {
                         imagePath, 
                         areaForPage!, // Non-null assertion safe due to check above
                         markThreshold, 
+                        template,
+                        searchZones,
                         refRight, 
                         refBottom
                     );
@@ -765,10 +816,13 @@ export const StudentVerificationEditor = () => {
                     
                     if (areaForPage) {
                         const { refRight, refBottom } = getRefsForArea(areaForPage);
+                        const searchZones = getSearchZonesForPage(pageIdx);
                         const { debugInfo, indices } = await analyzeStudentIdMark(
                             targetImage, 
                             areaForPage,
                             markThreshold,
+                            template,
+                            searchZones,
                             refRight,
                             refBottom
                         );
@@ -804,20 +858,46 @@ export const StudentVerificationEditor = () => {
 
     return (
          <div className="w-full space-y-4 flex flex-col h-full">
-            <div className="flex-shrink-0 flex justify-between items-center">
+            {/* Manual Alignment Modal */}
+            {alignmentModal && (
+                <ManualAlignmentModal 
+                    imageUrl={alignmentModal.imageUrl}
+                    initialCorners={alignmentModal.initialCorners}
+                    onClose={() => setAlignmentModal(null)}
+                    onSave={(corners) => {
+                        updateActiveProject(prev => ({
+                            ...prev,
+                            uploadedSheets: prev.uploadedSheets.map(s => 
+                                s.id === alignmentModal.sheetId 
+                                    ? { 
+                                        ...s, 
+                                        manualAlignmentCorners: { 
+                                            ...(s.manualAlignmentCorners || {}), 
+                                            [alignmentModal.pageIdx]: corners 
+                                        } 
+                                      } 
+                                    : s
+                            ),
+                            lastModified: Date.now()
+                        }));
+                        setAlignmentModal(null);
+                    }}
+                />
+            )}
+            <div className="flex-shrink-0 flex flex-wrap justify-between items-center gap-2">
                 <div>
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">生徒情報と解答用紙の照合・修正</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">左右のリストをドラッグして順序を調整し、ズレを修正してください。</p>
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-200">生徒情報と解答用紙の照合・修正</h3>
+                    <p className="text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 hidden sm:block">左右のリストをドラッグして順序を調整し、ズレを修正してください。</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
-                        <span className="text-xs text-slate-500 font-bold whitespace-nowrap">1人あたりの枚数:</span>
+                <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 px-2 py-1 sm:px-3 sm:py-1 rounded-md">
+                        <span className="text-[10px] sm:text-xs text-slate-500 font-bold whitespace-nowrap">1人あたり:</span>
                         <div className="flex gap-1">
                             {[1, 2, 3].map(num => (
                                 <button 
                                     key={num} 
                                     onClick={() => handleChangeGrouping(num)}
-                                    className={`px-2 py-0.5 text-xs rounded border ${pagesPerStudent === num ? 'bg-sky-500 text-white border-sky-500' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`}
+                                    className={`px-1.5 py-0.5 text-[10px] sm:text-xs rounded border ${pagesPerStudent === num ? 'bg-sky-500 text-white border-sky-500' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`}
                                 >
                                     {num}枚
                                 </button>
@@ -826,80 +906,67 @@ export const StudentVerificationEditor = () => {
                     </div>
                     
                     {pagesPerStudent > 1 && (
-                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
-                            <span className="text-xs text-slate-500 font-bold whitespace-nowrap">並び順:</span>
+                        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 px-2 py-1 sm:px-3 sm:py-1 rounded-md">
+                            <span className="text-[10px] sm:text-xs text-slate-500 font-bold whitespace-nowrap">並び順:</span>
                             <div className="flex gap-1">
                                 <button 
                                     onClick={() => handleReorderImages('interleaved')} 
-                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
+                                    className="px-1.5 py-0.5 text-[10px] sm:text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
                                     title="例: 1人目の1枚目, 2枚目, 2人目の1枚目, 2枚目..."
                                 >
                                     1人ずつ
                                 </button>
                                 <button 
                                     onClick={() => handleReorderImages('stacked')} 
-                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
+                                    className="px-1.5 py-0.5 text-[10px] sm:text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
                                     title="例: 全員の1枚目(正順), 全員の2枚目(正順)..."
                                 >
-                                    ページごと
-                                </button>
-                                <button 
-                                    onClick={() => handleReorderImages('stacked-reverse')} 
-                                    className="px-2 py-0.5 text-xs rounded border bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50"
-                                    title="例: 全員の1枚目(正順), 全員の2枚目(逆順)... (ADF両面スキャン時などに使用)"
-                                >
-                                    ページごと(裏逆)
+                                    ページ
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {studentIdAreas.length === 0 && (
-                        <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                            <AlertCircleIcon className="w-3 h-3"/>
-                            テンプレートで「学籍番号」エリアを設定してください
-                        </div>
-                    )}
                     {studentIdAreas.length > 0 && (
                         <>
-                            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
-                                <span className="text-xs text-slate-500 font-bold whitespace-nowrap">濃さ:</span>
+                            <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 px-2 py-1 sm:px-3 sm:py-1 rounded-md">
+                                <span className="text-[10px] sm:text-xs text-slate-500 font-bold whitespace-nowrap">濃さ:</span>
                                 <input 
                                     type="range" 
                                     min="50" max="220" 
                                     value={markThreshold} 
                                     onChange={e => setMarkThreshold(Number(e.target.value))}
-                                    className="w-16 accent-sky-600"
+                                    className="w-12 sm:w-16 accent-sky-600"
                                 />
                             </div>
                             <button 
                                 onClick={() => setShowDebugGrid(!showDebugGrid)} 
-                                className={`p-2 rounded-md ${showDebugGrid ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-400'}`}
+                                className={`p-1.5 sm:p-2 rounded-md ${showDebugGrid ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-400'}`}
                                 title="認識位置を表示"
                             >
-                                <BoxSelectIcon className="w-4 h-4"/>
+                                <BoxSelectIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4"/>
                             </button>
                             <button 
                                 onClick={() => setShowMovedHighlight(!showMovedHighlight)} 
-                                className={`p-2 rounded-md ${showMovedHighlight ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}
+                                className={`p-1.5 sm:p-2 rounded-md ${showMovedHighlight ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}
                                 title="移動した生徒を強調表示"
                             >
-                                <CheckCircle2Icon className="w-4 h-4"/>
+                                <CheckCircle2Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4"/>
                             </button>
                             <button 
                                 onClick={handleSortGlobal} 
                                 disabled={isSorting}
-                                className="flex items-center space-x-2 px-3 py-2 text-sm bg-purple-600 text-white hover:bg-purple-500 rounded-md transition-colors disabled:opacity-50"
+                                className="flex items-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-sm bg-purple-600 text-white hover:bg-purple-500 rounded-md transition-colors disabled:opacity-50"
                                 title="全画像をスキャンし、学籍番号マークに基づいて再配置・グループ化します"
                             >
-                                {isSorting ? <SpinnerIcon className="w-4 h-4"/> : <SparklesIcon className="w-4 h-4"/>}
-                                <span>{isSorting ? '読取中...' : '全自動並べ替え'}</span>
+                                {isSorting ? <SpinnerIcon className="w-3 h-3 sm:w-4 sm:h-4"/> : <SparklesIcon className="w-3 h-3 sm:w-4 sm:h-4"/>}
+                                <span>{isSorting ? '読取中' : '自動並べ替え'}</span>
                             </button>
                         </>
                     )}
-                    <label className="flex items-center space-x-2 px-3 py-2 text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
-                        <PlusIcon className="w-4 h-4" />
-                        <span>解答用紙を追加</span>
+                    <label className="flex items-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-sm bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-md transition-colors cursor-pointer">
+                        <PlusIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span>追加</span>
                         <input type="file" multiple className="hidden" onChange={handleAppendSheets} accept="image/*,application/pdf" />
                     </label>
                 </div>
@@ -1044,6 +1111,8 @@ export const StudentVerificationEditor = () => {
                                                                     area={targetArea} 
                                                                     template={template}
                                                                     padding={targetArea.type === AreaType.NAME ? 10 : 0} 
+                                                                    useAlignment={true}
+                                                                    manualCorners={sheet?.manualAlignmentCorners?.[pageIdx]}
                                                                 >
                                                                     {isDebugTarget && debugInfo && (
                                                                         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
@@ -1076,6 +1145,23 @@ export const StudentVerificationEditor = () => {
                                                                         disabled={!sheet || !pageAssignInputs[sheet.id]?.[pageIdx]}
                                                                     >
                                                                         移動実行
+                                                                    </button>
+                                                                    <button 
+                                                                        className="w-full bg-slate-600 text-white text-[9px] py-0.5 rounded hover:bg-slate-500 flex items-center justify-center gap-1"
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation(); 
+                                                                            if (sheet && image) {
+                                                                                setAlignmentModal({
+                                                                                    sheetId: sheet.id,
+                                                                                    pageIdx,
+                                                                                    imageUrl: image,
+                                                                                    initialCorners: sheet.manualAlignmentCorners?.[pageIdx] || template?.alignmentMarkIdealCorners
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <CrosshairIcon className="w-3 h-3" />
+                                                                        手動補正
                                                                     </button>
                                                                 </div>
                                                             </>

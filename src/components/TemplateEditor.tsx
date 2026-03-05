@@ -105,11 +105,16 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ apiKey }) => {
     
     const [panState, setPanState] = useState<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
 
-    const [detSettings, setDetSettings] = useState<DetectionSettings>({
-        minSize: 15,
-        threshold: 160,
-        padding: 0
-    });
+    const [detSettings, setDetSettings] = useState<DetectionSettings>(() => ({
+        minSize: template.alignmentDetectionSettings?.minSize || 15,
+        threshold: template.alignmentDetectionSettings?.threshold || 160,
+        padding: template.alignmentDetectionSettings?.padding || 0
+    }));
+
+    // Update template when detection settings change
+    useEffect(() => {
+        handleTemplateChange({ alignmentDetectionSettings: detSettings });
+    }, [detSettings, handleTemplateChange]);
 
     const [showMarkPoints, setShowMarkPoints] = useState(false);
     const [detectedMarkPoints, setDetectedMarkPoints] = useState<Record<number, {x: number, y: number}[]>>({});
