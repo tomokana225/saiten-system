@@ -10,7 +10,7 @@ import { AnnotationEditor } from './AnnotationEditor';
 import { useProject } from '../context/ProjectContext';
 import { analyzeMarkSheetSnippet, findNearestAlignedRefArea, detectAndWarpCrop, loadImage, getAlignmentContext } from '../utils';
 
-const cropImage = async (imagePath: string, area: import('../types').Area, template?: import('../types').Template, areas?: import('../types').Area[]): Promise<string> => {
+const cropImage = async (imagePath: string, area: import('../types').Area, template?: import('../types').Template, areas?: import('../types').Area[], isEnhanced?: boolean): Promise<string> => {
     let dataUrl = imagePath;
     if (!imagePath.startsWith('data:') && !imagePath.startsWith('blob:')) {
         const result = await window.electronAPI.invoke('get-image-details', imagePath);
@@ -26,6 +26,16 @@ const cropImage = async (imagePath: string, area: import('../types').Area, templ
         if (context) {
             const res = await detectAndWarpCrop(img, context.idealCorners, area, undefined, template.alignmentDetectionSettings, context.searchZones);
             if (res.url) {
+                // If enhanced, we need to process the warped result
+                if (isEnhanced) {
+                    const warpedImg = await loadImage(res.url);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = warpedImg.width; canvas.height = warpedImg.height;
+                    const ctx = canvas.getContext('2d')!;
+                    ctx.filter = 'grayscale(100%) contrast(200%) brightness(90%)';
+                    ctx.drawImage(warpedImg, 0, 0);
+                    return canvas.toDataURL('image/png').split(',')[1];
+                }
                 return res.url.split(',')[1];
             }
         }
@@ -35,6 +45,9 @@ const cropImage = async (imagePath: string, area: import('../types').Area, templ
         const canvas = document.createElement('canvas');
         canvas.width = area.width; canvas.height = area.height;
         const ctx = canvas.getContext('2d')!;
+        if (isEnhanced) {
+            ctx.filter = 'grayscale(100%) contrast(200%) brightness(90%)';
+        }
         ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
         resolve(canvas.toDataURL('image/png').split(',')[1]);
     });
@@ -247,14 +260,14 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                 }
             } else {
                 const masterImage = template.pages[pageIdx].imagePath;
-                const masterSnippet = await cropImage(masterImage, area, template, areas);
+                const masterSnippet = await cropImage(masterImage, area, template, areas, isImageEnhanced);
                 setProgress(p => ({ ...p, message: `${point.label} をAI採点中...` }));
 
                 for (let i = 0; i < validStudents.length; i += aiSettings.batchSize) {
                     const batch = validStudents.slice(i, i + aiSettings.batchSize);
                     const studentSnippets = await Promise.all(batch.map(async s => ({ 
                         studentId: s.id, 
-                        base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template : undefined, autoAlign ? areas : undefined) 
+                        base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template : undefined, autoAlign ? areas : undefined, isImageEnhanced) 
                     })));
                     const res = await callGeminiAPIBatch(
                         masterSnippet, 

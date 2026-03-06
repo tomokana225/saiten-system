@@ -26,6 +26,7 @@ export const PointAllocator = () => {
     const [bulkPoints, setBulkPoints] = useState<string>('');
     const [bulkChoices, setBulkChoices] = useState<string>('');
     const [bulkSubtotal, setBulkSubtotal] = useState<string>('');
+    const [bulkFormat, setBulkFormat] = useState<string>('');
 
     const [internalPoints, setInternalPoints] = useState<Point[]>(() => {
         return relevantAreas.map(area => {
@@ -146,6 +147,11 @@ export const PointAllocator = () => {
         setInternalPoints(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, subtotalIds: newIds } : p));
     };
 
+    const applyBulkFormat = () => {
+        if (!bulkFormat) return;
+        setInternalPoints(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, expectedFormat: bulkFormat as any } : p));
+    };
+
     const grandTotal = useMemo(() => internalPoints.reduce((sum, p) => sum + (p.points || 0), 0), [internalPoints]);
 
     return (
@@ -236,6 +242,25 @@ export const PointAllocator = () => {
                                     </select>
                                 </div>
 
+                                {/* Expected Format Selector */}
+                                {!isMarkSheet && (
+                                    <div className={`space-y-1 ${showImages ? '' : 'flex items-center gap-2 space-y-0 flex-1'}`}>
+                                        <label className="text-xs font-bold text-slate-500 whitespace-nowrap">解答形式</label>
+                                        <select
+                                            value={point.expectedFormat || 'free'}
+                                            onChange={(e) => handlePointPropChange(point.id, 'expectedFormat', e.target.value)}
+                                            className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded p-1.5 text-xs"
+                                        >
+                                            <option value="free">自由記述</option>
+                                            <option value="number">数字のみ</option>
+                                            <option value="katakana">カタカナのみ</option>
+                                            <option value="hiragana">ひらがなのみ</option>
+                                            <option value="kanji">漢字のみ</option>
+                                            <option value="alphanumeric">英数字のみ</option>
+                                        </select>
+                                    </div>
+                                )}
+
                                 {/* Marksheet Options (Choices & Correct Answer) */}
                                 {isMarkSheet ? (
                                     <>
@@ -317,6 +342,26 @@ export const PointAllocator = () => {
                         <span className="text-xs font-bold text-slate-300">選択肢数:</span>
                         <input type="number" placeholder="-" className="w-12 p-1 text-black rounded text-sm font-bold" value={bulkChoices} onChange={e => setBulkChoices(e.target.value)} />
                         <button onClick={applyBulkChoices} className="px-3 py-1 bg-sky-600 hover:bg-sky-500 rounded-md text-xs font-bold transition-colors">適用</button>
+                    </div>
+
+                    <div className="w-px h-6 bg-slate-600 shrink-0"></div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-slate-300">形式:</span>
+                        <select
+                            value={bulkFormat}
+                            onChange={(e) => setBulkFormat(e.target.value)}
+                            className="w-24 p-1 text-black rounded text-xs"
+                        >
+                            <option value="">(選択)</option>
+                            <option value="free">自由記述</option>
+                            <option value="number">数字</option>
+                            <option value="katakana">カタカナ</option>
+                            <option value="hiragana">ひらがな</option>
+                            <option value="kanji">漢字</option>
+                            <option value="alphanumeric">英数字</option>
+                        </select>
+                        <button onClick={applyBulkFormat} className="px-3 py-1 bg-sky-600 hover:bg-sky-500 rounded-md text-xs font-bold transition-colors">適用</button>
                     </div>
                 </div>
             )}

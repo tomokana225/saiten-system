@@ -82,20 +82,35 @@ export const callGeminiAPIBatch = async (
     const maxPoints = point.points;
     
     const systemInstruction = `あなたはテストの解答を採点する専門の先生です。
+提供された画像には手書きの文字が含まれています。
 模範解答の画像と、複数の生徒の解答画像を一括で提供します。
-各生徒の解答を模範解答と比較し、公平かつ正確に採点してください。
+各生徒の解答を高度なOCR能力を用いて読み取り、模範解答と比較して公平かつ正確に採点してください。
 
-採点基準:
-- 正解: statusは「${ScoringStatus.CORRECT}」、scoreは満点(${maxPoints})。
-- 不正解: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
-- 部分的な正解: statusは「${ScoringStatus.PARTIAL}」、scoreは0から満点の間で適切に評価。
-- 白紙または判読不能: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
+採点ガイドライン:
+1. 手書き文字の認識: 癖のある字や薄い字、消し跡なども文脈から正確に判断してください。
+2. 採点基準:
+   - 正解: statusは「${ScoringStatus.CORRECT}」、scoreは満点(${maxPoints})。
+   - 不正解: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
+   - 部分的な正解: statusは「${ScoringStatus.PARTIAL}」、scoreは0から満点の間で適切に評価。
+   - 白紙または判読不能: statusは「${ScoringStatus.INCORRECT}」、scoreは0。
+3. 厳格な評価: 漢字のトメ・ハネ・ハライや、誤字脱字、送り仮名のミスも厳格にチェックしてください。
 
 重要事項:
 - 採点理由(aiComment)を日本語で簡潔に（20文字以内）記述してください。
-- 丁寧な字で書かれているか、誤字脱字がないかなども考慮してください。`;
+- 判読が難しい場合は、前後の文脈から推測を試みてください。`;
 
     let prompt = `以下の生徒の解答を採点してください。この問題の満点は${maxPoints}点です。`;
+
+    if (point.expectedFormat && point.expectedFormat !== 'free') {
+        const formatLabels: Record<string, string> = {
+            number: '数字のみ',
+            katakana: 'カタカナのみ',
+            hiragana: 'ひらがなのみ',
+            kanji: '漢字のみ',
+            alphanumeric: '英数字のみ'
+        };
+        prompt += `\n\n**解答形式**: この問題の解答は「${formatLabels[point.expectedFormat]}」で構成されていることが期待されます。認識の際の参考にしてください。`;
+    }
 
     if (aiGradingMode === 'strict' && answerFormat) {
         prompt += `

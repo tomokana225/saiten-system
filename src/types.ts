@@ -151,6 +151,7 @@ export interface Point {
     markRefBottomAreaId?: number;
     aiGradingMode?: 'auto' | 'strict';
     answerFormat?: string;
+    expectedFormat?: 'number' | 'katakana' | 'hiragana' | 'kanji' | 'alphanumeric' | 'free';
 }
 
 export type AnnotationTool = 'pen' | 'wave' | 'circle' | 'text';
