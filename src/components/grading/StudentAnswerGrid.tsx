@@ -42,10 +42,26 @@ export const StudentAnswerGrid: React.FC<StudentAnswerGridProps> = ({
 
     const gridStyle = useMemo(() => {
         if (columnCount === 0) {
-            return { gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' };
+            if (!selectedArea) return { gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' };
+            
+            const aspectRatio = selectedArea.width / selectedArea.height;
+            
+            // Determine minWidth based on aspect ratio to adjust column count
+            // Square-ish: ~200px (approx 6 cols on large screens)
+            // Wide: 500px+ (1-2 cols)
+            let minWidth = 200;
+            if (aspectRatio > 5) {
+                minWidth = 800; // Very wide -> 1 column
+            } else if (aspectRatio > 3) {
+                minWidth = 500; // Wide -> 1-2 columns
+            } else if (aspectRatio > 1.5) {
+                minWidth = 300; // Medium -> 3-4 columns
+            }
+            
+            return { gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}px, 1fr))` };
         }
         return { gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` };
-    }, [columnCount]);
+    }, [columnCount, selectedArea]);
 
     // Use Table view only if columnCount is 1
     const isTableView = columnCount === 1;
