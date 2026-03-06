@@ -345,7 +345,7 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                     aiSettings={aiSettings}
                     onAiSettingsChange={(updater) => updateActiveProject(prev => ({ ...prev, aiSettings: updater(prev.aiSettings), lastModified: Date.now() }))}
                 />
-                <div className="flex-1 overflow-hidden relative">
+                <div className="flex-1 overflow-hidden relative flex flex-col">
                     {!isSidebarOpen && (
                         <button 
                             onClick={() => setIsSidebarOpen(true)}
