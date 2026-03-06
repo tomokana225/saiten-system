@@ -108,7 +108,7 @@ export const FileUpload = ({ onFilesUpload, title, description, multiple = false
                     <p className="mb-2 text-sm text-slate-600 dark:text-slate-300"><span className="font-semibold">{title}</span></p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
                 </div>
-                <input id={id} type="file" className="hidden" multiple={multiple} onChange={handleChange} accept="image/*" />
+                <input id={id} type="file" className="hidden" multiple={multiple} onChange={handleChange} accept="image/*,application/pdf" />
             </label>
         </div>
     );

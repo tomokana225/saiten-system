@@ -109,9 +109,7 @@ interface StudentAnswerCardProps {
 
 export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     student, template, area, areas, point, scoreData, onScoreChange, onStartAnnotation, onPanCommit, status,
-    isFocused, onFocus, partialScoreInput, correctedImages, isImageEnhanced, autoAlign,
-    // Destructured aiSettings
-    aiSettings
+    isFocused, onFocus, partialScoreInput, isImageEnhanced, autoAlign
 }) => {
     const currentStatus = scoreData?.status || ScoringStatus.UNSCORED;
     const pageIndex = area.pageIndex || 0;
@@ -162,53 +160,83 @@ export const StudentAnswerCard: React.FC<StudentAnswerCardProps> = ({
     const displayScore = partialScoreInput ? `${partialScoreInput}_` : (scoreData?.score ?? '-');
 
     return (
-         <div id={`student-card-${student.id}`} onClick={() => onFocus(student.id)} className={`bg-white dark:bg-slate-800 rounded-lg shadow-sm border ${isFocused ? 'border-sky-500 ring-2 ring-sky-500' : 'border-slate-200 dark:border-slate-700'} p-2 space-y-2 relative transition-all`}>
-            {status === 'grading' && <div className="absolute inset-0 bg-sky-500/10 flex items-center justify-center rounded-lg"><SpinnerIcon className="w-6 h-6 text-sky-500" /></div>}
-            <div className="flex justify-between items-center">
-                <h5 className="font-semibold text-xs truncate">{student.class}-{student.number} {student.name}</h5>
-                <div className="flex items-center gap-1">
+        <tr 
+            id={`student-card-${student.id}`} 
+            onClick={() => onFocus(student.id)} 
+            className={`group border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer ${isFocused ? 'bg-sky-50 dark:bg-sky-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/10'}`}
+        >
+            <td className="p-3 align-top">
+                <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-500 font-medium">{student.class}-{student.number}</span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate max-w-[150px]">{student.name}</span>
+                </div>
+            </td>
+            <td className="p-3 align-top">
+                <div className="relative w-full max-w-xl bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px', maxHeight: '120px' }}>
+                    {status === 'grading' && (
+                        <div className="absolute inset-0 bg-sky-500/10 flex items-center justify-center z-10">
+                            <SpinnerIcon className="w-5 h-5 text-sky-500" />
+                        </div>
+                    )}
+                    <AnswerSnippet 
+                        imageSrc={imageSrc} 
+                        area={area} 
+                        template={template} 
+                        pannable={isFocused} 
+                        onClick={handleAnswerClick} 
+                        manualPanOffset={scoreData?.manualPanOffset} 
+                        onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)} 
+                        padding={15} 
+                        isEnhanced={isImageEnhanced} 
+                        useAlignment={autoAlign}
+                        alignmentSettings={template.alignmentDetectionSettings}
+                        searchZones={searchZones}
+                        manualCorners={student.manualAlignmentCorners?.[pageIndex]}
+                    >
+                        <AnnotationOverlay annotations={scoreData?.annotations || []} />
+                        <MarkSheetOverlay area={area} point={point} scoreData={scoreData} />
+                    </AnswerSnippet>
+                </div>
+                {scoreData?.aiComment && (
+                    <div className="mt-1 px-1.5 py-0.5 bg-sky-50 dark:bg-sky-900/30 border border-sky-100 dark:border-sky-800 rounded text-[10px] text-sky-700 dark:text-sky-300 italic max-w-xl" title={scoreData.aiComment}>
+                        AI: {scoreData.aiComment}
+                    </div>
+                )}
+            </td>
+            <td className="p-3 align-top text-center">
+                <div className="flex flex-col items-center gap-1">
                     {currentStatus === ScoringStatus.PARTIAL && hasImage ? (
-                        <div className="flex items-center">
-                            <input type="number" className="w-12 h-6 text-right border border-slate-300 dark:border-slate-600 rounded text-sm px-1 bg-white dark:bg-slate-700 font-bold" value={scoreData?.score ?? ''} onClick={(e) => e.stopPropagation()} onChange={handlePartialInput} min={0} max={point.points}/>
-                            <span className="text-xs text-slate-500 ml-1">/ {point.points}</span>
+                        <div className="flex items-center justify-center">
+                            <input 
+                                type="number" 
+                                className="w-12 h-7 text-center border border-slate-300 dark:border-slate-600 rounded text-sm font-bold bg-white dark:bg-slate-700" 
+                                value={scoreData?.score ?? ''} 
+                                onClick={(e) => e.stopPropagation()} 
+                                onChange={handlePartialInput} 
+                                min={0} 
+                                max={point.points}
+                            />
+                            <span className="text-[10px] text-slate-500 ml-1">/ {point.points}</span>
                         </div>
                     ) : (
-                        <p className={`font-bold text-sm ${isFocused && partialScoreInput ? 'text-sky-500' : ''} ${!hasImage ? 'text-slate-400' : ''}`}>{displayScore} / {point.points}</p>
+                        <div className="flex flex-col">
+                            <span className={`text-sm font-bold ${!hasImage ? 'text-slate-300' : currentStatus === ScoringStatus.CORRECT ? 'text-green-600' : currentStatus === ScoringStatus.INCORRECT ? 'text-red-600' : 'text-slate-900 dark:text-slate-100'}`}>
+                                {displayScore}
+                            </span>
+                            <span className="text-[10px] text-slate-400">/ {point.points}</span>
+                        </div>
                     )}
                 </div>
-            </div>
-            <div className="relative w-full bg-slate-100 dark:bg-slate-900 rounded overflow-hidden" style={{ aspectRatio: `${area.width} / ${area.height}`, minHeight: '60px' }}>
-                <AnswerSnippet 
-                    imageSrc={imageSrc} 
-                    area={area} 
-                    template={template} 
-                    pannable={isFocused} 
-                    onClick={handleAnswerClick} 
-                    manualPanOffset={scoreData?.manualPanOffset} 
-                    onPanCommit={(offset) => onPanCommit(student.id, area.id, offset)} 
-                    padding={15} 
-                    isEnhanced={isImageEnhanced} 
-                    useAlignment={autoAlign}
-                    alignmentSettings={template.alignmentDetectionSettings}
-                    searchZones={searchZones}
-                    manualCorners={student.manualAlignmentCorners?.[pageIndex]}
-                >
-                    <AnnotationOverlay annotations={scoreData?.annotations || []} />
-                    <MarkSheetOverlay area={area} point={point} scoreData={scoreData} />
-                </AnswerSnippet>
-            </div>
-            {scoreData?.aiComment && (
-                <div className="px-1 py-0.5 bg-sky-50 dark:bg-sky-900/30 border border-sky-100 dark:border-sky-800 rounded text-[10px] text-sky-700 dark:text-sky-300 italic line-clamp-2" title={scoreData.aiComment}>
-                    AI: {scoreData.aiComment}
+            </td>
+            <td className="p-3 align-top text-right">
+                <div className="flex items-center justify-end gap-1">
+                    <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.CORRECT); }} title="正解 (J)" className={`p-1.5 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}><CircleCheckIcon className="w-5 h-5" /></button>
+                    <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.INCORRECT); }} title="不正解 (F)" className={`p-1.5 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'}`}><XCircleIcon className="w-5 h-5" /></button>
+                    <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.PARTIAL); }} title="部分点" className={`p-1.5 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.PARTIAL ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' : 'text-slate-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'}`}><TriangleIcon className="w-5 h-5" /></button>
+                    <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                    <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); onStartAnnotation(student.id, area.id); }} title="添削" className={`p-1.5 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-900/50'}`}><PencilIcon className="w-5 h-5"/></button>
                 </div>
-            )}
-            <div className="flex items-center justify-around gap-1">
-                <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.CORRECT); }} title="正解 (J)" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.CORRECT ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-slate-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}><CircleCheckIcon className="w-5 h-5" /></button>
-                <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.INCORRECT); }} title="不正解 (F)" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.INCORRECT ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' : 'text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/50'}`}><XCircleIcon className="w-5 h-5" /></button>
-                <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); handleStatusChange(ScoringStatus.PARTIAL); }} title="部分点" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : currentStatus === ScoringStatus.PARTIAL ? 'bg-yellow-100 text-yellow-600 dark:bg-green-900/50 dark:text-yellow-400' : 'text-slate-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'}`}><TriangleIcon className="w-5 h-5" /></button>
-                <div className="border-l h-5 border-slate-200 dark:border-slate-600 mx-1"></div>
-                <button disabled={!hasImage} onClick={(e) => { e.stopPropagation(); onStartAnnotation(student.id, area.id); }} title="添削" className={`p-1 rounded-full transition-colors ${!hasImage ? 'opacity-30 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-900/50'}`}><PencilIcon className="w-5 h-5"/></button>
-            </div>
-        </div>
+            </td>
+        </tr>
     );
 };

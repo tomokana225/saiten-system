@@ -213,6 +213,8 @@ export interface AISettings {
 export interface GradingProject {
     id: string;
     name: string;
+    testName?: string;
+    className?: string;
     template: Template | null;
     areas: Area[];
     studentInfo: StudentInfo[];

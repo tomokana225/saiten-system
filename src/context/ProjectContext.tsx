@@ -46,11 +46,11 @@ interface ProjectContextType {
     setPreviousStep: React.Dispatch<React.SetStateAction<AppStep | null>>;
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
     updateActiveProject: (updater: (project: GradingProject) => GradingProject) => void;
-    handleProjectCreate: (projectName: string) => void;
+    handleProjectCreate: (projectName: string, testName?: string, className?: string) => void;
     handleProjectSelect: (projectId: string) => void;
     handleProjectDelete: (projectId: string) => void;
-    handleProjectRename: (projectId: string, newName: string) => void; // New
-    handleProjectMerge: (projectIds: string[], newName: string) => void; // New
+    handleProjectRename: (projectId: string, newName: string, newTestName?: string, newClassName?: string) => void;
+    handleProjectMerge: (projectIds: string[], newName: string, testName?: string, className?: string) => void;
     handleProjectImport: () => Promise<void>;
     handleProjectExportWithOptions: (projectId: string, options: ExportImportOptions) => Promise<void>;
     cloneProjectForNextClass: () => void;
@@ -270,10 +270,19 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
          }
     };
 
-    const handleProjectCreate = (projectName: string) => {
+    const handleProjectCreate = (projectName: string, testName?: string, className?: string) => {
         const newId = `proj_${Date.now()}`;
         const newProject: GradingProject = {
-            id: newId, name: projectName, template: null, areas: [], studentInfo: [], uploadedSheets: [], points: [], scores: {},
+            id: newId, 
+            name: projectName,
+            testName,
+            className,
+            template: null, 
+            areas: [], 
+            studentInfo: [], 
+            uploadedSheets: [], 
+            points: [], 
+            scores: {},
             aiSettings: { 
                 batchSize: 5, 
                 delayBetweenBatches: 1000, 
@@ -307,18 +316,24 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     };
 
-    const handleProjectRename = (projectId: string, newName: string) => {
+    const handleProjectRename = (projectId: string, newName: string, newTestName?: string, newClassName?: string) => {
         setProjects(prev => {
             const project = prev[projectId];
             if (!project) return prev;
             return {
                 ...prev,
-                [projectId]: { ...project, name: newName, lastModified: Date.now() }
+                [projectId]: { 
+                    ...project, 
+                    name: newName, 
+                    testName: newTestName,
+                    className: newClassName,
+                    lastModified: Date.now() 
+                }
             };
         });
     };
 
-    const handleProjectMerge = (projectIds: string[], newName: string) => {
+    const handleProjectMerge = (projectIds: string[], newName: string, testName?: string, className?: string) => {
         if (projectIds.length < 2) return;
 
         // Use the first project as the base for settings/template
@@ -329,6 +344,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...JSON.parse(JSON.stringify(baseProject)),
             id: `proj_${Date.now()}`,
             name: newName,
+            testName: testName,
+            className: className,
             lastModified: Date.now(),
             studentInfo: [],
             uploadedSheets: [],
