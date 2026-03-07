@@ -25,15 +25,35 @@ export const fileToArrayBuffer = (file: File): Promise<ArrayBuffer> => {
 export const loadImage = (src: string): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        // Only set crossOrigin for remote URLs to allow canvas export.
-        // For blob: and data: URLs (local), setting this can cause SecurityError in some browsers/contexts.
-        if (!src.startsWith('blob:') && !src.startsWith('data:')) {
-            img.crossOrigin = "Anonymous";
-        }
+        // Set crossOrigin for all URLs to allow canvas export.
+        // Even for blob: URLs, setting this can help with some browser security policies.
+        img.crossOrigin = "anonymous";
         img.onload = () => resolve(img);
-        img.onerror = reject;
+        img.onerror = (e) => {
+            console.error(`Image load failed for ${src.substring(0, 50)}...`, e);
+            reject(new Error(`画像の読み込みに失敗しました: ${src.substring(0, 50)}...`));
+        };
         img.src = src;
     });
+};
+
+/**
+ * Safe wrapper for getImageData to handle SecurityError (tainted canvas)
+ */
+export const safeGetImageData = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): ImageData | null => {
+    try {
+        return ctx.getImageData(x, y, w, h);
+    } catch (e: any) {
+        if (e.name === 'SecurityError') {
+            console.error("SecurityError: Canvas is tainted. This usually happens when an image from a different origin is drawn without proper CORS headers, or when a strict CSP blocks reading blob URLs.", e);
+            // Provide a more user-friendly error message in the console
+            const msg = "セキュリティエラー: 画像データの読み取りが制限されています。ブラウザのセキュリティ設定や、サーバーのCSP設定を確認してください。";
+            console.error(msg);
+        } else {
+            console.error("getImageData failed:", e);
+        }
+        return null;
+    }
 };
 
 export const getAlignmentContext = (areas: Area[], pageIndex: number, template?: Template): { idealCorners: Corners, searchZones: { tl: Area, tr: Area, br: Area, bl: Area } } | null => {
@@ -263,7 +283,8 @@ export const detectRectFromPoint = (
     if (!ctx) return null;
 
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-    const imgData = ctx.getImageData(0, 0, sw, sh);
+    const imgData = safeGetImageData(ctx, 0, 0, sw, sh);
+    if (!imgData) return null;
     const data = imgData.data;
 
     // Convert global click to ROI local coordinates
@@ -414,27 +435,31 @@ export const analyzeMarkSheetSnippet = async (
     if (idealCorners) {
         const srcCtx = ctx;
         srcCtx.drawImage(img, 0, 0);
-        const imageData = srcCtx.getImageData(0, 0, canvas.width, canvas.height);
-        const srcCorners = findAlignmentMarks(imageData, { minSize: 8, threshold: 160, padding: 0 });
-        
-        if (srcCorners) {
-            // Create a temporary canvas for the warped version of the entire page
-            const warpedCanvas = document.createElement('canvas');
-            warpedCanvas.width = img.naturalWidth;
-            warpedCanvas.height = img.naturalHeight;
-            const warpedCtx = warpedCanvas.getContext('2d')!;
-            
-            // Warp the entire image so it matches the template coordinate system
-            const warpUrl = warpArea(img, img.naturalWidth, img.naturalHeight, srcCorners, idealCorners, { 
-                x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight 
-            });
-            const warpedImg = await loadImage(warpUrl);
-            warpedCtx.drawImage(warpedImg, 0, 0);
-            
-            finalCanvas = warpedCanvas;
-            finalCtx = warpedCtx;
-        } else {
+        const imageData = safeGetImageData(srcCtx, 0, 0, canvas.width, canvas.height);
+        if (!imageData) {
             finalCtx.drawImage(img, 0, 0);
+        } else {
+            const srcCorners = findAlignmentMarks(imageData, { minSize: 8, threshold: 160, padding: 0 });
+            
+            if (srcCorners) {
+                // Create a temporary canvas for the warped version of the entire page
+                const warpedCanvas = document.createElement('canvas');
+                warpedCanvas.width = img.naturalWidth;
+                warpedCanvas.height = img.naturalHeight;
+                const warpedCtx = warpedCanvas.getContext('2d')!;
+                
+                // Warp the entire image so it matches the template coordinate system
+                const warpUrl = warpArea(img, img.naturalWidth, img.naturalHeight, srcCorners, idealCorners, { 
+                    x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight 
+                });
+                const warpedImg = await loadImage(warpUrl);
+                warpedCtx.drawImage(warpedImg, 0, 0);
+                
+                finalCanvas = warpedCanvas;
+                finalCtx = warpedCtx;
+            } else {
+                finalCtx.drawImage(img, 0, 0);
+            }
         }
     } else {
         finalCtx.drawImage(img, 0, 0);
@@ -447,7 +472,9 @@ export const analyzeMarkSheetSnippet = async (
         const sx = Math.floor(a.x); const sy = Math.floor(a.y);
         const sw = Math.floor(a.width); const sh = Math.floor(a.height);
         if (sw <= 0 || sh <= 0) return [];
-        const data = finalCtx.getImageData(sx, sy, sw, sh).data;
+        const imageData = safeGetImageData(finalCtx, sx, sy, sw, sh);
+        if (!imageData) return [];
+        const data = imageData.data;
         const size = dir === 'x' ? sw : sh;
         const profile = new Array(size).fill(0);
         for (let y = 0; y < sh; y++) {
@@ -499,7 +526,9 @@ export const analyzeMarkSheetSnippet = async (
         
         if (actualRoiW <= 0 || actualRoiH <= 0) continue;
 
-        const data = finalCtx.getImageData(startX, startY, actualRoiW, actualRoiH).data;
+        const imageData = safeGetImageData(finalCtx, startX, startY, actualRoiW, actualRoiH);
+        if (!imageData) continue;
+        const data = imageData.data;
         for(let k=0; k<data.length; k+=4) {
             const gray = (0.299*data[k]+0.587*data[k+1]+0.114*data[k+2]);
             if(gray < fillGrayThreshold) darkCount++;
@@ -590,8 +619,15 @@ export const warpArea = (
         srcCanvas.width = srcImageWidth; srcCanvas.height = srcImageHeight;
         const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true })!;
         srcCtx.drawImage(srcImage, 0, 0);
-        srcData = srcCtx.getImageData(0, 0, srcImageWidth, srcImageHeight).data;
-        sourceImageDataCache.set(srcImage, srcData);
+        const imageData = safeGetImageData(srcCtx, 0, 0, srcImageWidth, srcImageHeight);
+        if (imageData) {
+            srcData = imageData.data;
+            sourceImageDataCache.set(srcImage, srcData);
+        } else {
+            // Fallback: if we can't get image data, we can't warp. 
+            // This is a critical failure for alignment.
+            return "";
+        }
     }
     const h00 = H[0][0], h01 = H[0][1], h02 = H[0][2];
     const h10 = H[1][0], h11 = H[1][1], h12 = H[1][2];
@@ -684,7 +720,8 @@ export const detectAndWarpCrop = async (
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return { url: null };
         ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const imageData = safeGetImageData(ctx, 0, 0, canvas.width, canvas.height);
+        if (!imageData) return { url: null };
         const found = findAlignmentMarks(imageData, settings, searchZones);
         if (found) srcCorners = found;
     }

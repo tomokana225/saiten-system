@@ -57,13 +57,32 @@ export const webElectronAPI = {
       }
       case 'gemini-generate-content': {
         const { model, contents, config, apiKey } = args[0];
-        try {
-            const ai = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY });
-            const response = await ai.models.generateContent({ model: model || 'gemini-3-flash-preview', contents, config });
-            return { success: true, text: response.text };
-        } catch (e: any) {
-            return { success: false, error: { message: e.message } };
-        }
+        const maxRetries = 3;
+        let retryCount = 0;
+
+        const executeRequest = async (): Promise<any> => {
+            try {
+                const ai = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY });
+                const response = await ai.models.generateContent({ model: model || 'gemini-3-flash-preview', contents, config });
+                return { success: true, text: response.text };
+            } catch (e: any) {
+                // Check if it's a rate limit error (429)
+                const isRateLimit = e.message?.includes('429') || e.message?.toLowerCase().includes('rate limit') || e.status === 429;
+                
+                if (isRateLimit && retryCount < maxRetries) {
+                    retryCount++;
+                    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+                    console.warn(`[Web Shim] Gemini API Rate Limit (429). Retrying in ${Math.round(delay)}ms... (Attempt ${retryCount}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return executeRequest();
+                }
+                
+                console.error(`[Web Shim] Gemini API Error:`, e);
+                return { success: false, error: { message: e.message } };
+            }
+        };
+
+        return executeRequest();
       }
       case 'export-project': 
       case 'export-sheet-layout': {

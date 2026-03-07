@@ -269,6 +269,12 @@ export const GradingView: React.FC<{ apiKey: string }> = ({ apiKey }) => {
                         studentId: s.id, 
                         base64: await cropImage(s.images[pageIdx]!, area, autoAlign ? template : undefined, autoAlign ? areas : undefined, isImageEnhanced) 
                     })));
+                    
+                    // Add a small delay between batches to avoid rate limits
+                    if (i > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+
                     const res = await callGeminiAPIBatch(
                         masterSnippet, 
                         studentSnippets, 
